@@ -2,6 +2,11 @@
 
 **A retro CRT vector flight simulator and aircraft carrier deck management game — built in pure TypeScript with zero 3D engine dependencies.**
 
+### ▶ [**PLAY IN YOUR BROWSER**](https://bejranonda.github.io/carrier-vector-1988/)
+
+[![Play Now](https://img.shields.io/badge/▶_PLAY-online-00ff66?style=for-the-badge)](https://bejranonda.github.io/carrier-vector-1988/)
+
+[![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
 [![Vitest](https://img.shields.io/badge/tests-112%20passing-00ff66)](https://vitest.dev/)
@@ -10,10 +15,13 @@
 
 Fly 6-DOF wireframe sorties through radar-masking canyons, then manage the flight deck that launched you. Every line of 3D projection, aerodynamics, and audio is hand-written linear algebra on a single HTML5 canvas — no Three.js, no Babylon, no Pixi, no gl-matrix.
 
+**No install required — it runs entirely in the browser.**
+
 ---
 
 ## Table of Contents
 
+- [Play Online](https://bejranonda.github.io/carrier-vector-1988/)
 - [What is this?](#what-is-this)
 - [Quick Start](#quick-start)
 - [How to Play](#how-to-play)
