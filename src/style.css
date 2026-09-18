@@ -1,0 +1,80 @@
+:root {
+  --phosphor-green: #00ff66;
+  --bg-color: #030a04;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-color);
+  overflow: hidden;
+  font-family: 'Courier New', Courier, monospace;
+  color: var(--phosphor-green);
+  user-select: none;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+  background-color: #020803;
+}
+
+/* Authentic 1980s CRT Phosphor Shader Emulation */
+.crt {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Horizontal scanlines & phosphor mask */
+.crt::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: 
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%),
+    linear-gradient(90deg, rgba(0, 255, 100, 0.03), rgba(0, 0, 0, 0.05), rgba(0, 255, 100, 0.03));
+  z-index: 10;
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Vignette curvature & electron bloom */
+.crt::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: radial-gradient(circle at center, rgba(0, 255, 100, 0.02) 0%, rgba(0, 0, 0, 0.55) 75%, rgba(0, 0, 0, 0.92) 100%);
+  box-shadow: inset 0 0 100px rgba(0, 20, 5, 0.8);
+  z-index: 11;
+  pointer-events: none;
+}
+
+/* Subtle CRT phosphor screen flicker */
+@keyframes crt-flicker {
+  0% { opacity: 0.98; }
+  50% { opacity: 1.0; }
+  100% { opacity: 0.99; }
+}
+
+.crt canvas {
+  animation: crt-flicker 0.15s infinite;
+}
