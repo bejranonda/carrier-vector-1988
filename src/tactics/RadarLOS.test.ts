@@ -71,3 +71,94 @@ describe('Tactical Radar LOS & RCS Engine', () => {
         expect(sam1Contact?.state).toBe('SILENT');
     });
 });
+
+describe('SAM missile proximity fuze (swept-sphere collision)', () => {
+    let terrain: TacticalTerrain;
+    let sensors: SensorTacticsManager;
+    let aircraft: AircraftPhysics;
+
+    beforeEach(() => {
+        terrain = new TacticalTerrain();
+        sensors = new SensorTacticsManager(terrain);
+        aircraft = new AircraftPhysics();
+    });
+
+    it('registers a hit even when the missile overshoots past the aircraft in a single tick', () => {
+        // The missile closes 480 m/s * 0.1s = 48m per tick, but the aircraft
+        // is only 5m away at the start of this tick. A naive "distance after
+        // moving" check would place the missile ~43m past the aircraft
+        // (well outside the 40m fuze radius) and register a MISS, even
+        // though the missile's flight path passed directly through the jet.
+        const sam = sensors.samSites[0];
+        sam.missileActive = true;
+        sam.missilePos = { ...sam.position };
+        sam.missileFuel = 5;
+
+        aircraft.position = { x: sam.position.x + 5, y: sam.position.y, z: sam.position.z };
+        aircraft.yaw = 0;
+
+        sensors.update(0.1, aircraft);
+
+        // Prove the naive post-step check really would have missed:
+        const finalDist = Math.hypot(
+            sam.missilePos.x - aircraft.position.x,
+            sam.missilePos.y - aircraft.position.y,
+            sam.missilePos.z - aircraft.position.z
+        );
+        expect(finalDist).toBeGreaterThan(SensorTacticsManager.FUZE_RADIUS);
+
+        // But the swept-sphere sweep must still have caught the hit.
+        expect(sensors.missileImpacts.length).toBe(1);
+        expect(sensors.missileImpacts[0].missDistance).toBeLessThan(1);
+        expect(sensors.missileImpacts[0].damage).toBeGreaterThan(0);
+        expect(sam.missileActive).toBe(false);
+    });
+
+    it('does not register a hit when the missile passes well outside the fuze radius', () => {
+        const sam = sensors.samSites[0];
+        sam.missileActive = true;
+        sam.missilePos = { ...sam.position };
+        sam.missileFuel = 5;
+
+        // Aircraft far enough away that even a full-speed tick can't close
+        // within the fuze radius this frame.
+        aircraft.position = { x: sam.position.x + 500, y: sam.position.y, z: sam.position.z };
+        aircraft.yaw = 0;
+
+        sensors.update(0.1, aircraft);
+
+        expect(sensors.missileImpacts.length).toBe(0);
+        expect(sam.missileActive).toBe(true);
+    });
+
+    it('deals maximum damage on a direct hit and falls off toward the fuze edge', () => {
+        const direct = new SensorTacticsManager(terrain);
+        const sam1 = direct.samSites[0];
+        sam1.missileActive = true;
+        sam1.missilePos = { ...sam1.position };
+        sam1.missileFuel = 5;
+        const directHitAircraft = new AircraftPhysics();
+        directHitAircraft.position = { x: sam1.position.x + 1, y: sam1.position.y, z: sam1.position.z };
+        direct.update(0.1, directHitAircraft);
+
+        expect(direct.missileImpacts[0].damage).toBeCloseTo(SensorTacticsManager.MAX_MISSILE_DAMAGE, 0);
+    });
+
+    it('clears missileImpacts each update instead of accumulating stale hits', () => {
+        const sam = sensors.samSites[0];
+        sam.missileActive = true;
+        sam.missilePos = { ...sam.position };
+        sam.missileFuel = 5;
+        aircraft.position = { x: sam.position.x + 5, y: sam.position.y, z: sam.position.z };
+
+        sensors.update(0.1, aircraft);
+        expect(sensors.missileImpacts.length).toBe(1);
+
+        // Move well outside launch range so no new missile re-engages this
+        // tick — the impact list must reset to empty rather than retain
+        // last frame's hit.
+        aircraft.position = { x: sam.position.x + 50000, y: sam.position.y, z: sam.position.z };
+        sensors.update(0.1, aircraft);
+        expect(sensors.missileImpacts.length).toBe(0);
+    });
+});

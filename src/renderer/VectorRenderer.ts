@@ -43,13 +43,50 @@ export class VectorRenderer {
         this.fov = fov;
     }
 
+    /**
+     * Distance fade window (metres) matching TacticalTerrain's 8000m draw
+     * cull, so lines fade out before they'd be culled rather than popping.
+     */
+    public static readonly NEAR_FADE = 600;
+    public static readonly FAR_FADE = 8000;
+    public static readonly MIN_FADE_ALPHA = 0.12;
+
     public resize(width: number, height: number) {
         this.width = width;
         this.height = height;
     }
 
+    /**
+     * Hard-clear to the base background color. Used on resize/view switches.
+     * NOT used for the per-frame cockpit clear once phosphor persistence is
+     * active - see decayClear().
+     */
     public clear() {
         this.ctx.fillStyle = '#051008';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+    }
+
+    /**
+     * Phosphor-persistence "clear": instead of wiping the frame, composite a
+     * low-alpha dark rectangle over it so previous strokes decay exponentially
+     * rather than vanishing, producing the glowing trails of a real vector
+     * CRT. Frame-rate independent: alpha is derived from elapsed time and a
+     * decay time constant, not a fixed per-frame value (otherwise trails
+     * would be 2x longer at 120Hz than at 60Hz).
+     *
+     * IMPORTANT: the decay target color must be strictly DARKER than the
+     * nominal background (#051008). Decaying toward a color equal to or
+     * brighter than the resting background does not converge under 8-bit
+     * channel rounding - e.g. a channel at 6 decaying toward a floor of 5
+     * rounds right back to 6 forever, leaving a permanent low-level ghost
+     * everywhere the beam has ever been. #030a04 is strictly below every
+     * channel of #051008, so the iteration is strictly decreasing and
+     * actually reaches the floor.
+     */
+    public decayClear(dt: number, tau: number = 0.06) {
+        const alpha = Math.min(1, Math.max(0.02, 1 - Math.exp(-dt / tau)));
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.fillStyle = `rgba(3, 10, 4, ${alpha})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
     }
 
@@ -142,19 +179,43 @@ export class VectorRenderer {
         const s1 = this.projectCameraPoint(c1);
         const s2 = this.projectCameraPoint(c2);
 
+        // Distance haze: fade line opacity with midpoint camera-space depth
+        // so the canyon reads as three-dimensional instead of a flat grid of
+        // uniformly bright lines. Fades out fully by the terrain's own draw
+        // cull distance so nothing "pops" into existence.
+        const zMid = (c1.z + c2.z) / 2;
+        const fade = VectorRenderer.depthFade(zMid);
+
         // Vector glow stroke
         this.ctx.beginPath();
         this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = lineWidth;
+        this.ctx.lineWidth = lineWidth * (0.6 + 0.4 * fade);
         this.ctx.shadowColor = color;
         this.ctx.shadowBlur = 4;
+        this.ctx.globalAlpha = fade;
         this.ctx.moveTo(s1.x, s1.y);
         this.ctx.lineTo(s2.x, s2.y);
         this.ctx.stroke();
+        this.ctx.globalAlpha = 1.0;
+    }
+
+    /** Pure depth->opacity falloff. Exposed static so it is unit-testable. */
+    public static depthFade(z: number): number {
+        if (z <= VectorRenderer.NEAR_FADE) return 1.0;
+        if (z >= VectorRenderer.FAR_FADE) return VectorRenderer.MIN_FADE_ALPHA;
+        const t = (z - VectorRenderer.NEAR_FADE) / (VectorRenderer.FAR_FADE - VectorRenderer.NEAR_FADE);
+        return 1.0 - t * (1.0 - VectorRenderer.MIN_FADE_ALPHA);
     }
 
     /**
-     * Render a wireframe mesh with world transformation
+     * Render a wireframe mesh with world transformation.
+     *
+     * pitch/roll default to 0, matching the original yaw-only behaviour
+     * exactly (verified algebraically: with pitch=roll=0 the basis-vector
+     * formulation below reduces to the original two-term yaw rotation), so
+     * every existing call site is unaffected. Passing non-zero pitch/roll
+     * lets enemy aircraft actually bank and dive instead of always flying
+     * dead level.
      */
     public renderMesh(
         mesh: WireframeMesh,
@@ -164,27 +225,22 @@ export class VectorRenderer {
         camPitch: number,
         camYaw: number,
         camRoll: number,
-        overrideColor?: string
+        overrideColor?: string,
+        pitch: number = 0,
+        roll: number = 0
     ) {
-        const cy = Math.cos(yaw);
-        const sy = Math.sin(yaw);
+        const { forward, up, right } = VectorRenderer.basisVectors(pitch, yaw, roll);
+
+        const toWorld = (local: Vector3): Vector3 => ({
+            x: worldPos.x + local.x * right.x + local.y * up.x + local.z * forward.x,
+            y: worldPos.y + local.x * right.y + local.y * up.y + local.z * forward.y,
+            z: worldPos.z + local.x * right.z + local.y * up.z + local.z * forward.z
+        });
 
         for (const line of mesh.lines) {
-            // Rotate local point by yaw and translate
-            const p1World: Vector3 = {
-                x: worldPos.x + (line.p1.x * cy + line.p1.z * sy),
-                y: worldPos.y + line.p1.y,
-                z: worldPos.z + (line.p1.z * cy - line.p1.x * sy)
-            };
-            const p2World: Vector3 = {
-                x: worldPos.x + (line.p2.x * cy + line.p2.z * sy),
-                y: worldPos.y + line.p2.y,
-                z: worldPos.z + (line.p2.z * cy - line.p2.x * sy)
-            };
-
             this.drawLine(
-                p1World,
-                p2World,
+                toWorld(line.p1),
+                toWorld(line.p2),
                 camPos,
                 camPitch,
                 camYaw,
@@ -192,6 +248,31 @@ export class VectorRenderer {
                 overrideColor || line.color || this.phosphorColor
             );
         }
+    }
+
+    /**
+     * Object-space basis vectors for a given pitch/yaw/roll, matching the
+     * same rotation convention as AircraftPhysics.forwardVector/upVector/
+     * rightVector (duplicated here rather than imported, since the renderer
+     * must stay independent of any one aircraft instance).
+     */
+    private static basisVectors(pitch: number, yaw: number, roll: number) {
+        const cp = Math.cos(pitch), sp = Math.sin(pitch);
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+        const cr = Math.cos(roll), sr = Math.sin(roll);
+
+        const forward: Vector3 = { x: cp * sy, y: sp, z: cp * cy };
+        const up: Vector3 = {
+            x: -sr * cy - sp * sy * cr,
+            y: cp * cr,
+            z: sr * sy - sp * cy * cr
+        };
+        const right: Vector3 = {
+            x: cr * cy - sp * sy * sr,
+            y: -cp * sr,
+            z: -cr * sy - sp * cy * sr
+        };
+        return { forward, up, right };
     }
 }
 

@@ -1,10 +1,18 @@
 /**
  * CARRIER VECTOR: 1988 - Main Entry & Input Dispatcher
- * Wires keyboard inputs, canvas resizing, audio initiation, and view transitions.
+ *
+ * Wires keyboard input, canvas resizing, audio unlock and phase
+ * transitions. Continuous flight-control axes are NOT applied here: they
+ * are read from GameLoop.inputState inside the fixed-timestep update, so
+ * control authority stays exactly time-consistent. (The original version
+ * ran controls on a separate setInterval(16ms) with a hardcoded dt=0.016,
+ * which drifted from real elapsed time and decoupled input from the
+ * render loop.)
  */
 
 import './style.css';
 import { GameLoop } from './core/GameLoop';
+import { soundFX } from './audio/SoundFX';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -12,17 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const game = new GameLoop(canvas);
 
-    // Dynamic resize handler
-    const handleResize = () => {
-        game.resize(window.innerWidth, window.innerHeight);
-    };
+    const handleResize = () => game.resize(window.innerWidth, window.innerHeight);
     window.addEventListener('resize', handleResize);
     handleResize();
 
-    // Track held keys
-    const keys: Record<string, boolean> = {};
-
-    // First user gesture unlocks Web Audio API
+    // First user gesture unlocks the Web Audio API (browser autoplay policy)
     const unlockAudio = () => {
         game.ensureAudio();
         window.removeEventListener('keydown', unlockAudio);
@@ -33,115 +35,107 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
-        keys[key] = true;
+        game.inputState[key] = true;
 
-        // View toggle
-        if (e.key === 'Tab') {
+        // --- Global overlay / system keys ---
+        if (key === 'h' || key === 'f1') {
+            e.preventDefault();
+            game.helpVisible = !game.helpVisible;
+            return;
+        }
+        if (key === 'escape') {
+            e.preventDefault();
+            game.helpVisible = false;
+            return;
+        }
+        if (key === 'm') {
+            soundFX.toggleMute();
+            return;
+        }
+        if (key === 'p') {
+            game.cyclePostQuality();
+            return;
+        }
+
+        // --- Phase transitions ---
+        if (game.phase === 'BRIEFING') {
+            if (key === 'enter') {
+                e.preventDefault();
+                game.confirmBriefing();
+            } else if (key === 's') {
+                // Quick start for returning players
+                game.confirmBriefing();
+                game.hotStartAirborne();
+            }
+            return;
+        }
+        if (game.phase === 'DEBRIEF') {
+            if (key === 'enter') game.restartFromDebrief();
+            return;
+        }
+        if (game.phase !== 'ACTIVE') return;
+
+        // --- View toggle ---
+        if (key === 'tab') {
             e.preventDefault();
             game.currentView = game.currentView === 'MICRO_FLIGHT' ? 'MACRO_DECK' : 'MICRO_FLIGHT';
             return;
         }
 
-        // Weapons Bay Door Toggle (key 'B')
+        // --- Weapons bay ---
         if (key === 'b') {
             e.preventDefault();
             game.physics.bayOpen = !game.physics.bayOpen;
+            game.training.progress.bayToggled = true;
             game.deck.log(`WEAPONS BAY ${game.physics.bayOpen ? 'OPENED (RCS x4.0)' : 'CLOSED'}`);
+            return;
         }
 
-        // Weapon Selection
-        if (key === '1') {
+        // --- Context-sensitive number keys ---
+        if (key === '1' || key === '2' || key === '3' || key === '4') {
             if (game.currentView === 'MICRO_FLIGHT') {
-                game.selectedWeapon = 'GUN';
+                if (key === '1') game.selectedWeapon = 'GUN';
+                else if (key === '2') game.selectedWeapon = 'AIM9';
+                else if (key === '3') game.selectedWeapon = 'BOMB';
             } else {
-                // Deck View: Adjust Fuel -500L
-                game.deck.plannedFuel = Math.max(1000, game.deck.plannedFuel - 500);
+                const deck = game.deck;
+                if (key === '1') deck.plannedFuel = Math.max(1000, deck.plannedFuel - 500);
+                else if (key === '2') deck.plannedFuel = Math.min(game.physics.maxFuel, deck.plannedFuel + 500);
+                else if (key === '3') deck.plannedLoadout.sidewinders = (deck.plannedLoadout.sidewinders + 2) % 8;
+                else if (key === '4') deck.plannedLoadout.ironBombs = (deck.plannedLoadout.ironBombs + 1) % 5;
             }
-        } else if (key === '2') {
-            if (game.currentView === 'MICRO_FLIGHT') {
-                game.selectedWeapon = 'AIM9';
-            } else {
-                // Deck View: Adjust Fuel +500L
-                game.deck.plannedFuel = Math.min(game.physics.maxFuel, game.deck.plannedFuel + 500);
-            }
-        } else if (key === '3') {
-            if (game.currentView === 'MICRO_FLIGHT') {
-                game.selectedWeapon = 'BOMB';
-            } else {
-                // Deck View: Cycle Sidewinders (0 to 6)
-                game.deck.plannedLoadout.sidewinders = (game.deck.plannedLoadout.sidewinders + 2) % 8;
-            }
-        } else if (key === '4') {
+            return;
+        }
+
+        // --- Catapult launch ---
+        if (key === 'enter') {
             if (game.currentView === 'MACRO_DECK') {
-                // Deck View: Cycle Bombs (0 to 4)
-                game.deck.plannedLoadout.ironBombs = (game.deck.plannedLoadout.ironBombs + 1) % 5;
+                game.requestCatapultLaunch();
             }
+            return;
         }
 
-        // Launch Catapult in Deck View
-        if (e.key === 'Enter') {
-            if (game.currentView === 'MACRO_DECK' && game.deck.aircraftState === 'CATAPULT_READY') {
-                const launched = game.deck.triggerCatapultLaunch();
-                if (launched) {
-                    // Sync loaded munitions to aircraft
-                    game.physics.fuel = game.deck.plannedFuel;
-                    game.physics.loadout = { ...game.deck.plannedLoadout };
-                    game.spawnInitialSortie();
-                }
-            }
-        }
-
-        // Fire Weapons (Spacebar)
+        // --- Weapon release (edge-triggered; held fire is handled in the
+        //     fixed update so the cannon rate is frame-rate independent) ---
         if (e.key === ' ' || e.code === 'Space') {
             e.preventDefault();
-            if (game.currentView === 'MICRO_FLIGHT') {
-                if (game.selectedWeapon === 'GUN') {
-                    game.weapons.fireGun(game.physics);
-                } else if (game.selectedWeapon === 'AIM9') {
-                    game.weapons.fireSidewinder(game.physics, game.airborneTargets);
-                } else if (game.selectedWeapon === 'BOMB') {
-                    game.weapons.dropBomb(game.physics);
-                }
+            if (game.currentView !== 'MICRO_FLIGHT') return;
+            if (game.selectedWeapon === 'AIM9') {
+                game.weapons.fireSidewinder(game.physics, game.airborneTargets);
+            } else if (game.selectedWeapon === 'BOMB') {
+                game.weapons.dropBomb(game.physics);
             }
         }
     });
 
     window.addEventListener('keyup', (e) => {
-        keys[e.key.toLowerCase()] = false;
+        game.inputState[e.key.toLowerCase()] = false;
     });
 
-    // Continuous Flight Control Input Tick (60Hz)
-    setInterval(() => {
-        if (game.currentView !== 'MICRO_FLIGHT') return;
+    // Releasing focus must not leave keys stuck down mid-manoeuvre.
+    window.addEventListener('blur', () => {
+        game.inputState = {};
+    });
 
-        const dt = 0.016;
-
-        // Pitch (Elevator)
-        if (keys['w'] || keys['arrowup']) game.physics.applyPitchInput(1.0, dt); // Nose up
-        if (keys['s'] || keys['arrowdown']) game.physics.applyPitchInput(-1.0, dt); // Nose down
-
-        // Roll (Ailerons)
-        if (keys['a'] || keys['arrowleft']) game.physics.applyRollInput(-1.0, dt); // Roll left
-        if (keys['d'] || keys['arrowright']) game.physics.applyRollInput(1.0, dt); // Roll right
-
-        // Yaw (Rudder)
-        if (keys['q']) game.physics.applyYawInput(-1.0, dt); // Yaw left
-        if (keys['e']) game.physics.applyYawInput(1.0, dt); // Yaw right
-
-        // Throttle (Shift to advance, Ctrl to retard)
-        if (keys['shift']) {
-            game.physics.throttle = Math.min(1.5, game.physics.throttle + 0.5 * dt);
-        }
-        if (keys['control']) {
-            game.physics.throttle = Math.max(0.0, game.physics.throttle - 0.5 * dt);
-        }
-
-        // Rapid fire Vulcan cannon while holding space
-        if (keys[' '] && game.selectedWeapon === 'GUN') {
-            game.weapons.fireGun(game.physics);
-        }
-    }, 16);
-
-    // Start Bridge Loop
     game.start();
 });

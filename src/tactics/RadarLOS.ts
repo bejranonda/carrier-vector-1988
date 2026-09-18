@@ -9,11 +9,21 @@
  * - RWR threat detection and azimuth computation
  */
 
-import { AircraftPhysics } from '../flight/AircraftPhysics';
-import type { Vector3 } from '../flight/AircraftPhysics';
-import { VectorRenderer } from '../renderer/VectorRenderer';
+import type { AircraftPhysics, Vector3 } from '../flight/AircraftPhysics';
+import type { VectorRenderer } from '../renderer/VectorRenderer';
 
 export type RadarThreatState = 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
+
+/**
+ * A SAM missile detonation registered against the player this tick.
+ * Produced by the swept-sphere proximity fuze in SensorTacticsManager.update().
+ */
+export interface MissileImpact {
+    samId: string;
+    position: Vector3;
+    missDistance: number; // metres from aircraft at closest approach
+    damage: number;       // 0-100 damage points to apply to the airframe
+}
 
 export interface ThreatContact {
     id: string;
@@ -161,6 +171,7 @@ export class SAMSite {
     public missilePos: Vector3 = { x: 0, y: 0, z: 0 };
     public missileVel: Vector3 = { x: 0, y: 0, z: 0 };
     public missileFuel = 12.0; // seconds
+    public strafeDamage = 0; // accumulated 20mm hits; site is destroyed at 40
 
     constructor(id: string, name: string, x: number, z: number, terrain: TacticalTerrain) {
         this.id = id;
@@ -179,6 +190,19 @@ export class SensorTacticsManager {
     public activeThreats: ThreatContact[] = [];
     public masterRwrState: RadarThreatState = 'SILENT';
     public highestThreatAzimuth: number = 0;
+
+    /**
+     * Missile detonations registered during the most recent update() call.
+     * Cleared at the top of every update, so the bridge loop must consume
+     * these each tick.
+     */
+    public missileImpacts: MissileImpact[] = [];
+
+    /** Proximity fuze radius in metres. Beyond this the warhead does nothing. */
+    public static readonly FUZE_RADIUS = 40;
+
+    /** Damage at a direct hit, falling off linearly to zero at FUZE_RADIUS. */
+    public static readonly MAX_MISSILE_DAMAGE = 55;
 
     constructor(terrain: TacticalTerrain) {
         this.terrain = terrain;
@@ -257,6 +281,7 @@ export class SensorTacticsManager {
      */
     public update(dt: number, aircraft: AircraftPhysics) {
         this.activeThreats = [];
+        this.missileImpacts = [];
         let maxStateScore = 0;
         const stateScoreMap: Record<RadarThreatState, number> = {
             'SILENT': 0,
@@ -324,9 +349,53 @@ export class SensorTacticsManager {
                         z: (mdz / mDist) * missileSpeed
                     };
 
+                    const prevPos: Vector3 = { ...sam.missilePos };
                     sam.missilePos.x += sam.missileVel.x * dt;
                     sam.missilePos.y += sam.missileVel.y * dt;
                     sam.missilePos.z += sam.missileVel.z * dt;
+
+                    // Proximity fuze: closest point on the travel SEGMENT
+                    // [prevPos -> newPos], not just the end-of-step distance.
+                    // At 480 m/s with dt clamped to 0.1s the missile can
+                    // cover ~48m per tick — comfortably more than the 40m
+                    // fuze radius — so a naive post-step distance check
+                    // would let it tunnel straight through the aircraft
+                    // whenever it closes the last few metres in one tick.
+                    const segX = sam.missilePos.x - prevPos.x;
+                    const segY = sam.missilePos.y - prevPos.y;
+                    const segZ = sam.missilePos.z - prevPos.z;
+                    const segLenSq = segX * segX + segY * segY + segZ * segZ;
+
+                    const toAcX = aircraft.position.x - prevPos.x;
+                    const toAcY = aircraft.position.y - prevPos.y;
+                    const toAcZ = aircraft.position.z - prevPos.z;
+
+                    let tStar = segLenSq > 0
+                        ? (toAcX * segX + toAcY * segY + toAcZ * segZ) / segLenSq
+                        : 0;
+                    tStar = Math.max(0, Math.min(1, tStar));
+
+                    const closestX = prevPos.x + segX * tStar;
+                    const closestY = prevPos.y + segY * tStar;
+                    const closestZ = prevPos.z + segZ * tStar;
+
+                    const missDistance = Math.hypot(
+                        aircraft.position.x - closestX,
+                        aircraft.position.y - closestY,
+                        aircraft.position.z - closestZ
+                    );
+
+                    if (missDistance <= SensorTacticsManager.FUZE_RADIUS) {
+                        const damage = SensorTacticsManager.MAX_MISSILE_DAMAGE *
+                            (1 - missDistance / SensorTacticsManager.FUZE_RADIUS);
+                        this.missileImpacts.push({
+                            samId: sam.id,
+                            position: { x: closestX, y: closestY, z: closestZ },
+                            missDistance,
+                            damage
+                        });
+                        sam.missileActive = false;
+                    }
                 }
             }
 

@@ -11,10 +11,11 @@
  * - Weapons status, G-meter, and Terrain Masking annunciator
  */
 
-import { AircraftPhysics } from '../flight/AircraftPhysics';
-import type { Vector3 } from '../flight/AircraftPhysics';
-import { SensorTacticsManager } from '../tactics/RadarLOS';
-import { VectorRenderer } from './VectorRenderer';
+import type { AircraftPhysics, Vector3 } from '../flight/AircraftPhysics';
+import type { SensorTacticsManager } from '../tactics/RadarLOS';
+import type { VectorRenderer } from './VectorRenderer';
+import type { Hint } from '../core/Tutorial';
+import type { ScoreKeeper } from '../core/ScoreKeeper';
 
 export interface AirborneTarget {
     id: string;
@@ -22,6 +23,20 @@ export interface AirborneTarget {
     position: Vector3;
     velocity: Vector3;
     isAlive: boolean;
+
+    /**
+     * Visual orientation, derived from the velocity vector by EnemyAI so
+     * wireframe models bank and pitch into their manoeuvres. Optional and
+     * defaulted to 0 by the renderer, so plain target literals still work.
+     */
+    pitch?: number;
+    roll?: number;
+    yaw?: number;
+
+    /** Enemy AI state, stored on the contact itself to avoid a parallel map. */
+    aiBehavior?: 'INGRESS' | 'ENGAGE' | 'RTB';
+    aiFireCooldown?: number;
+    aiTurnDemand?: number;
 }
 
 export class HUD {
@@ -44,7 +59,9 @@ export class HUD {
         sensors: SensorTacticsManager,
         targets: AirborneTarget[],
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
-        renderer: VectorRenderer
+        renderer: VectorRenderer,
+        hint?: Hint | null,
+        score?: ScoreKeeper
     ) {
         const cx = this.width / 2;
         const cy = this.height / 2;
@@ -61,10 +78,10 @@ export class HUD {
         this.drawWaterline(ctx, cx, cy);
 
         // 2. Flight Path Marker (Velocity Vector)
-        this.drawFlightPathMarker(ctx, physics, cx, cy);
+        this.drawFlightPathMarker(ctx, physics, renderer);
 
         // 3. Pitch Ladder (rotates with roll, translates with pitch)
-        this.drawPitchLadder(ctx, physics, cx, cy);
+        this.drawPitchLadder(ctx, physics, renderer, cx, cy);
 
         // 4. Compass Heading Tape (at top)
         this.drawCompassTape(ctx, physics, cx);
@@ -81,7 +98,138 @@ export class HUD {
         // 8. Annunciator Panel (Bottom-left & center warnings)
         this.drawAnnunciatorPanel(ctx, physics, sensors, selectedWeapon);
 
+        // 9. Carrier approach aids (meatball / AoA indexer / lineup)
+        this.drawLandingAids(ctx, physics, cx, cy);
+
+        // 10. Contextual coach ticker
+        if (hint) this.drawCoachTicker(ctx, hint, cx);
+
+        // 11. Score readout
+        if (score) {
+            ctx.textAlign = 'right';
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#00aa44';
+            ctx.shadowColor = '#00aa44';
+            ctx.fillText(`SCORE ${score.totalScore}  ${score.rank}`, this.width - 30, 26);
+            ctx.textAlign = 'left';
+        }
+
         ctx.restore();
+    }
+
+    /**
+     * Fresnel lens "meatball" glideslope, AoA approach indexer and deck
+     * lineup cue. Only shown on approach - landing was previously a blind
+     * guess at a 180m / 18-28m / sub-90 m/s envelope with no visual aid.
+     */
+    private drawLandingAids(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, cx: number, cy: number) {
+        const rangeToShip = Math.hypot(physics.position.x, physics.position.z);
+        if (rangeToShip > 3000 || physics.position.y > 400) return;
+
+        const DECK_Y = 20;
+        const GLIDESLOPE_RAD = 3.5 * (Math.PI / 180);
+        const desiredAlt = DECK_Y + Math.tan(GLIDESLOPE_RAD) * rangeToShip;
+        const error = physics.position.y - desiredAlt;
+
+        // --- Meatball: 5 cells, datum bars either side ---
+        const ballX = cx - 210;
+        const ballY = cy;
+        const cell = 17;
+        const index = Math.max(-2, Math.min(2, Math.round(error / 6)));
+
+        ctx.strokeStyle = '#00ff66';
+        ctx.shadowColor = '#00ff66';
+        ctx.lineWidth = 2;
+        // Datum bars
+        ctx.beginPath();
+        ctx.moveTo(ballX - 26, ballY); ctx.lineTo(ballX - 11, ballY);
+        ctx.moveTo(ballX + 11, ballY); ctx.lineTo(ballX + 26, ballY);
+        ctx.stroke();
+
+        // Cell track
+        ctx.globalAlpha = 0.3;
+        ctx.strokeRect(ballX - 9, ballY - cell * 2.5, 18, cell * 5);
+        ctx.globalAlpha = 1;
+
+        // The ball itself: high = above glideslope, low = red (dangerous)
+        const ballCy = ballY - index * cell;
+        const low = index <= -2;
+        ctx.fillStyle = low ? '#ff3333' : '#ffff33';
+        ctx.shadowColor = low ? '#ff3333' : '#ffff33';
+        ctx.beginPath();
+        ctx.arc(ballX, ballCy, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#00aa44';
+        ctx.shadowColor = '#00aa44';
+        ctx.textAlign = 'center';
+        ctx.fillText('BALL', ballX, ballY + cell * 3 + 6);
+        ctx.textAlign = 'left';
+
+        // --- AoA approach indexer (carrier-standard 3 symbols) ---
+        const idxX = cx - 150;
+        const alphaDeg = physics.alpha * (180 / Math.PI);
+        const onSpeed = Math.abs(alphaDeg - 8.1) <= 1.2;
+        const fast = alphaDeg < 8.1 - 1.2;
+
+        ctx.lineWidth = 2;
+        // Fast chevron (pointing down)
+        ctx.strokeStyle = fast ? '#ffaa00' : '#003311';
+        ctx.shadowColor = fast ? '#ffaa00' : '#003311';
+        ctx.beginPath();
+        ctx.moveTo(idxX - 8, cy - 26); ctx.lineTo(idxX, cy - 18); ctx.lineTo(idxX + 8, cy - 26);
+        ctx.stroke();
+        // On-speed circle
+        ctx.strokeStyle = onSpeed ? '#00ff66' : '#003311';
+        ctx.shadowColor = onSpeed ? '#00ff66' : '#003311';
+        ctx.beginPath();
+        ctx.arc(idxX, cy, 8, 0, Math.PI * 2);
+        ctx.stroke();
+        // Slow chevron (pointing up)
+        const slow = alphaDeg > 8.1 + 1.2;
+        ctx.strokeStyle = slow ? '#ff3333' : '#003311';
+        ctx.shadowColor = slow ? '#ff3333' : '#003311';
+        ctx.beginPath();
+        ctx.moveTo(idxX - 8, cy + 26); ctx.lineTo(idxX, cy + 18); ctx.lineTo(idxX + 8, cy + 26);
+        ctx.stroke();
+
+        // --- Approach data block ---
+        ctx.font = '12px monospace';
+        ctx.fillStyle = '#00ff66';
+        ctx.shadowColor = '#00ff66';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+            `CALL THE BALL   RNG ${(rangeToShip / 1000).toFixed(1)}KM   ALT ${Math.round(physics.position.y)}M   ${Math.round(physics.airSpeed)}M/S`,
+            cx,
+            this.height - 150
+        );
+        ctx.textAlign = 'left';
+    }
+
+    /** Single-channel contextual coaching line. */
+    private drawCoachTicker(ctx: CanvasRenderingContext2D, hint: Hint, cx: number) {
+        const color = hint.severity === 'CRITICAL' ? '#ff3333'
+            : hint.severity === 'WARNING' ? '#ffaa00'
+                : '#00ff66';
+
+        // Critical cues blink so they can't be tuned out.
+        if (hint.severity === 'CRITICAL' && Math.floor(Date.now() / 250) % 2 !== 0) return;
+
+        ctx.font = 'bold 15px monospace';
+        ctx.textAlign = 'center';
+        const textW = ctx.measureText(hint.text).width;
+
+        ctx.strokeStyle = color;
+        ctx.shadowColor = color;
+        ctx.lineWidth = 1.2;
+        ctx.globalAlpha = 0.5;
+        ctx.strokeRect(cx - textW / 2 - 14, 92, textW + 28, 26);
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = color;
+        ctx.fillText(hint.text, cx, 110);
+        ctx.textAlign = 'left';
     }
 
     private drawWaterline(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
@@ -100,13 +248,13 @@ export class HUD {
         ctx.stroke();
     }
 
-    private drawFlightPathMarker(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, cx: number, cy: number) {
+    private drawFlightPathMarker(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        renderer: VectorRenderer
+    ) {
         const speed = physics.airSpeed;
         if (speed < 5) return;
-
-        // Angle between velocity vector and nose vector
-        const right = physics.rightVector;
-        const up = physics.upVector;
 
         const vNorm = {
             x: physics.velocity.x / speed,
@@ -114,12 +262,25 @@ export class HUD {
             z: physics.velocity.z / speed
         };
 
-        const pitchOffsetRad = vNorm.x * up.x + vNorm.y * up.y + vNorm.z * up.z;
-        const yawOffsetRad = vNorm.x * right.x + vNorm.y * right.y + vNorm.z * right.z;
+        // Project a point far along the actual velocity vector through the
+        // SAME camera pipeline the 3D world uses (transformToCamera +
+        // projectCameraPoint), instead of the old small-angle approximation
+        // (dot products with up/right treated directly as radians, scaled
+        // by a hand-tuned pxPerRad=520 that didn't match the renderer's
+        // fov=380). That mismatch meant the FPM never actually sat on the
+        // real flight path in the 3D scene. This way it always does, by
+        // construction - it's the same math used for target reticles.
+        const probe: Vector3 = {
+            x: physics.position.x + vNorm.x * 5000,
+            y: physics.position.y + vNorm.y * 5000,
+            z: physics.position.z + vNorm.z * 5000
+        };
+        const camPt = renderer.transformToCamera(probe, physics.position, physics.pitch, physics.yaw, physics.roll);
+        if (camPt.z < renderer.nearPlane) return; // velocity vector points behind the canopy
 
-        const pxPerRad = 520;
-        const fpmX = cx + yawOffsetRad * pxPerRad;
-        const fpmY = cy - pitchOffsetRad * pxPerRad;
+        const proj = renderer.projectCameraPoint(camPt);
+        const fpmX = proj.x;
+        const fpmY = proj.y;
 
         // Circle with wings and fin
         ctx.beginPath();
@@ -136,12 +297,11 @@ export class HUD {
         ctx.stroke();
     }
 
-    private drawPitchLadder(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, cx: number, cy: number) {
+    private drawPitchLadder(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, renderer: VectorRenderer, cx: number, cy: number) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(-physics.roll);
 
-        const pxPerDegree = 8.5;
         const pitchDeg = physics.pitch * (180 / Math.PI);
 
         // Ladder spans +/- 40 degrees around current pitch
@@ -150,7 +310,19 @@ export class HUD {
 
         for (let deg = startDeg; deg <= endDeg; deg += 5) {
             if (deg < -85 || deg > 85) continue;
-            const yOffset = (pitchDeg - deg) * pxPerDegree;
+
+            // Exact projection instead of a hand-tuned px/degree constant:
+            // a world ray at angular depression delta from boresight
+            // projects to fov*tan(delta) pixels from screen center (derived
+            // from the same perspective-divide formula VectorRenderer uses
+            // for every other point in the scene). This makes each rung
+            // land exactly on the corresponding point of the real 3D
+            // horizon/terrain instead of being ~28% too large, as the old
+            // hardcoded 8.5 px/degree (~487 px/rad) was versus the
+            // renderer's actual fov=380.
+            const deltaRad = (pitchDeg - deg) * (Math.PI / 180);
+            if (Math.abs(deltaRad) > 1.45) continue; // tan() blows up near +/-90 deg
+            const yOffset = renderer.fov * Math.tan(deltaRad);
 
             if (deg === 0) {
                 // Horizon line (Long solid)
@@ -501,6 +673,19 @@ export class HUD {
             wpnStr = `WPN: MK.82 IRON BOMB [${physics.loadout.ironBombs}]`;
         }
         ctx.fillText(wpnStr, 40, bottomY + 80);
+
+        // 3b. Battle damage state
+        if (physics.damage > 0) {
+            const dmgColor = physics.damage > 60 ? '#ff3333' : '#ffaa00';
+            ctx.fillStyle = dmgColor;
+            ctx.shadowColor = dmgColor;
+            ctx.fillText(`DAMAGE: ${Math.round(physics.damage)}%`, 40, bottomY - 20);
+            if (physics.fuelLeakRate > 0.5) {
+                ctx.fillText(`FUEL LEAK: ${physics.fuelLeakRate.toFixed(1)} L/S`, 40, bottomY - 40);
+            }
+            ctx.fillStyle = '#00ff66';
+            ctx.shadowColor = '#00ff66';
+        }
 
         // 4. Critical Warning Banners
         ctx.textAlign = 'center';

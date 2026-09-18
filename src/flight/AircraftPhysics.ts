@@ -46,6 +46,12 @@ export class AircraftPhysics {
     public isStalled: boolean = false;
     public controlAuthority: number = 1.0; // 0.0 -> 1.0 (drops during stall)
 
+    // Battle damage state. Accumulated from SAM proximity fuzing and enemy
+    // cannon fire. Degrades control authority and opens a fuel leak, so a
+    // damaged jet is a race to get back aboard before the tanks run dry.
+    public damage: number = 0;        // 0 (pristine) -> 100 (destroyed)
+    public fuelLeakRate: number = 0;  // extra L/s drain caused by damage
+
     // Thermal signature multiplier (1.0 idle, 1.5 mil, 4.0 afterburner)
     public thermalSignature: number = 1.0;
 
@@ -108,6 +114,24 @@ export class AircraftPhysics {
             y: -cp * sr,
             z: -cr * sy - sp * cy * sr
         };
+    }
+
+    /**
+     * Take battle damage. Punctured tanks leak progressively faster, and
+     * shredded hydraulics bleed control authority, so damage compounds:
+     * a badly hit aircraft is both harder to fly and shorter on fuel.
+     */
+    public applyDamage(amount: number) {
+        if (amount <= 0) return;
+        this.damage = Math.min(100, this.damage + amount);
+        // Up to 8 L/s of leak at total structural failure.
+        this.fuelLeakRate = (this.damage / 100) * 8.0;
+    }
+
+    /** Restore a fresh airframe (called when the deck crew issues a new jet). */
+    public repair() {
+        this.damage = 0;
+        this.fuelLeakRate = 0;
     }
 
     /**
@@ -184,6 +208,11 @@ export class AircraftPhysics {
             if (this.fuel < 0) this.fuel = 0;
         }
 
+        // Punctured tanks leak regardless of throttle setting.
+        if (this.fuelLeakRate > 0 && this.fuel > 0) {
+            this.fuel = Math.max(0, this.fuel - this.fuelLeakRate * dt);
+        }
+
         // 2. Air density profile with altitude
         const altitude = Math.max(0, this.position.y);
         const airDensity = AircraftPhysics.SEA_LEVEL_DENSITY * Math.exp(-altitude / 8500);
@@ -216,12 +245,12 @@ export class AircraftPhysics {
 
         // 4. Stall detection and control authority loss
         this.isStalled = Math.abs(this.alpha) > AircraftPhysics.CRITICAL_ALPHA;
-        if (this.isStalled) {
-            // Severe loss of elevator and aileron authority
-            this.controlAuthority = 0.22;
-        } else {
-            this.controlAuthority = 1.0;
-        }
+        const stallAuthority = this.isStalled ? 0.22 : 1.0;
+
+        // Battle damage compounds with stall: shredded hydraulics cost up to
+        // 60% of remaining authority. An undamaged jet keeps exactly 1.0.
+        const damageAuthority = 1.0 - (this.damage / 100) * 0.6;
+        this.controlAuthority = stallAuthority * damageAuthority;
 
         // 5. Aerodynamic Coefficients: Lift & Drag
         const dynamicPressure = 0.5 * airDensity * (speed ** 2);

@@ -17,6 +17,26 @@ export class SoundFX {
 
     private isMuted: boolean = false;
 
+    /**
+     * Toggle audio. isMuted was previously read in nine places but never
+     * assigned anywhere and had no public setter, so it was dead state.
+     * Returns the new muted state.
+     */
+    public toggleMute(): boolean {
+        this.isMuted = !this.isMuted;
+        if (this.ctx) {
+            const now = this.ctx.currentTime;
+            if (this.engineGain) this.engineGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.04, now, 0.05);
+            if (this.afterburnerNoiseGain) this.afterburnerNoiseGain.gain.setTargetAtTime(0, now, 0.05);
+            if (this.rwrGain) this.rwrGain.gain.setValueAtTime(0, now);
+        }
+        return this.isMuted;
+    }
+
+    public get muted(): boolean {
+        return this.isMuted;
+    }
+
     public init() {
         if (this.ctx) return;
         const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;

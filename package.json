@@ -1,13 +1,48 @@
 {
-  "name": "flight",
-  "private": true,
-  "version": "0.0.0",
+  "name": "carrier-vector-1988",
+  "private": false,
+  "version": "1.0.0",
   "type": "module",
+  "description": "A retro CRT vector flight simulator and aircraft carrier deck management game in pure TypeScript. Fixed-timestep 6-DOF flight dynamics, radar terrain masking, and 1980s wireframe phosphor graphics with zero 3D engine dependencies.",
+  "keywords": [
+    "game",
+    "flight-simulator",
+    "vector-graphics",
+    "retro",
+    "crt",
+    "wireframe",
+    "typescript",
+    "html5-canvas",
+    "html5-game",
+    "browser-game",
+    "6dof",
+    "flight-dynamics",
+    "aircraft-carrier",
+    "radar",
+    "simulation",
+    "no-dependencies",
+    "linear-algebra",
+    "procedural-audio",
+    "web-audio-api",
+    "vite"
+  ],
+  "author": "bejranonda",
+  "license": "MIT",
+  "homepage": "https://github.com/bejranonda/carrier-vector-1988#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bejranonda/carrier-vector-1988.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bejranonda/carrier-vector-1988/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

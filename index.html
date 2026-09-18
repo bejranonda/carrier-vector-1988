@@ -2,14 +2,64 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CARRIER VECTOR: 1988</title>
+
+    <title>Carrier Vector: 1988 — Retro CRT Vector Flight Simulator &amp; Carrier Deck Strategy Game</title>
+
+    <meta name="description" content="Carrier Vector: 1988 is a browser-based retro vector flight simulator combining 6-DOF aerodynamics, terrain-masking radar evasion and aircraft carrier deck logistics. Pure TypeScript, zero 3D engines, 1980s CRT phosphor wireframe graphics." />
+    <meta name="keywords" content="vector flight simulator, retro game, CRT phosphor, wireframe 3D, TypeScript game, HTML5 canvas game, carrier deck management, 6-DOF flight dynamics, radar terrain masking, browser game, 1980s arcade, no game engine, linear algebra 3D, air combat simulator" />
+    <meta name="author" content="bejranonda" />
+    <meta name="theme-color" content="#00ff66" />
+    <link rel="canonical" href="https://github.com/bejranonda/carrier-vector-1988" />
+
+    <!-- Open Graph / social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Carrier Vector: 1988 — Retro CRT Vector Flight Simulator" />
+    <meta property="og:description" content="A dual-loop browser game: manage an aircraft carrier flight deck, then fly 6-DOF wireframe sorties through canyons to break SAM radar locks. Zero 3D engine dependencies." />
+    <meta property="og:site_name" content="Carrier Vector: 1988" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Carrier Vector: 1988 — Retro CRT Vector Flight Simulator" />
+    <meta name="twitter:description" content="Dual-loop retro flight sim: carrier deck logistics + 3D wireframe air combat. Pure TypeScript, no 3D engines." />
+
+    <!-- Structured data: helps search engines and AI agents classify the project -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      "name": "Carrier Vector: 1988",
+      "description": "A retro 1980s-style vector graphics flight simulator and carrier deck logistics strategy game. Features fixed-timestep 6-DOF flight dynamics, procedural canyon terrain, radar line-of-sight terrain masking, RWR threat warnings, and CRT phosphor persistence rendering. Built in TypeScript with zero external 3D engine dependencies.",
+      "genre": ["Flight Simulator", "Strategy", "Action", "Retro"],
+      "gamePlatform": "Web Browser",
+      "applicationCategory": "Game",
+      "operatingSystem": "Any",
+      "author": { "@type": "Person", "name": "bejranonda" },
+      "programmingLanguage": "TypeScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
   </head>
   <body>
     <div class="crt">
       <canvas id="gameCanvas"></canvas>
     </div>
+
+    <!-- Crawler/agent-readable summary. Hidden visually; the game itself is canvas-rendered. -->
+    <noscript>
+      <h1>Carrier Vector: 1988</h1>
+      <p>
+        A retro CRT vector flight simulator and aircraft carrier deck management game
+        that runs entirely in the browser. This game requires JavaScript.
+      </p>
+      <p>
+        Features: fixed-timestep 6-DOF flight dynamics with stall and G-load induced drag,
+        procedural canyon terrain, radar line-of-sight terrain masking, radar cross-section
+        modelling, RWR threat warnings, carrier catapult launch and arrested recovery,
+        deck crew scheduling, and procedurally escalating enemy strike waves.
+      </p>
+    </noscript>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

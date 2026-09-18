@@ -8,10 +8,9 @@
  * - Collision detection against aircraft & ground SAM nodes
  */
 
-import { AircraftPhysics } from './AircraftPhysics';
-import type { Vector3 } from './AircraftPhysics';
-import { VectorRenderer } from '../renderer/VectorRenderer';
-import { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
+import type { AircraftPhysics, Vector3 } from './AircraftPhysics';
+import type { VectorRenderer } from '../renderer/VectorRenderer';
+import type { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
 import type { AirborneTarget } from '../renderer/HUD';
 import { soundFX } from '../audio/SoundFX';
 
@@ -180,8 +179,16 @@ export class WeaponsSystem {
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const b = this.bullets[i];
             b.life -= dt;
+
+            // Semi-implicit Euler: integrate velocity first, then position,
+            // matching the bomb integrator below. The previous version added
+            // -0.5*g*dt^2 (a per-FRAME drop term, not accumulated time of
+            // flight) and never updated vel.y, so tracers flew dead flat and
+            // disagreed with the HUD's lead-computing pipper, which DOES
+            // model gravity drop correctly.
+            b.vel.y -= 9.81 * dt;
             b.pos.x += b.vel.x * dt;
-            b.pos.y += b.vel.y * dt - 0.5 * 9.81 * (dt ** 2);
+            b.pos.y += b.vel.y * dt;
             b.pos.z += b.vel.z * dt;
 
             // Terrain hit
@@ -202,6 +209,26 @@ export class WeaponsSystem {
                     if (onTargetDestroyed) onTargetDestroyed(t);
                     hit = true;
                     break;
+                }
+            }
+            if (hit) {
+                this.bullets.splice(i, 1);
+                continue;
+            }
+
+            // Strafing run against ground SAM sites (previously only bombs
+            // could damage them — cannon runs on the radar nodes had no effect).
+            for (let s = samSites.length - 1; s >= 0 && !hit; s--) {
+                const sam = samSites[s];
+                const d = Math.hypot(b.pos.x - sam.position.x, b.pos.y - sam.position.y, b.pos.z - sam.position.z);
+                if (d < 8) {
+                    sam.strafeDamage += 1;
+                    if (sam.strafeDamage >= 40) {
+                        this.spawnExplosion(sam.position, 26, '#ff5500');
+                        if (onSAMDestroyed) onSAMDestroyed(sam);
+                        samSites.splice(s, 1);
+                    }
+                    hit = true;
                 }
             }
             if (hit) {

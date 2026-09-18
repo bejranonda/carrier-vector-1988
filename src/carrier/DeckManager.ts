@@ -47,6 +47,57 @@ export interface CarrierInventory {
     carrierHealth: number; // 0 to 100%
 }
 
+export type MissionState = 'ACTIVE' | 'FAILED';
+
+/**
+ * Deterministic PRNG (mulberry32). Used for procedural strike waves so a
+ * given seed always produces the same campaign — reproducible for testing,
+ * still unpredictable to the player without a fixed seed choice.
+ */
+export function mulberry32(seed: number): () => number {
+    let a = seed >>> 0;
+    return function () {
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * Generate an escalating procedural strike package wave. Deterministic given
+ * the same waveNumber and rng state, so this is fully headlessly testable.
+ * Wave 0 is never generated here — it is the hand-curated opening act
+ * defined in generateOpeningTimeline().
+ */
+export function generateWave(waveNumber: number, rng: () => number): InboundStrikePackage[] {
+    const packages: InboundStrikePackage[] = [];
+    const numPackages = Math.min(4, 1 + Math.floor(waveNumber / 3));
+    const baseEta = Math.max(80, 200 - waveNumber * 8); // tighter ETAs each wave, floor at 80s
+    const bomberChance = Math.min(0.5, 0.15 + waveNumber * 0.03);
+    const maxMigCount = Math.min(3, 1 + Math.floor(waveNumber / 2));
+
+    for (let i = 0; i < numPackages; i++) {
+        const isBomber = rng() < bomberChance;
+        const aircraftType: 'MiG-23' | 'Tu-22' = isBomber ? 'Tu-22' : 'MiG-23';
+        const count = aircraftType === 'MiG-23' ? 1 + Math.floor(rng() * maxMigCount) : 1;
+        const bearingDeg = Math.floor(rng() * 360);
+        const label = aircraftType === 'Tu-22' ? 'Tu-22M Backfire' : 'MiG-23 Flogger';
+
+        packages.push({
+            id: `W${waveNumber}-${i}`,
+            description: `Inbound ${label}${count > 1 ? ` x${count}` : ''} - Wave ${waveNumber}`,
+            aircraftType,
+            count,
+            bearingDeg,
+            etaSeconds: baseEta + i * 45,
+            isIntercepted: false,
+            hasAttacked: false
+        });
+    }
+    return packages;
+}
+
 export class DeckManager {
     public inventory: CarrierInventory = {
         fuelLiters: 180000,
@@ -83,8 +134,24 @@ export class DeckManager {
     public scrambleTimer: number = 0;
     public alertLog: string[] = ['CV-68 NIMITZ LOGISTICS ONLINE - NORWEGIAN SEA, 1988'];
 
-    // Catapult launch countdown
+    // Catapult launch countdown. This is the SINGLE authoritative clock for
+    // the launch stroke — GameLoop reads it to drive the visual animation
+    // rather than keeping a second, independently-advancing timer (the
+    // original code had two clocks racing for the same 2.5s window, which
+    // meant the animation-completion branch could be skipped on the exact
+    // frame the state flipped to AIRBORNE).
     public catapultTimer: number = 0;
+    public static readonly CATAPULT_STROKE_SEC = 2.5;
+
+    // Recovery de-rig timer (RECOVERY_TRAP state)
+    public trapDerigTimer: number = 0;
+    public static readonly TRAP_DERIG_SEC = 3.0;
+    private pendingTrapOutcome: 'HANGAR' | 'REPAIR' = 'HANGAR';
+
+    // Mission / campaign progression
+    public missionState: MissionState = 'ACTIVE';
+    public waveNumber: number = 0; // 0 = the scripted opening act
+    private rng: () => number = mulberry32(1988);
 
     constructor() {
         this.generateThreatTimeline();
@@ -183,10 +250,28 @@ export class DeckManager {
             }
         } else if (this.aircraftState === 'CATAPULT_LAUNCHING') {
             this.catapultTimer += dt;
-            if (this.catapultTimer >= 2.5) {
+            if (this.catapultTimer >= DeckManager.CATAPULT_STROKE_SEC) {
                 this.aircraftState = 'AIRBORNE';
                 this.catapultTimer = 0;
                 this.log('SHOT OFF CATAPULT! AIRBORNE ON COMBAT SORTIE.');
+            }
+        } else if (this.aircraftState === 'RECOVERY_TRAP') {
+            // De-rig on the angled deck before the jet is struck below. This
+            // state existed in the type union from the start but was never
+            // actually assigned — processTrapRecovery() used to jump
+            // straight to HANGAR_MAINTENANCE/DAMAGED_REPAIR.
+            this.trapDerigTimer += dt;
+            this.currentTaskProgress = Math.min(100, (this.trapDerigTimer / DeckManager.TRAP_DERIG_SEC) * 100);
+            if (this.trapDerigTimer >= DeckManager.TRAP_DERIG_SEC) {
+                this.trapDerigTimer = 0;
+                this.currentTaskProgress = 0;
+                if (this.pendingTrapOutcome === 'REPAIR') {
+                    this.aircraftState = 'DAMAGED_REPAIR';
+                    this.log('AIRCRAFT STRUCK BELOW FOR BATTLE DAMAGE REPAIR.');
+                } else {
+                    this.aircraftState = 'HANGAR_MAINTENANCE';
+                    this.log('AIRCRAFT STRUCK BELOW TO THE HANGAR DECK.');
+                }
             }
         }
 
@@ -220,6 +305,24 @@ export class DeckManager {
         }
 
         this.scrambleAlert = hasActiveThreatInPerimeter;
+
+        // 4. Mission failure: the carrier itself can be knocked out of the fight.
+        if (this.inventory.carrierHealth <= 0 && this.missionState === 'ACTIVE') {
+            this.missionState = 'FAILED';
+            this.log('CV-68 NIMITZ IS COMBAT INEFFECTIVE. MISSION FAILED.');
+        }
+
+        // 5. Procedural wave escalation. Once every package in the current
+        // timeline is resolved (splashed or through), generate the next,
+        // harder wave rather than leaving the player with nothing to do
+        // after ~7 minutes.
+        const allResolved = this.strikeTimeline.length > 0 &&
+            this.strikeTimeline.every(p => p.isIntercepted || p.hasAttacked);
+        if (allResolved && this.missionState === 'ACTIVE') {
+            this.waveNumber++;
+            this.strikeTimeline = generateWave(this.waveNumber, this.rng);
+            this.log(`NEW CONTACTS DETECTED. WAVE ${this.waveNumber} INBOUND.`);
+        }
     }
 
     /**
@@ -249,24 +352,27 @@ export class DeckManager {
     }
 
     /**
-     * Recovery trap (landing back on carrier deck)
+     * Recovery trap (landing back on carrier deck). Always routes through
+     * the RECOVERY_TRAP de-rig state first — the aircraft doesn't teleport
+     * straight to the hangar or repair bay the instant the hook catches.
      */
     public processTrapRecovery(fuelRemaining: number, isDamaged: boolean) {
+        this.aircraftState = 'RECOVERY_TRAP';
+        this.trapDerigTimer = 0;
+        this.currentTaskProgress = 0;
+
         if (fuelRemaining <= 0) {
             // Out of fuel crash landing
             this.inventory.spareAirframes = Math.max(0, this.inventory.spareAirframes - 1);
             this.inventory.carrierHealth = Math.max(0, this.inventory.carrierHealth - 10);
-            this.aircraftState = 'DAMAGED_REPAIR';
-            this.currentTaskProgress = 0;
+            this.pendingTrapOutcome = 'REPAIR';
             this.log('CRASH LANDING: DRY FUEL TANKS! FLIGHT DECK FOAM SPREAD.');
         } else if (isDamaged) {
-            this.aircraftState = 'DAMAGED_REPAIR';
-            this.currentTaskProgress = 0;
-            this.log('3-WIRE TRAP CAUGHT. FLIGHT INTEGRITY COMPROMISED. REPAIRS QUEUED.');
+            this.pendingTrapOutcome = 'REPAIR';
+            this.log('TRAP CAUGHT. FLIGHT INTEGRITY COMPROMISED. TAXIING FOR REPAIRS.');
         } else {
-            this.aircraftState = 'HANGAR_MAINTENANCE';
-            this.currentTaskProgress = 0;
-            this.log('PERFECT 3-WIRE TRAP RECOVERY. TAXIING TO HANGAR ELEVATOR.');
+            this.pendingTrapOutcome = 'HANGAR';
+            this.log('CLEAN TRAP RECOVERY. TAXIING TO HANGAR ELEVATOR.');
         }
     }
 

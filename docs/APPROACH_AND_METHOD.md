@@ -1,61 +1,197 @@
-# Approach & Method: CARRIER VECTOR: 1988
+# Approach & Method
 
-## 1. Core Philosophy & Design Strategy
-The architecture of **CARRIER VECTOR: 1988** resolves the dichotomy between high-level tactical management (Macro Layer) and visceral, low-altitude wireframe dogfighting (Micro Layer) within a unified deterministic loop. 
-
-A strict constraint governed all engineering decisions: **zero external 3D engine dependencies**. The entire 3D camera projection, near-plane frustum clipping, wireframe rasterization, and 6-DOF physics were designed using pure linear algebra.
+Design philosophy and engineering method behind Carrier Vector: 1988.
 
 ---
+
+## 1. Core Philosophy
+
+**Constraint as a design driver.** The zero-dependency rule is the organising
+principle. Forbidding Three.js forces every transform, clip and projection to be
+written explicitly, which keeps the entire rendering path inspectable and
+testable — and produces the authentic vector-display look as a natural
+consequence rather than a post-effect bolted onto a modern engine.
+
+**Simulate, then present.** Systems are modelled as real physical relationships
+(dynamic pressure, radar range equations, crew fatigue) and the presentation
+layer reports them. Nothing is faked for effect: when the RWR screams, a real
+line-of-sight ray actually connects a SAM to your aircraft.
+
+**Mechanics must have consequence.** The most important lesson from this
+codebase's history: a system that is beautifully implemented but wired to
+nothing is worth zero. The radar, RCS and terrain-masking model was
+sophisticated and completely inert because missiles had no collision check.
+Every system must be able to change the game state.
 
 ## 2. Dual-Loop Architecture
 
-### The Macro Layer (Carrier Deck & Logistics Engine)
-- **Queuing State Machine:** Aircraft cycle through deterministic states:
-  $$\text{HANGAR\_MAINTENANCE} \longrightarrow \text{ARMING\_REFUELING} \longrightarrow \text{CATAPULT\_READY} \longrightarrow \text{CATAPULT\_LAUNCHING} \longrightarrow \text{AIRBORNE} \longrightarrow \text{RECOVERY\_TRAP} \longrightarrow \text{DAMAGED\_REPAIR}$$
-- **Deck Crew Dynamics:** Four specialized crew teams (Ordnance, Fuel, Catapult, Mechanics) maintain stamina and fatigue metrics. Fatigue degrades turnaround speed by up to $60\%$.
-- **Threat Director & Early Warning Radar:** Enemy strike packages advance along a continuous time-to-impact continuum. Breaching the $130\text{s}$ outer perimeter triggers the **SCRAMBLE ALERT**. Unintercepted bombers directly damage carrier hull integrity and consume spare airframes.
+The game deliberately alternates between two loops operating on different
+timescales, coupled through shared resources.
 
-### The Micro Layer (6-DOF Flight Sim & Tactical Radar)
-- **State Vector:** Position $(x, y, z)$, Velocity $\mathbf{v}$, and orientation Euler angles $(\theta, \phi, \psi)$.
-- **Dynamic Angle of Attack ($\alpha$):** Rather than artificial pitch rates, $\alpha$ is derived from the scalar projection of the normalized velocity vector on the aircraft's longitudinal and vertical axes.
-- **Critical Stall Boundary:** When $|\alpha| > 18^\circ$, lift collapses to post-stall drag values and control surface authority drops to $0.22$, preventing artificial high-alpha turns without kinetic energy.
-- **G-Induced Kinetic Bleed:** Hard banked turns increase induced drag quadratically with G-load, penalizing prolonged high-G maneuvering.
-- **Terrain Masking Raycast:** 3D line-of-sight checks interpolate between ground SAM radars and the aircraft against the procedural canyon elevation map. Flying in canyons cuts radar lock, updating RWR states from `TRACK`/`LAUNCH` to `STATUS: TERRAIN MASKED`.
+### Macro — Flight Deck Logistics
 
----
+A deterministic tick-based queuing simulation. Crews with stamina work an
+aircraft through a state machine; fatigue slows turnaround by up to 60%, so
+sustained high-tempo operations degrade your ability to launch. A threat
+director advances strike packages along a timeline toward the carrier.
 
-## 3. Pure Linear Algebra 3D Vector Projection Pipeline
+### Micro — 3D Vector Tactical Sortie
 
-### Step 1: Camera Transformation
-For world coordinates $\mathbf{P}_w$ and camera position $\mathbf{C}$:
-$$\Delta\mathbf{P} = \mathbf{P}_w - \mathbf{C}$$
+A fixed-timestep 6-DOF flight simulation. Energy management is the core skill:
+lift costs induced drag, induced drag scales super-linearly with G, so every
+hard turn is paid for in airspeed.
 
-Rotate by inverted camera angles around $Y$ (Yaw $\psi$), $X$ (Pitch $\theta$), and $Z$ (Roll $\phi$):
-$$\begin{aligned}
-x_1 &= \Delta x \cos(-\psi) + \Delta z \sin(-\psi) \\
-z_1 &= \Delta z \cos(-\psi) - \Delta x \sin(-\psi) \\
-y_2 &= \Delta y \cos(-\theta) - z_1 \sin(-\theta) \\
-z_2 &= z_1 \cos(-\theta) + \Delta y \sin(-\theta) \\
-x_3 &= x_1 \cos(-\phi) - y_2 \sin(-\phi) \\
-y_3 &= x_1 \sin(-\phi) + y_2 \cos(-\phi)
-\end{aligned}$$
+### The coupling
 
-### Step 2: Near-Plane Line Clipping
-To avoid visual blow-outs when lines cross behind the camera ($z \le 0$), all line segments $(\mathbf{A}, \mathbf{B})$ spanning across $z_{near} = 2.0\text{ m}$ are dynamically clipped:
-$$t = \frac{z_{near} - z_A}{z_B - z_A}, \quad \mathbf{A}' = \mathbf{A} + t(\mathbf{B} - \mathbf{A})$$
+This is what makes it a game rather than two demos:
 
-### Step 3: Perspective Divide
-Screen projection with focal length $f$:
-$$x_{screen} = \frac{x_3 \cdot f}{z_2} + x_0, \quad y_{screen} = -\frac{y_3 \cdot f}{z_2} + y_0$$
+- Ordnance and fuel you load are **deducted from finite carrier stocks**
+- Packages you fail to intercept **damage the deck you launch from**
+- Lost airframes are **permanently gone**; at zero hull integrity the mission ends
+- Time spent managing the deck is time the threat timeline keeps advancing
 
----
+## 3. Rendering Pipeline
 
-## 4. Procedural Audio Synthesis (Web Audio API)
-To preserve the 1980s aesthetic, no pre-recorded audio samples are used:
-1. **Engine Whine:** Sawtooth oscillator through a low-pass filter modulated by throttle ($70\text{ Hz} \to 210\text{ Hz}$).
-2. **Afterburner Roar:** Procedural white noise buffer passed through a band-pass filter ($400\text{ Hz}$, $Q=1.0$), engaged when throttle $> 1.0$.
-3. **RWR Tones:** 
-   - `SEARCH`: Pulsed $750\text{ Hz}$ tone.
-   - `TRACK`: Rapid $1200\text{ Hz}$ ping.
-   - `LAUNCH`: Warbling $1600\text{ Hz} / 1100\text{ Hz}$ dual-tone klaxon.
-4. **Weapons & Explosions:** Exponential frequency-ramping oscillators and noise shaping.
+### Pure linear algebra projection
+
+World point → translate by `−camPos` → apply `−yaw`, `−pitch`, `−roll` → clip
+against `z = 2.0 m` → perspective divide `x' = x·f/z + x₀`. Every mesh, terrain
+line, weapon tracer and HUD reticle flows through this same path, which is why
+the HUD can be made to overlay the world exactly.
+
+### The two-layer composite
+
+Phosphor persistence is the defining property of a vector CRT, and it works by
+*not* clearing the frame. Applied naively to the visible canvas it destroys HUD
+legibility, because text redraws in place while its older copies decay beneath it.
+
+The resolution is a layered pipeline:
+
+```
+worldLayer (offscreen, persistent)   ← 3D vectors; decays each frame
+     │ downscale ¼ → threshold → blur
+bloomLayer (offscreen, ¼ size)
+     ↓
+visible canvas (hard-cleared each frame)
+     ← drawImage(world) → 'lighter' drawImage(bloom) → HUD drawn crisp on top
+```
+
+Two non-obvious details make this work:
+
+1. **Decay must be frame-rate independent.** `α = 1 − e^(−Δt/τ)`. A constant
+   per-frame alpha gives 2.4× longer trails at 144 Hz than at 60 Hz.
+2. **The decay target must be strictly darker than the background.** Decaying
+   toward `#051008` never converges under 8-bit channel rounding — a channel at
+   6 rounds back to 6 forever — leaving permanent burn-in everywhere the beam
+   has been. Decaying toward `#030a04` is strictly decreasing and reaches the floor.
+
+### Bloom without shaders
+
+No WebGL, so the threshold is done arithmetically: a `multiply` self-composite
+squares every channel (`v → v²/255`), collapsing the dark background to black
+while saturated phosphor survives. The ¼-scale downscale provides the first blur
+pass for free via the browser's bilinear filtering.
+
+## 4. Simulation Method
+
+### Fixed timestep
+
+The render loop feeds wall-clock elapsed time into an accumulator which reports
+how many 120 Hz substeps to run, carrying the remainder forward. Excess beyond 8
+substeps is **discarded rather than queued** — otherwise a backgrounded tab
+produces a frame that tries to simulate hundreds of steps, which takes longer
+than a frame, which grows the backlog further: the classic spiral of death.
+
+120 Hz rather than 60 Hz because the aerodynamics use explicit Euler
+integration, whose error is proportional to step size. Halving `dt` halves the
+error on the stiff lift/drag coupling essentially for free.
+
+Control input is applied **inside** the fixed tick, not from a separate timer,
+so control authority is exactly time-consistent across machines.
+
+### Collision correctness
+
+Fast objects require swept tests. A SAM at 480 m/s advances ~48 m per tick
+against a 40 m fuze radius, so an end-of-tick distance check tunnels straight
+through the target. The fuze instead finds the closest point on the travel
+segment:
+
+```
+t* = clamp( ((P − A)·(B − A)) / |B − A|², 0, 1 )
+```
+
+### Determinism where it matters
+
+Procedural waves use a seeded `mulberry32` PRNG rather than `Math.random()`, so
+a campaign is reproducible and the escalation curve is directly unit-testable.
+Terrain is analytic rather than noise-based for the same reason — and because a
+random heightfield could produce a canyon that breaks the terrain-masking mechanic.
+
+## 5. Responsive Layout as a Solved Problem
+
+The deck screen was originally absolute-positioned and clipped below 1250 px.
+Rather than tuning coordinates, layout is now a **pure function**:
+
+```
+computeDeckLayout(specs, { width, height }) → { panels: Record<string, Rect>, ... }
+```
+
+Panels declare a minimum width and row count; the solver picks a column count by
+breakpoint, packs flow panels into the shortest column (ties to the leftmost, for
+determinism), pins banners to the top and the log to the bottom, and compresses
+row height under vertical pressure.
+
+Because it is pure geometry with no canvas involvement, the properties that
+actually matter are directly assertable: **no panel escapes the viewport and no
+two panels overlap**, verified across 28 viewport size combinations.
+
+## 6. Onboarding Design
+
+### Progressive disclosure
+
+1. **CRT warm-up** — establishes the aesthetic before any demand on the player
+2. **Mission briefing** — situation, objective and controls over an orbiting carrier
+3. **Guided cold start** — begins on the deck, so the dual-loop structure is learned by doing
+4. **Training sequence** — six steps, each advancing only once demonstrated
+5. **Contextual coach** — thereafter, only speaks when something needs attention
+
+### The coach is a priority-ranked rule list
+
+Many conditions can be true simultaneously — stalled *and* low on fuel *and*
+under missile attack. The player can only act on one, so rules are evaluated
+most-lethal-first and exactly one cue is surfaced.
+
+Encoding this as a pure ordered list makes priority conflicts *testable*
+assertions rather than emergent behaviour discovered in flight. That caught a
+real bug: an early rule nagged "LOW AIRSPEED — ADVANCE THROTTLE" during landing
+approaches, where flying slow is precisely correct.
+
+## 7. Testing Method
+
+Canvas rendering cannot be asserted in a node environment, so the method is to
+**extract the decidable core**:
+
+| Extracted pure function | What it makes testable |
+| --- | --- |
+| `computeDeckLayout` | Clipping and overlap, at any viewport size |
+| `VectorRenderer.depthFade` | Monotonic depth falloff |
+| `PostProcess.decayAlpha` | Frame-rate independence of persistence |
+| `ScoreKeeper.gradeTrap` | Wire grading boundaries |
+| `BriefingScreen.warmupEnvelope` | Boot animation phases |
+| `getContextualHint` | Coach priority policy |
+| `generateWave` / `mulberry32` | Determinism and escalation monotonicity |
+
+What remains — the wiring between subsystems — is covered by an integration
+smoke test that stands up the real `GameLoop` against a stubbed Canvas2D context
+and drives every phase, view and transition. That class of test is what catches
+the highest-frequency defect in a project like this: not bad maths, but a
+subsystem that was never actually connected.
+
+## 8. Procedural Audio
+
+All sound is synthesized at runtime from oscillators and noise buffers; there
+are no audio assets. The engine is a sawtooth swept 70→210 Hz through a lowpass
+whose cutoff tracks throttle; the afterburner adds a bandpassed white-noise
+loop. RWR states map to distinct pulse rates so threat escalation is audible
+without looking at the scope — which matters, because the correct response to a
+launch warning is to look *outside* at the terrain.

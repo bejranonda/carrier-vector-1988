@@ -1,22 +1,35 @@
 /**
  * CARRIER VECTOR: 1988 - The Bridge Loop (Core Simulation Coordinator)
+ *
  * Integrates:
- * - Macro Carrier Deck Logistics
- * - 3D Vector Flight Simulation
- * - Tactical Radar LOS & RWR
- * - Dynamic Threats & Weapon Combat
- * - Procedural Web Audio Engine
+ * - Macro carrier deck logistics and the procedural threat director
+ * - 3D vector flight simulation on a FIXED timestep
+ * - Tactical radar LOS, RWR and lethal SAM engagements
+ * - Enemy aircraft behaviour and weapon combat
+ * - CRT phosphor post-processing
+ * - Onboarding: boot sequence, briefing, contextual coach, help overlay
  */
 
 import { AircraftPhysics } from '../flight/AircraftPhysics';
-import type { Vector3 } from '../flight/AircraftPhysics';
+import type { Vector3, AircraftLoadout } from '../flight/AircraftPhysics';
 import { VectorRenderer, WireframeModels } from '../renderer/VectorRenderer';
 import { HUD } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 import { DeckManager } from '../carrier/DeckManager';
+import type { InboundStrikePackage } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
 import { soundFX } from '../audio/SoundFX';
+import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
+import { ScoreKeeper } from './ScoreKeeper';
+import { getContextualHint, TrainingSequence } from './Tutorial';
+import type { Hint } from './Tutorial';
+import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
+import { PostProcess } from '../renderer/PostProcess';
+import { DeckView } from '../renderer/DeckView';
+import { BriefingScreen } from '../renderer/BriefingScreen';
+
+export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
 
 export class GameLoop {
     public canvas: HTMLCanvasElement;
@@ -30,6 +43,13 @@ export class GameLoop {
     public sensors: SensorTacticsManager;
     public deck: DeckManager;
     public weapons: WeaponsSystem;
+    public score: ScoreKeeper;
+    public training: TrainingSequence;
+
+    // Presentation
+    private post: PostProcess;
+    private deckView: DeckView;
+    private briefing: BriefingScreen;
 
     // 3D Static World Meshes
     private carrierMesh = WireframeModels.createCarrier();
@@ -37,19 +57,29 @@ export class GameLoop {
     private bomberMesh = WireframeModels.createBomber();
     private samMesh = WireframeModels.createSAMLauncher();
 
-    // View State
-    public currentView: 'MICRO_FLIGHT' | 'MACRO_DECK' = 'MICRO_FLIGHT';
+    // View & phase state
+    public currentView: 'MICRO_FLIGHT' | 'MACRO_DECK' = 'MACRO_DECK';
     public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' = 'GUN';
+    public phase: GamePhase = 'BOOT';
+    public helpVisible = false;
+
+    /** Raw key state, written by the input layer in main.ts. */
+    public inputState: Record<string, boolean> = {};
 
     // Combat Entities
     public airborneTargets: AirborneTarget[] = [];
 
-    // Catapult launch sequence animation
-    public isCatapultLaunching: boolean = false;
-    public catapultProgress: number = 0; // 0 to 1
+    // Catapult animation (progress derived from DeckManager's single clock)
+    public isCatapultLaunching = false;
+    public catapultProgress = 0;
 
-    private lastTimestamp: number = 0;
-    private audioStarted: boolean = false;
+    private lastTimestamp = 0;
+    private audioStarted = false;
+    private timestep = new FixedTimestepAccumulator();
+    private elapsedSeconds = 0;
+    private bootTimer = 0;
+    private lastSpawnedWave = 0;
+    private currentHint: Hint | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -57,19 +87,95 @@ export class GameLoop {
         if (!ctx) throw new Error('Could not get 2D canvas context');
         this.ctx = ctx;
 
-        this.renderer = new VectorRenderer(canvas);
+        // The 3D world renders into an offscreen buffer so it can carry
+        // phosphor persistence without smearing the HUD (which is drawn
+        // directly to the visible canvas after compositing).
+        this.post = new PostProcess(canvas.width || 1, canvas.height || 1);
+        this.renderer = new VectorRenderer(this.post.worldTarget);
+
         this.hud = new HUD(canvas.width, canvas.height);
         this.terrain = new TacticalTerrain();
         this.sensors = new SensorTacticsManager(this.terrain);
         this.deck = new DeckManager();
         this.weapons = new WeaponsSystem();
         this.physics = new AircraftPhysics();
+        this.score = new ScoreKeeper();
+        this.training = new TrainingSequence();
+        this.deckView = new DeckView();
+        this.briefing = new BriefingScreen();
 
-        this.spawnInitialSortie();
+        this.spawnEnemyThreats();
     }
 
-    public spawnInitialSortie() {
-        // Start airborne on sortie over the canyon
+    // -----------------------------------------------------------------
+    // Sortie lifecycle
+    // -----------------------------------------------------------------
+
+    /**
+     * Build airborne contacts from the current strike timeline. Replaces the
+     * old hardcoded three-aircraft literal, which also meant STRIKE-3 never
+     * had any aircraft and so could never be intercepted.
+     */
+    private buildTargetsFromTimeline(timeline: InboundStrikePackage[]): AirborneTarget[] {
+        const targets: AirborneTarget[] = [];
+        for (const pkg of timeline) {
+            if (pkg.isIntercepted || pkg.hasAttacked) continue;
+
+            const bearingRad = pkg.bearingDeg * (Math.PI / 180);
+            const spawnZ = 6500 + Math.min(6000, pkg.etaSeconds * 12);
+            // Keep contacts inside the canyon corridor so they don't spawn
+            // buried inside a mountain; bearing still drives lateral offset.
+            const lateralX = Math.sin(bearingRad) * 900;
+            const alt = pkg.aircraftType === 'Tu-22' ? 1100 + Math.random() * 200 : 600 + Math.random() * 200;
+            const speed = pkg.aircraftType === 'Tu-22' ? 200 + Math.random() * 20 : 170 + Math.random() * 30;
+
+            for (let i = 0; i < pkg.count; i++) {
+                targets.push({
+                    id: `${pkg.id}-${i}`,
+                    name: pkg.aircraftType === 'Tu-22' ? 'Tu-22M BACKFIRE' : `MiG-23 FLOGGER #${i + 1}`,
+                    position: {
+                        x: lateralX + (i - (pkg.count - 1) / 2) * 350,
+                        y: alt,
+                        z: spawnZ + i * 250
+                    },
+                    velocity: { x: (Math.random() - 0.5) * 20, y: 0, z: -speed },
+                    isAlive: true
+                });
+            }
+        }
+        return targets;
+    }
+
+    private spawnEnemyThreats() {
+        this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
+        this.lastSpawnedWave = this.deck.waveNumber;
+    }
+
+    /**
+     * Configure the aircraft for a sortie with the player's PLANNED fuel and
+     * loadout. Critically this does NOT force aircraftState - the deck state
+     * machine owns that, so the catapult sequence can actually run.
+     */
+    public beginSortie(fuel: number, loadout: AircraftLoadout) {
+        this.physics.repair();
+        this.physics.fuel = fuel;
+        this.physics.loadout = { ...loadout };
+        this.selectedWeapon = 'GUN';
+    }
+
+    /** Seed the end-of-catapult-stroke flight state. */
+    private seedCatapultExit() {
+        this.physics.position = { x: 5, y: 22.5, z: 140 };
+        this.physics.velocity = { x: 0, y: 0, z: 160 };
+        this.physics.pitch = 0.14;
+        this.physics.roll = 0;
+        this.physics.yaw = 0;
+        this.physics.throttle = 1.5;
+    }
+
+    /** Quick-start for returning players: skip the deck and start airborne. */
+    public hotStartAirborne() {
+        this.physics.repair();
         this.physics.position = { x: 0, y: 750, z: 1200 };
         this.physics.velocity = { x: 0, y: 0, z: 230 };
         this.physics.pitch = 0;
@@ -78,39 +184,48 @@ export class GameLoop {
         this.physics.throttle = 0.7;
         this.physics.fuel = 4500;
         this.deck.aircraftState = 'AIRBORNE';
-
-        this.spawnEnemyThreats();
+        this.currentView = 'MICRO_FLIGHT';
+        this.training.skip();
     }
 
-    private spawnEnemyThreats() {
-        this.airborneTargets = [
-            {
-                id: 'MIG-23-A',
-                name: 'MiG-23 FLOGGER #1',
-                position: { x: -400, y: 650, z: 7500 },
-                velocity: { x: 20, y: 0, z: -180 },
-                isAlive: true
-            },
-            {
-                id: 'MIG-23-B',
-                name: 'MiG-23 FLOGGER #2',
-                position: { x: 300, y: 700, z: 7800 },
-                velocity: { x: -15, y: 0, z: -180 },
-                isAlive: true
-            },
-            {
-                id: 'TU-22-BACKFIRE',
-                name: 'Tu-22M BACKFIRE',
-                position: { x: 0, y: 1200, z: 11000 },
-                velocity: { x: 0, y: 0, z: -210 },
-                isAlive: true
-            }
-        ];
+    /**
+     * Request a catapult launch. Applies the player's planned payload, which
+     * previously was discarded because the old code called a reset routine
+     * that hardcoded fuel to 4500 and force-set state to AIRBORNE.
+     */
+    public requestCatapultLaunch(): boolean {
+        if (this.deck.aircraftState !== 'CATAPULT_READY') return false;
+        if (!this.deck.triggerCatapultLaunch()) return false;
+
+        this.beginSortie(this.deck.plannedFuel, this.deck.plannedLoadout);
+        this.isCatapultLaunching = true;
+        this.catapultProgress = 0;
+        this.currentView = 'MICRO_FLIGHT';
+        soundFX.playCatapultLaunch();
+        return true;
     }
+
+    /** Issue a fresh airframe after a loss. */
+    private replaceAirframe(reason: string) {
+        this.score.recordAirframeLost();
+        this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
+        this.deck.log(reason);
+        this.physics.repair();
+        this.physics.velocity = { x: 0, y: 0, z: 0 };
+        this.physics.throttle = 0;
+        this.deck.aircraftState = 'HANGAR_MAINTENANCE';
+        this.deck.currentTaskProgress = 0;
+        this.currentView = 'MACRO_DECK';
+    }
+
+    // -----------------------------------------------------------------
+    // Frame lifecycle
+    // -----------------------------------------------------------------
 
     public resize(width: number, height: number) {
         this.canvas.width = width;
         this.canvas.height = height;
+        this.post.resize(width, height);
         this.renderer.resize(width, height);
         this.hud.resize(width, height);
     }
@@ -126,145 +241,323 @@ export class GameLoop {
         }
     }
 
+    public get paused(): boolean {
+        return this.phase !== 'ACTIVE' || this.helpVisible;
+    }
+
     private step(timestamp: number) {
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
-        let dt = (timestamp - this.lastTimestamp) / 1000;
+        const elapsed = (timestamp - this.lastTimestamp) / 1000;
         this.lastTimestamp = timestamp;
+        this.elapsedSeconds += Math.min(0.1, Math.max(0, elapsed));
 
-        if (dt > 0.1) dt = 0.1; // clamp delta
+        if (this.phase === 'BOOT') {
+            this.bootTimer += elapsed;
+            if (this.bootTimer >= BriefingScreen.WARMUP_DURATION) {
+                this.phase = 'BRIEFING';
+            }
+        }
 
-        this.update(dt);
-        this.draw();
+        if (this.paused) {
+            // Don't bank up simulation time while a menu is open, or the sim
+            // would lurch forward the instant it resumes.
+            this.timestep.reset();
+        } else {
+            const steps = this.timestep.consume(elapsed);
+            for (let i = 0; i < steps; i++) {
+                this.fixedUpdate(FIXED_DT);
+            }
+        }
 
+        this.draw(elapsed);
         requestAnimationFrame(this.step.bind(this));
     }
 
-    private update(dt: number) {
-        // 1. Always tick the macro carrier logistics engine
-        this.deck.update(dt);
+    /**
+     * Apply continuous flight-control input. Runs inside the fixed update so
+     * control authority is exactly time-consistent. Previously this lived in
+     * a separate setInterval(16ms) with a hardcoded dt=0.016, which drifted
+     * from real elapsed time and decoupled controls from the render loop.
+     */
+    private applyFlightInput(dt: number) {
+        if (this.currentView !== 'MICRO_FLIGHT') return;
+        if (this.deck.aircraftState !== 'AIRBORNE') return;
+        const k = this.inputState;
 
-        // 2. Handle Catapult launch sequence if active
-        if (this.deck.aircraftState === 'CATAPULT_LAUNCHING') {
+        let pitching = false;
+        let rolling = false;
+
+        if (k['w'] || k['arrowup']) { this.physics.applyPitchInput(1.0, dt); pitching = true; }
+        if (k['s'] || k['arrowdown']) { this.physics.applyPitchInput(-1.0, dt); pitching = true; }
+        if (k['a'] || k['arrowleft']) { this.physics.applyRollInput(-1.0, dt); rolling = true; }
+        if (k['d'] || k['arrowright']) { this.physics.applyRollInput(1.0, dt); rolling = true; }
+        if (k['q']) this.physics.applyYawInput(-1.0, dt);
+        if (k['e']) this.physics.applyYawInput(1.0, dt);
+
+        if (k['shift']) {
+            this.physics.throttle = Math.min(1.5, this.physics.throttle + 0.5 * dt);
+            this.training.progress.throttleChanged = true;
+        }
+        if (k['control']) {
+            this.physics.throttle = Math.max(0.0, this.physics.throttle - 0.5 * dt);
+            this.training.progress.throttleChanged = true;
+        }
+
+        if (pitching) this.training.progress.pitchInputSeconds += dt;
+        if (rolling) this.training.progress.rollInputSeconds += dt;
+
+        // Held-trigger cannon fire
+        if (k[' '] && this.selectedWeapon === 'GUN') {
+            this.weapons.fireGun(this.physics);
+            this.training.progress.gunFired = true;
+        }
+    }
+
+    private fixedUpdate(dt: number) {
+        this.applyFlightInput(dt);
+
+        // Catapult: derive the animation from DeckManager's single clock, and
+        // detect the completion EDGE. The old code kept a second independent
+        // timer and checked completion AFTER deck.update() had already
+        // flipped the state to AIRBORNE, so the branch never ran.
+        const wasLaunching = this.deck.aircraftState === 'CATAPULT_LAUNCHING';
+        if (wasLaunching) {
             this.isCatapultLaunching = true;
-            this.catapultProgress += dt / 2.5;
+            this.catapultProgress = Math.min(1, this.deck.catapultTimer / DeckManager.CATAPULT_STROKE_SEC);
 
-            // Accelerate along catapult track on the carrier deck
             const trackStartZ = -30;
             const trackEndZ = 140;
-            const curZ = trackStartZ + (trackEndZ - trackStartZ) * (this.catapultProgress ** 1.8);
-
-            this.physics.position = { x: 5, y: 22.5, z: curZ };
+            this.physics.position = {
+                x: 5,
+                y: 22.5,
+                z: trackStartZ + (trackEndZ - trackStartZ) * (this.catapultProgress ** 1.8)
+            };
             this.physics.velocity = { x: 0, y: 0, z: 40 + this.catapultProgress * 120 };
             this.physics.pitch = 0.05;
             this.physics.roll = 0;
             this.physics.yaw = 0;
-            this.physics.throttle = 1.5; // Full afterburner for cat shot
-
-            if (this.catapultProgress >= 1.0) {
-                this.isCatapultLaunching = false;
-                this.catapultProgress = 0;
-                this.currentView = 'MICRO_FLIGHT'; // Jump into cockpit
-                soundFX.playCatapultLaunch();
-            }
+            this.physics.throttle = 1.5;
         }
 
-        // 3. Flight Sortie update
+        this.deck.update(dt);
+
+        if (wasLaunching && this.deck.aircraftState === 'AIRBORNE') {
+            this.isCatapultLaunching = false;
+            this.catapultProgress = 0;
+            this.seedCatapultExit();
+            this.currentView = 'MICRO_FLIGHT';
+        }
+
+        // Spawn contacts when the threat director escalates to a new wave.
+        if (this.deck.waveNumber !== this.lastSpawnedWave) {
+            this.score.recordWaveSurvived();
+            this.spawnEnemyThreats();
+        }
+
+        if (this.deck.missionState === 'FAILED') {
+            this.phase = 'DEBRIEF';
+            return;
+        }
+
         if (this.deck.aircraftState === 'AIRBORNE') {
-            this.physics.update(dt);
-
-            // Audio update
-            soundFX.updateEngine(this.physics.throttle, true);
-
-            // Update Tactical Sensors & RWR
-            this.sensors.update(dt, this.physics);
-            soundFX.setRWRState(this.sensors.masterRwrState);
-
-            // Update Weapons & Combat
-            this.weapons.update(
-                dt,
-                this.terrain,
-                this.airborneTargets,
-                this.sensors.samSites,
-                (destroyedTarget) => {
-                    this.deck.log(`COMBAT REPORT: ${destroyedTarget.name} DESTROYED.`);
-                    // Check if all threats in strike package are dead
-                    const livingMiGs = this.airborneTargets.filter(t => t.isAlive && t.id.startsWith('MIG'));
-                    if (livingMiGs.length === 0) {
-                        this.deck.markStrikeIntercepted('STRIKE-1');
-                    }
-                    if (destroyedTarget.id === 'TU-22-BACKFIRE') {
-                        this.deck.markStrikeIntercepted('STRIKE-2');
-                    }
-                },
-                (destroyedSAM) => {
-                    this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED BY MK.82.`);
-                }
-            );
-
-            // Update AI airborne targets
-            for (const t of this.airborneTargets) {
-                if (!t.isAlive) continue;
-                t.position.x += t.velocity.x * dt;
-                t.position.y += t.velocity.y * dt;
-                t.position.z += t.velocity.z * dt;
-            }
-
-            // Terrain collision check (CFIT - Controlled Flight Into Terrain)
-            const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
-            if (this.physics.position.y <= groundElevation + 2) {
-                // Ground crash!
-                this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
-                this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
-                this.deck.log('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
-                this.physics.position.y = groundElevation + 2;
-                this.physics.velocity = { x: 0, y: 0, z: 0 };
-                this.physics.throttle = 0;
-                this.deck.aircraftState = 'HANGAR_MAINTENANCE';
-                this.deck.currentTaskProgress = 0;
-                this.currentView = 'MACRO_DECK';
-            }
-
-            // Carrier Recovery Check (Arresting gear trap at CV-68 near z=0, x=0)
-            const distToCarrier = Math.hypot(this.physics.position.x, this.physics.position.z);
-            if (distToCarrier < 180 && this.physics.position.y >= 18 && this.physics.position.y <= 28) {
-                if (this.physics.airSpeed < 90) { // Landing speed
-                    this.deck.processTrapRecovery(this.physics.fuel, false);
-                    this.currentView = 'MACRO_DECK';
-                }
-            }
+            this.updateSortie(dt);
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
         }
+
+        this.training.update();
+        this.currentHint = this.buildHint();
     }
 
-    private draw() {
-        this.renderer.clear();
+    private updateSortie(dt: number) {
+        this.physics.update(dt);
+        soundFX.updateEngine(this.physics.throttle, true);
 
-        if (this.currentView === 'MICRO_FLIGHT') {
-            this.drawCockpitSim();
-        } else {
-            this.drawMacroDeck();
+        // Sensors, RWR and SAM engagements
+        this.sensors.update(dt, this.physics);
+        soundFX.setRWRState(this.sensors.masterRwrState);
+
+        if (this.sensors.masterRwrState === 'SILENT' && this.physics.position.y < 400) {
+            this.training.progress.hasBeenMasked = true;
+        }
+
+        // SAM missile impacts now actually hurt - previously missiles flew
+        // straight through the player with no collision check at all.
+        for (const impact of this.sensors.missileImpacts) {
+            this.physics.applyDamage(impact.damage);
+            this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
+            this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
+        }
+
+        // Enemy aircraft behaviour (also integrates their positions)
+        updateEnemyAI(dt, this.airborneTargets, this.physics, (enemy) => {
+            // Simplified hit-scan cannon burst: the alignment/range gate in
+            // EnemyAI has already established a valid guns solution.
+            const dmg = 4 + Math.random() * 6;
+            this.physics.applyDamage(dmg);
+            this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
+            soundFX.playGunShot();
+        });
+
+        // Player weapons
+        this.weapons.update(
+            dt,
+            this.terrain,
+            this.airborneTargets,
+            this.sensors.samSites,
+            (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
+            (destroyedSAM) => {
+                this.score.recordKill('SAM');
+                this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
+            }
+        );
+
+        // Aircraft destroyed by accumulated battle damage
+        if (this.physics.damage >= 100) {
+            this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
+            this.replaceAirframe('MAYDAY: AIRCRAFT DESTROYED BY ENEMY FIRE!');
+            return;
+        }
+
+        // Controlled Flight Into Terrain
+        const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        if (this.physics.position.y <= groundElevation + 2) {
+            this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
+            this.physics.position.y = groundElevation + 2;
+            this.replaceAirframe('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
+            return;
+        }
+
+        // Carrier recovery (arresting gear trap)
+        const distToCarrier = Math.hypot(this.physics.position.x, this.physics.position.z);
+        if (distToCarrier < 190 && this.physics.position.y >= 17 && this.physics.position.y <= 30) {
+            if (this.physics.airSpeed < 95) {
+                const grade = ScoreKeeper.gradeTrap(this.physics.position.z);
+                this.score.recordTrap(grade);
+                const isDamaged = this.physics.damage > 25;
+                this.deck.processTrapRecovery(this.physics.fuel, isDamaged);
+                this.deck.log(
+                    grade === 'BOLTER'
+                        ? 'BOLTER! MISSED THE WIRES.'
+                        : `TRAP GRADE: ${grade}-WIRE.`
+                );
+                this.currentView = 'MACRO_DECK';
+            }
         }
     }
 
-    private drawCockpitSim() {
+    private onTargetDestroyed(destroyedTarget: AirborneTarget) {
+        this.deck.log(`COMBAT REPORT: ${destroyedTarget.name} DESTROYED.`);
+        this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
+
+        // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
+        const pkgId = destroyedTarget.id.replace(/-\d+$/, '');
+        const anyLeft = this.airborneTargets.some(
+            t => t.isAlive && t.id.replace(/-\d+$/, '') === pkgId
+        );
+        if (!anyLeft) {
+            this.deck.markStrikeIntercepted(pkgId);
+        }
+    }
+
+    private buildHint(): Hint | null {
+        const trainingStep = this.training.currentStep;
+        if (trainingStep && this.deck.aircraftState === 'AIRBORNE') {
+            return { text: trainingStep.prompt, severity: 'INFO' };
+        }
+
+        if (this.deck.aircraftState !== 'AIRBORNE') {
+            if (this.deck.aircraftState === 'CATAPULT_READY') {
+                return { text: 'READY ON CAT 1 - PRESS [ENTER] TO LAUNCH', severity: 'INFO' };
+            }
+            return null;
+        }
+
+        const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        return getContextualHint({
+            isStalled: this.physics.isStalled,
+            rwrState: this.sensors.masterRwrState,
+            altitudeAgl: this.physics.position.y - groundElevation,
+            verticalSpeed: this.physics.velocity.y,
+            fuel: this.physics.fuel,
+            airSpeed: this.physics.airSpeed,
+            damage: this.physics.damage,
+            distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
+            isAirborne: true,
+            bayOpen: this.physics.bayOpen
+        });
+    }
+
+    // -----------------------------------------------------------------
+    // Rendering
+    // -----------------------------------------------------------------
+
+    private draw(frameDt: number) {
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+
+        this.ctx.clearRect(0, 0, w, h);
+        this.ctx.fillStyle = '#051008';
+        this.ctx.fillRect(0, 0, w, h);
+
+        if (this.phase === 'BOOT') {
+            this.briefing.drawWarmUp(this.ctx, this.bootTimer, w, h);
+            return;
+        }
+
+        if (this.phase === 'BRIEFING') {
+            // Wireframe backdrop into the offscreen world layer (with a gentle
+            // phosphor trail), composite it, then the crisp text overlay.
+            this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), 0.12);
+            this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds);
+            this.post.composite(this.ctx);
+            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds);
+            if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
+            return;
+        }
+
+        if (this.phase === 'DEBRIEF') {
+            this.briefing.drawDebrief(this.ctx, w, h, this.score, this.deck.waveNumber);
+            return;
+        }
+
+        if (this.currentView === 'MICRO_FLIGHT') {
+            this.drawCockpitSim(frameDt);
+        } else {
+            this.post.hardClear();
+            this.deckView.draw(this.ctx, this.deck, this.score, this.currentHint, w, h, this.elapsedSeconds);
+        }
+
+        if (this.helpVisible) {
+            this.briefing.drawHelp(
+                this.ctx,
+                w,
+                h,
+                this.currentView === 'MICRO_FLIGHT' ? 'FLIGHT' : 'DECK'
+            );
+        }
+    }
+
+    private drawCockpitSim(frameDt: number) {
         const camPos = this.physics.position;
         const camPitch = this.physics.pitch;
         const camYaw = this.physics.yaw;
         const camRoll = this.physics.roll;
 
-        // 1. Render Aircraft Carrier in the ocean at origin
-        this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll);
+        // Phosphor decay instead of a hard clear: old strokes fade out over
+        // ~60ms leaving authentic vector-CRT trails. This happens on the
+        // OFFSCREEN world layer only, so HUD text stays crisp.
+        this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)));
 
-        // 2. Render Procedural Wireframe Canyon Terrain
+        this.drawHorizonAndSea(camPos, camPitch, camYaw, camRoll);
+
+        this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll);
         this.terrain.render(this.renderer, camPos, camPitch, camYaw, camRoll);
 
-        // 3. Render Ground SAM Sites
         for (const sam of this.sensors.samSites) {
             this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, '#ff4422');
 
-            // Render SAM missile in flight if active
             if (sam.missileActive && sam.missilePos && sam.missileVel) {
                 const tail: Vector3 = {
                     x: sam.missilePos.x - (sam.missileVel.x / 480) * 8,
@@ -275,164 +568,104 @@ export class GameLoop {
             }
         }
 
-        // 4. Render Airborne Targets (MiG-23s, Tu-22)
         for (const target of this.airborneTargets) {
             if (!target.isAlive) continue;
-            const mesh = target.id.startsWith('MIG') ? this.mig23Mesh : this.bomberMesh;
-            const targetYaw = Math.atan2(target.velocity.x, target.velocity.z);
-            this.renderer.renderMesh(mesh, target.position, targetYaw, camPos, camPitch, camYaw, camRoll);
+            const mesh = isBomber(target) ? this.bomberMesh : this.mig23Mesh;
+            this.renderer.renderMesh(
+                mesh,
+                target.position,
+                target.yaw ?? Math.atan2(target.velocity.x, target.velocity.z),
+                camPos, camPitch, camYaw, camRoll,
+                undefined,
+                target.pitch ?? 0,
+                target.roll ?? 0
+            );
         }
 
-        // 5. Render Weapons (Tracers, Sidewinder missiles, Bombs, Explosions)
         this.weapons.render(this.renderer, camPos, camPitch, camYaw, camRoll);
 
-        // 6. Cockpit HUD Overlay
+        // Composite world + bloom to the visible canvas, THEN draw the HUD
+        // crisply on top so persistence never smears the symbology.
+        this.post.composite(this.ctx);
+
         this.hud.draw(
             this.ctx,
             this.physics,
             this.sensors,
             this.airborneTargets,
             this.selectedWeapon,
-            this.renderer
+            this.renderer,
+            this.currentHint,
+            this.score
         );
     }
 
-    private drawMacroDeck() {
-        const ctx = this.ctx;
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-
-        ctx.save();
-        ctx.fillStyle = '#00ff66';
-        ctx.strokeStyle = '#00ff66';
-        ctx.shadowColor = '#00ff66';
-        ctx.shadowBlur = 4;
-        ctx.font = '14px monospace';
-
-        // Title Header
-        ctx.font = 'bold 20px monospace';
-        ctx.fillText('CV-68 USS NIMITZ // TACTICAL FLIGHT DECK LOGISTICS', 40, 45);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(40, 55);
-        ctx.lineTo(w - 40, 55);
-        ctx.stroke();
-
-        // 1. Carrier Status Panel (Left)
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText('STRIKE GROUP STATUS', 50, 90);
-        ctx.font = '13px monospace';
-        ctx.fillText(`HULL INTEGRITY:    ${this.deck.inventory.carrierHealth}%`, 50, 115);
-        ctx.fillText(`SPARE AIRFRAMES:   ${this.deck.inventory.spareAirframes} F/A-18C`, 50, 135);
-        ctx.fillText(`JP-5 AVIATION FUEL:${this.deck.inventory.fuelLiters.toLocaleString()} L`, 50, 155);
-        ctx.fillText(`20MM VULCAN AMMO:  ${this.deck.inventory.vulcanRounds.toLocaleString()} RDS`, 50, 175);
-        ctx.fillText(`AIM-9L SIDEWINDERS:${this.deck.inventory.sidewinders} UNITS`, 50, 195);
-        ctx.fillText(`MK.82 500LB BOMBS: ${this.deck.inventory.ironBombs} UNITS`, 50, 215);
-
-        // 2. Flight Deck Aircraft State Machine (Center)
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText('AIRCRAFT TURNAROUND QUEUE', 420, 90);
-
-        ctx.strokeRect(420, 105, 340, 125);
-        ctx.font = 'bold 16px monospace';
-        ctx.fillText(`STATE: ${this.deck.aircraftState}`, 440, 135);
-
-        // Task progress bar
-        ctx.font = '12px monospace';
-        ctx.fillText(`TASK PROGRESS: ${Math.floor(this.deck.currentTaskProgress)}%`, 440, 165);
-        ctx.strokeRect(440, 175, 300, 18);
-        ctx.fillRect(442, 177, (296 * this.deck.currentTaskProgress) / 100, 14);
-
-        if (this.deck.aircraftState === 'CATAPULT_READY') {
-            ctx.fillStyle = '#ffff33';
-            ctx.shadowColor = '#ffff33';
-            ctx.font = 'bold 15px monospace';
-            ctx.fillText('READY ON CAT NO.1 -> PRESS [ENTER] TO LAUNCH', 430, 255);
-            ctx.fillStyle = '#00ff66';
-            ctx.shadowColor = '#00ff66';
-        }
-
-        // 3. Deck Crew Stamina Meters
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText('DECK CREW WORKFORCE & STAMINA', 50, 260);
-        let crewY = 285;
-        for (const crew of this.deck.crews) {
-            ctx.font = '13px monospace';
-            ctx.fillText(`${crew.name} (${crew.role}):`, 50, crewY);
-
-            // Stamina bar
-            ctx.strokeRect(260, crewY - 12, 120, 14);
-            ctx.fillRect(262, crewY - 10, (116 * crew.stamina) / 100, 10);
-            ctx.fillText(`${Math.floor(crew.stamina)}%`, 390, crewY);
-            crewY += 25;
-        }
-
-        // 4. Dynamic Threat Timeline (Right)
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText('MACRO RADAR EARLY WARNING TIMELINE', 800, 90);
-
-        let threatY = 120;
-        for (const pkg of this.deck.strikeTimeline) {
-            ctx.strokeRect(800, threatY - 16, w - 840, 52);
-            if (pkg.isIntercepted) {
-                ctx.fillStyle = '#008833';
-                ctx.fillText(`[SPLASHED] ${pkg.description}`, 815, threatY + 4);
-                ctx.fillText(`STATUS: INTERCEPTED & NEUTRALIZED`, 815, threatY + 24);
-                ctx.fillStyle = '#00ff66';
-            } else if (pkg.hasAttacked) {
-                ctx.fillStyle = '#ff2222';
-                ctx.fillText(`[HOSTILE HIT] ${pkg.description}`, 815, threatY + 4);
-                ctx.fillText(`PENETRATED DEFENSE - STRUCK FLIGHT DECK!`, 815, threatY + 24);
-                ctx.fillStyle = '#00ff66';
-            } else {
-                const isUrgent = pkg.etaSeconds <= 120;
-                if (isUrgent) {
-                    ctx.fillStyle = '#ff3333';
-                    ctx.shadowColor = '#ff3333';
-                }
-                ctx.fillText(`${pkg.description} (BRG ${pkg.bearingDeg}°)` , 815, threatY + 4);
-                ctx.fillText(`ETA: ${Math.max(0, Math.floor(pkg.etaSeconds))} SECONDS`, 815, threatY + 24);
-                ctx.fillStyle = '#00ff66';
-                ctx.shadowColor = '#00ff66';
+    /**
+     * Horizon ring and scrolling sea lattice. Without these the cockpit is a
+     * black void with no motion cue over water and no orientation reference.
+     * Drawn through the same projection as everything else, so the HUD pitch
+     * ladder (now fov-derived) lands exactly on this horizon.
+     */
+    private drawHorizonAndSea(camPos: Vector3, camPitch: number, camYaw: number, camRoll: number) {
+        const R = 60000;
+        const segments = 36;
+        let prev: Vector3 | null = null;
+        for (let i = 0; i <= segments; i++) {
+            const a = (i / segments) * Math.PI * 2;
+            const p: Vector3 = { x: camPos.x + Math.sin(a) * R, y: 0, z: camPos.z + Math.cos(a) * R };
+            if (prev) {
+                this.renderer.drawLine(prev, p, camPos, camPitch, camYaw, camRoll, '#1d8a2c', 1.6);
             }
-            threatY += 65;
+            prev = p;
         }
 
-        // 5. Scramble Alert Klaxon Banner
-        if (this.deck.scrambleAlert) {
-            ctx.font = 'bold 24px monospace';
-            ctx.fillStyle = '#ff1111';
-            ctx.shadowColor = '#ff1111';
-            if (Math.floor(Date.now() / 250) % 2 === 0) {
-                ctx.fillText('>>> GENERAL QUARTERS: SCRAMBLE ALERT <<<', 420, 295);
+        // Sea lattice: snapped to a 500m grid so it scrolls past as you fly.
+        const grid = 500;
+        const span = 6000;
+        const baseX = Math.floor(camPos.x / grid) * grid;
+        const baseZ = Math.floor(camPos.z / grid) * grid;
+        for (let gx = baseX - span; gx <= baseX + span; gx += grid) {
+            for (let gz = baseZ - span; gz <= baseZ + span; gz += grid) {
+                if (this.terrain.getElevation(gx, gz) > 5) continue;
+                const a: Vector3 = { x: gx, y: 0, z: gz };
+                const b: Vector3 = { x: gx + grid, y: 0, z: gz };
+                const c: Vector3 = { x: gx, y: 0, z: gz + grid };
+                this.renderer.drawLine(a, b, camPos, camPitch, camYaw, camRoll, '#00632a', 1.0);
+                this.renderer.drawLine(a, c, camPos, camPitch, camYaw, camRoll, '#00632a', 1.0);
             }
-            ctx.fillStyle = '#00ff66';
-            ctx.shadowColor = '#00ff66';
         }
+    }
 
-        // 6. Sortie Payload Allocation Controls
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText('NEXT SORTIE PAYLOAD ALLOCATION', 420, 335);
-        ctx.font = '13px monospace';
-        ctx.fillText(`[1/2] FUEL: ${this.deck.plannedFuel} L`, 420, 360);
-        ctx.fillText(`[3]   AIM-9 SIDEWINDERS: ${this.deck.plannedLoadout.sidewinders} / 6`, 420, 380);
-        ctx.fillText(`[4]   MK.82 IRON BOMBS:  ${this.deck.plannedLoadout.ironBombs} / 4`, 420, 400);
+    // -----------------------------------------------------------------
+    // Phase transitions driven by the input layer
+    // -----------------------------------------------------------------
 
-        // 7. Tactical Comm Log (Bottom)
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText('TACTICAL LOG & TELEMETRY STREAM', 50, 440);
-        ctx.strokeRect(50, 450, w - 100, 130);
-        ctx.font = '12px monospace';
-        let logY = 472;
-        for (const entry of this.deck.alertLog) {
-            ctx.fillText(entry, 65, logY);
-            logY += 15;
+    public confirmBriefing() {
+        if (this.phase === 'BRIEFING') {
+            this.phase = 'ACTIVE';
+            this.currentView = 'MACRO_DECK';
+            this.post.hardClear();
         }
+    }
 
-        // Bottom instruction bar
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText('[TAB] Toggle Flight/Deck View | [ENTER] Launch Catapult | [1-4] Modify Payload | [SPACE] Combat Fire', 50, h - 25);
+    public restartFromDebrief() {
+        this.deck = new DeckManager();
+        this.sensors = new SensorTacticsManager(this.terrain);
+        this.weapons = new WeaponsSystem();
+        this.physics = new AircraftPhysics();
+        this.score = new ScoreKeeper();
+        this.training = new TrainingSequence();
+        this.lastSpawnedWave = 0;
+        this.spawnEnemyThreats();
+        this.phase = 'BRIEFING';
+        this.currentView = 'MACRO_DECK';
+        this.post.hardClear();
+    }
 
-        ctx.restore();
+    public cyclePostQuality() {
+        this.post.quality = this.post.quality === 'HIGH' ? 'LOW'
+            : this.post.quality === 'LOW' ? 'OFF'
+                : 'HIGH';
+        this.deck.log(`CRT POST-PROCESSING: ${this.post.quality}`);
     }
 }
