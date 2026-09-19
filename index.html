@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the canvas reach under a notch; the safe-area
+         probe below tells the layout solver where the usable screen actually
+         is. Zoom is disabled because a pinch during a dogfight is not a
+         gesture anyone intended. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <title>Carrier Vector: 1988 — Retro CRT Vector Flight Simulator &amp; Carrier Deck Strategy Game</title>
 
@@ -46,8 +53,11 @@
         id="gameCanvas"
         tabindex="0"
         role="application"
-        aria-label="Carrier Vector 1988 — keyboard-driven vector flight simulator. Press H for the full control reference."
+        aria-label="Carrier Vector 1988 — vector flight simulator. Press H for the full control reference, or tap the menu button on a touchscreen."
       ></canvas>
+      <!-- Zero-size probe whose padding resolves the safe-area insets, which
+           JavaScript cannot read from env() any other way. -->
+      <div id="safe-area-probe" aria-hidden="true"></div>
     </div>
 
     <!-- Crawler/agent-readable summary. Hidden visually; the game itself is canvas-rendered. -->

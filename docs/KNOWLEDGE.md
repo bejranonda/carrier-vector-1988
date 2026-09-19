@@ -542,6 +542,61 @@ Measured in Chromium with the simulation paused and the beds set by hand
 (peak amplitude at the output): engine 0.15, cannon 0.15, kill confirm 0.28,
 RWR launch 0.38, wire catch 0.39.
 
+## 7i. Touch mode
+
+`core/Platform.ts` decides the scheme:
+
+```
+touchCapable  = navigator.maxTouchPoints > 0
+fingerPrimary = (pointer: coarse) AND NOT (hover: hover)
+TOUCH         = touchCapable AND fingerPrimary AND max(w, h) <= 1180
+```
+
+The hover test is what separates a phone from a touchscreen laptop, and the
+long-edge bound is what separates a phone or tablet from a kiosk. A stored
+preference (`AUTO` / `TOUCH` / `KEYBOARD`) overrides all of it.
+
+`renderer/TouchLayout.ts` places the controls. One scale drives everything:
+
+```
+scale = clamp(min(safeW / 780, safeH / 390), 0.72, 1)
+```
+
+so a 640 px phone shrinks the set rather than rearranging it. Controls are
+anchored to the bottom corners inside the safe area, at least 44 px across,
+and none may enter the centre keepout (150 px x scale each side), which
+belongs to the pitch ladder, the flight path marker and the designation
+bracket.
+
+Stick deflection is relative to first contact, which is what makes a virtual
+stick usable:
+
+```
+pitch = clamp(-(y - originY) / r)      roll = clamp((x - originX) / r)
+throttle = clamp(1 - (y - trackY) / trackH) x 1.5
+```
+
+Each pointer is bound to the control it touched down on for the life of the
+gesture: re-binding mid-gesture is how a stick silently becomes a throttle in
+the middle of a turn.
+
+### What touch mode sheds, and why
+
+`solveHudLayout` and `computeDeckLayout` both take a reserve. The side blocks
+do **not** reserve the thumb columns horizontally - the controls occupy the
+bottom of those columns, so lifting the instrument centre clear of the band is
+what is needed, and reserving the full column width drove the pitch ladder to
+its 24 px hard floor on a 568 px phone.
+
+| Shed | Threshold | Why it is safe |
+| --- | --- | --- |
+| Keyboard cheat strips, keycaps | always in touch | Advice a player cannot take |
+| Flight checklist | always in touch | Needs a keyboard to tick against |
+| Compass tape | height < 420 | Bearing is on the objective line and the designation bracket |
+| RWR scope | height < 460 | The launch banner, the spatialised launch audio and the threat drone all still fire |
+| Briefing phase cards, loss line | touch or height < 430 | The mission list and the button are what you press |
+| Deck panels beyond orders and turnaround | always in touch | Crew stamina and the deck plan do not fit beside a button big enough to press |
+
 ## 8. Scoring
 
 | Event | Points |

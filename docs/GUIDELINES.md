@@ -168,6 +168,19 @@ Rules:
   map it is. A new map is a new `TerrainProfile` plus the invariants in
   `TerrainProfiles.test.ts` — do not add one without making those pass, because
   a map that cannot mask a radar breaks a core mechanic silently.
+- **Touch mode is a way in, not a second game.** `Platform`, `TouchLayout`
+  and `TouchInput` produce the same `PilotInput` and call the same public
+  methods the keyboard does. If a feature needs a parallel implementation for
+  touch, the feature is wrong, not the input.
+- **A control a thumb cannot hit does not exist.** 44 px minimum, anchored in
+  the bottom corners, inside the safe-area insets, never over the centre
+  symbology - and every one of those is asserted in `TouchLayout.test.ts`
+  across seven handsets. Add a control, extend the matrix.
+- **A layout solver must know what else is on the screen.** The HUD and deck
+  solvers take a reserve for the thumb controls; without it the instruments
+  were drawn straight through the stick and the fire button. When space runs
+  out, shed by priority rather than clipping, and say in a comment what
+  carries the shed information instead.
 - **Presentation may never reach the simulation.** Camera shake is added to
   the camera angles in `drawCockpitSim()` and nowhere else; the flash, the
   callouts and the hit marker read state and never write it. The whole test

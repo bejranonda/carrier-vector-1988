@@ -68,7 +68,8 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['tab'], display: 'TAB', label: 'Toggle cockpit / flight deck view', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' }
 ];
 
 /** All bindings valid in a given context, including GLOBAL ones. */

@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 487 headless Vitest tests
+npm run test     # 573 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -159,6 +159,32 @@ it: the Sidewinder guides on *that* contact instead of whichever one it liked,
 and the autopilot flies the intercept. If it is off the glass, a chevron on the
 boresight ring tells you which way to turn.
 
+## Playing on a phone
+
+Open it on a handset and it hands you thumbs instead of a keyboard. There is
+no separate mobile build and no cut-down game: the flight model, the assist
+laws, the weapons and the missions are the same ones the keyboard drives.
+
+What makes that possible is that two earlier features already existed —
+**AUTOPILOT** flies the aeroplane, and **designation** chooses the target — so
+a phone player is a weapons officer rather than a pilot short of eight fingers.
+
+| Control | What it does |
+| --- | --- |
+| Left thumb | Virtual stick. It centres wherever your thumb lands, not on a fixed circle you have to find. |
+| Far left track | Throttle, afterburner included. |
+| **Tap a contact** | Designates it. Pointing at the thing you want is the natural gesture; the `TGT` button still cycles anything off the glass. |
+| `FIRE` | Releases the armed weapon, or holds the trigger on the cannon. |
+| Weapon pills | Gun / AIM-9 / Mk.82, with rounds remaining. |
+| ☰ | Pause and the full control reference. |
+
+A phone starts on `AUTOPILOT` with the cheapest display mode unless you have
+already chosen otherwise, and asks you to turn the device if you are holding it
+upright — the cockpit needs a landscape screen to hold its instruments.
+
+Detection is a heuristic, so press `K` to cycle `AUTO` / `TOUCH` / `KEYBOARD`
+if it guesses wrong. Desktop players get tap-to-designate with the mouse too.
+
 ### The Daily Sortie
 
 Press `D` on the briefing. It is the endless carrier defence, seeded from
@@ -236,6 +262,7 @@ exceeding the mode you picked.
 | `Y` | Release the designation |
 | `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
+| `K` | Cycle controls — `AUTO` / `TOUCH` / `KEYBOARD` |
 
 ### Flight Deck
 
@@ -324,6 +351,19 @@ exceeding the mode you picked.
 - **Procedurally escalating strike waves** from a seeded PRNG after the scripted opening act
 - Graded arrested recoveries (1–4 wire, or a bolter) feeding a score and rank ladder
 
+### Mobile
+- **Touch mode built on the autopilot and designation**, not a separate game:
+  same flight model, same missions, reached with two thumbs
+- **A virtual stick that centres where your thumb lands**, with each pointer
+  bound to the control it touched down on for the life of the gesture
+- **Tap a contact to designate it** — on any device, mouse included
+- **A third pure layout solver** for thumb placement, tested for overlap,
+  reachability and a clear centre across seven handsets
+- **The instruments know the controls exist**: the HUD and deck solvers take a
+  reserve and shed what will not fit rather than drawing over a button
+- Safe-area insets, landscape prompt, audio unlock on first touch, and no
+  scroll, zoom or rubber-band
+
 ### Feel
 - **Camera shake** on a trauma model — squared amplitude, so a cannon round and
   a missile strike read as different events — applied to the camera only, never
@@ -391,6 +431,8 @@ src/
 │   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
 │   ├── DailySortie.ts     # Date-seeded run, result merge, share card (pure)
 │   ├── Pacing.ts          # ARCADE / SIM deck timings and threat scaling (pure)
+│   ├── Platform.ts        # Control-scheme detection and override (pure)
+│   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
 │   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
@@ -409,6 +451,8 @@ src/
 │   ├── VectorRenderer.ts  # 3D pipeline: camera transform, near-plane clip, projection
 │   ├── PostProcess.ts     # Phosphor persistence + bloom compositor
 │   ├── CameraShake.ts     # Trauma model for cockpit shake (pure, view-only)
+│   ├── TouchLayout.ts     # Pure thumb-control placement and hit-testing
+│   ├── TouchControls.ts   # Thumb-control chrome and the rotate prompt
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
 │   ├── DisplayMode.ts     # CLEAN / MODERN / RETRO ladder (canvas + CSS effects)
 │   ├── HudLayout.ts       # Pure cockpit instrument placement solver
@@ -471,7 +515,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**487 headless tests** across 28 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**573 headless tests** across 32 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor

@@ -191,12 +191,13 @@ scope shrinks.
 systems readout. The thresholds live in `HUD_METRICS` in
 `src/renderer/HudLayout.ts`.
 
-## 18. Mouse input is menu-only **[By design]**
+## 18. Pointer input is menus, designation and touch mode
 
-Clicking advances the briefing and the debrief and closes the help overlay.
-Flying, the deck and the payload are keyboard-only. **Consequence:** the game is
-not playable on a touch device. A pointer-driven flight model is a different
-game, not a port.
+Clicking advances the briefing and the debrief, closes the help overlay, and
+designates whatever is under the cursor. On a touchscreen the full thumb layout
+takes over (see the README). What a mouse still cannot do is fly: there is no
+mouse-as-joystick mode, because a pointer-driven flight model is a different
+game rather than a port.
 
 ## 19. The autopilot flies a bearing, not a route
 
@@ -261,3 +262,37 @@ inside 18 m, so a fighter takes about four hits and a bomber about nine.
 memory from an earlier build is wrong. The AIM-9 still kills outright. The
 numbers are `WeaponsSystem.GUN_DAMAGE` and `GUN_HIT_RADIUS`, with the
 bomber multiplier in `toughnessFactor()`.
+
+
+## 24. Landing on a phone is hard **[By design, but noted]**
+
+The autopilot deliberately hands the aeroplane back on final, and the trap
+envelope is unchanged: under 90 m/s, 18-30 m, within 190 m of the boat, flown
+on a virtual stick.
+
+**Consequence:** a touch player can fly, fight and designate comfortably, and
+will find the trap considerably harder than a keyboard player does. That is the
+honest trade. Flying the trap for them would remove the best thing in the game;
+an assisted approach mode that flies the glideslope and hands over at short
+final is the fix worth building, and is not built yet.
+
+## 25. Touch mode is landscape only
+
+`needsRotation()` shows a prompt instead of the cockpit when a touch device is
+held upright. At phone-portrait width the instrument solver has nowhere to put
+the airspeed and altitude blocks and the pitch ladder collapses to its minimum.
+
+**Consequence:** the game cannot be played one-handed in portrait. A portrait
+layout would be a different instrument arrangement rather than a narrower one,
+and is not attempted.
+
+## 26. Device detection is a heuristic
+
+`detectScheme()` reads `maxTouchPoints`, `(pointer: coarse)`, `(hover: hover)`
+and the viewport's long edge. It will be wrong for somebody — a detachable in
+tablet mode, an unusual browser, a desktop with a touch monitor.
+
+**Consequence:** the first thing such a player sees may be the wrong layout.
+`K` cycles `AUTO` / `TOUCH` / `KEYBOARD` and the choice is stored, which is the
+mitigation rather than a cure; there is no on-screen affordance for it in touch
+mode, only in the control reference.

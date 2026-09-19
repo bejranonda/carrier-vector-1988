@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUD_METRICS, solveHudLayout } from './HudLayout';
+import { HUD_METRICS, NO_RESERVE, solveHudLayout } from './HudLayout';
 import type { HudLayout } from './HudLayout';
 
 const WIDTHS = [800, 900, 1024, 1100, 1150, 1280, 1440, 1600, 1920, 2560];
@@ -133,5 +133,82 @@ describe('solveHudLayout', () => {
         expect(l.symHalf).toBeGreaterThan(0);
         expect(l.speedX).toBeGreaterThan(0);
         expect(Number.isFinite(l.altX)).toBe(true);
+    });
+});
+
+describe('touch-mode instrument placement', () => {
+    /** A phone-sized reserve: thumb columns left and right, a band at the bottom. */
+    const reserve = { left: 150, right: 140, bottom: 120, top: 0 };
+
+    const PHONES: [number, number][] = [[568, 320], [658, 320], [750, 340], [844, 390], [1024, 768]];
+
+    /**
+     * The thumb controls occupy the bottom of their columns, so what the side
+     * blocks have to clear is the band, not the column. Both blocks are drawn
+     * from `cy - 34` and are 68 tall.
+     */
+    it('lifts the airspeed and altitude blocks above the thumb band', () => {
+        for (const [width, height] of PHONES) {
+            const layout = solveHudLayout({
+                width, height, showApproach: false, hasChecklist: false, reserve, touchMode: true
+            });
+            const blockBottom = layout.cy - 34 + 68;
+            expect(blockBottom, `${width}x${height}`).toBeLessThanOrEqual(height - reserve.bottom);
+        }
+    });
+
+    it('does not squeeze the ladder to nothing to make room for thumbs', () => {
+        // Reserving the thumb columns horizontally drove symHalf to its 24 px
+        // hard floor on a 568 px phone, which is not a pitch ladder.
+        for (const [width, height] of PHONES) {
+            const layout = solveHudLayout({
+                width, height, showApproach: false, hasChecklist: false, reserve, touchMode: true
+            });
+            expect(layout.symHalf, `${width}x${height}`).toBeGreaterThanOrEqual(HUD_METRICS.symHalfMin);
+        }
+    });
+
+    /**
+     * A checklist needs a keyboard to tick its steps off against, and there
+     * is no room for it beside two thumb columns anyway.
+     */
+    it('drops the flight checklist in touch mode, at any width', () => {
+        const layout = solveHudLayout({
+            width: 1400, height: 900, showApproach: false, hasChecklist: true, reserve, touchMode: true
+        });
+        expect(layout.showChecklist).toBe(false);
+    });
+
+    it('lifts the centre symbology out of the thumb band', () => {
+        const withReserve = solveHudLayout({
+            width: 750, height: 340, showApproach: false, hasChecklist: false, reserve, touchMode: true
+        });
+        const without = solveHudLayout({ width: 750, height: 340, showApproach: false, hasChecklist: false });
+        expect(withReserve.cy).toBeLessThan(without.cy);
+    });
+
+    it('shrinks the RWR scope rather than letting it run under the fire button', () => {
+        const touch = solveHudLayout({
+            width: 750, height: 340, showApproach: false, hasChecklist: false, reserve, touchMode: true
+        });
+        const desktop = solveHudLayout({ width: 750, height: 340, showApproach: false, hasChecklist: false });
+        expect(touch.rwrSize).toBeLessThan(desktop.rwrSize);
+    });
+
+    it('still leaves a readable pitch ladder on the smallest phone', () => {
+        const layout = solveHudLayout({
+            width: 568, height: 320, showApproach: false, hasChecklist: false, reserve, touchMode: true
+        });
+        expect(layout.symHalf).toBeGreaterThanOrEqual(HUD_METRICS.symHalfMin);
+        expect(layout.symScale).toBeGreaterThan(0.4);
+    });
+
+    it('changes nothing for a keyboard player', () => {
+        const a = solveHudLayout({ width: 1440, height: 900, showApproach: false, hasChecklist: true });
+        const b = solveHudLayout({
+            width: 1440, height: 900, showApproach: false, hasChecklist: true, reserve: NO_RESERVE
+        });
+        expect(a).toEqual(b);
+        expect(a.touchMode).toBe(false);
     });
 });

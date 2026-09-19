@@ -271,3 +271,46 @@ dependencies retained
   launch 0.38, wire catch 0.39
 - Debrief and daily card at 1440×900, 1024×700, 820×560 and 760×520, no
   console errors
+
+---
+
+## 10. Follow-up Pass — Mobile
+
+**Status:** Complete
+**Trigger:** "can we add a mobile phone player mode? Consider to integrate
+carefully and optimally."
+**Result:** 573 tests across 32 suites, `strict: true`, zero runtime
+dependencies retained
+
+### The approach
+
+Not a second implementation. `AUTOPILOT` (from §8c) flies the aeroplane and
+designation (§8d) picks the target, so the mobile game already existed and
+needed a way in rather than a rewrite. Touch input produces the same
+`PilotInput` the keyboard does and calls the same public methods.
+
+| Module | Role |
+| --- | --- |
+| `core/Platform.ts` | Scheme detection from touch points, pointer coarseness, hover and viewport; stored override |
+| `renderer/TouchLayout.ts` | Pure placement and hit-testing; overlap, reachability and centre-keepout tested across seven handsets |
+| `core/TouchInput.ts` | Pointer binding, relative stick origin, absolute throttle, tap queue |
+| `renderer/TouchControls.ts` | Chrome for the above, plus the landscape prompt |
+
+### What the work found
+
+| Finding | Evidence |
+| --- | --- |
+| `setPointerCapture` can throw, and it ran first | A throw inside `pointerdown` aborted the handler, so the stick and the weapon pills registered nothing at all. Registering the touch first, capture after in a try/catch, fixed it. |
+| The instruments knew nothing about the controls | At 568x320 the airspeed block, RWR scope, systems strip and both key bars drew straight through the stick and fire button. |
+| The first reserve model was wrong | Reserving the thumb columns horizontally drove the pitch ladder to its 24 px hard floor. The columns are only occupied at the bottom; lifting the instrument centre is what was needed. |
+| The deck solver can overflow | It grows panels to fill the content box and never drops an `essential` one, so a short screen overflows. The phone spec asks for row counts that fit. |
+| A one-row panel drew outside itself | The turnaround progress bar sat at a fixed `+46` from the panel top. Now clamped inside. |
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (573), `npm run build`
+- Emulated iPhone SE, iPhone 12, Galaxy S9+ and iPad Mini in Chromium:
+  scheme detection, mission pill taps, launch button, virtual stick (roll
+  0.000 -> 0.535 from a thumb drag), throttle track, weapon pills, fire, and
+  tap-to-designate end to end, with no console errors
+- Portrait orientation shows the rotate prompt and swallows input

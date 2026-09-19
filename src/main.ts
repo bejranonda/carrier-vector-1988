@@ -29,7 +29,28 @@ document.addEventListener('DOMContentLoaded', () => {
         dev.__sfx = soundFX;
     }
 
-    const handleResize = () => game.resize(window.innerWidth, window.innerHeight);
+    /**
+     * Safe-area insets, read from CSS environment variables through a probe
+     * element. A notch or a home indicator is not part of the usable screen,
+     * and a control drawn under one cannot be pressed.
+     */
+    const readInsets = () => {
+        const probe = document.getElementById('safe-area-probe');
+        if (!probe) return { top: 0, right: 0, bottom: 0, left: 0 };
+        const style = getComputedStyle(probe);
+        const px = (v: string) => Number.parseFloat(v) || 0;
+        return {
+            top: px(style.paddingTop),
+            right: px(style.paddingRight),
+            bottom: px(style.paddingBottom),
+            left: px(style.paddingLeft)
+        };
+    };
+
+    const handleResize = () => {
+        game.resize(window.innerWidth, window.innerHeight);
+        game.applyControlScheme(readInsets());
+    };
     window.addEventListener('resize', handleResize);
     handleResize();
 
@@ -38,9 +59,15 @@ document.addEventListener('DOMContentLoaded', () => {
         game.ensureAudio();
         window.removeEventListener('keydown', unlockAudio);
         window.removeEventListener('mousedown', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('pointerdown', unlockAudio);
     };
     window.addEventListener('keydown', unlockAudio);
     window.addEventListener('mousedown', unlockAudio);
+    // A phone never produces a keydown or a mousedown, so without these two
+    // the game is silent for its entire first session on a touchscreen.
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('pointerdown', unlockAudio);
 
     window.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
@@ -67,6 +94,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (key === 'o') {
             game.cyclePacing();
+            return;
+        }
+        if (key === 'k') {
+            game.cycleControlScheme();
             return;
         }
 
@@ -178,19 +209,79 @@ document.addEventListener('DOMContentLoaded', () => {
      * wired into the deck or the cockpit, where a stray click must never
      * fire a catapult.
      */
-    canvas.addEventListener('pointerdown', () => {
+    /** Pointer position in CSS pixels, which is what every layout uses. */
+    const pointAt = (e: PointerEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+        const { x, y } = pointAt(e);
+
         if (game.helpVisible) {
             game.helpVisible = false;
             return;
         }
-        if (game.phase === 'BRIEFING') game.confirmBriefing();
-        else if (game.phase === 'DEBRIEF') game.restartFromDebrief();
+        // The rotate prompt swallows input: there is nothing to press until
+        // the device is turned.
+        if (game.awaitingRotation) return;
+
+        if (game.handleMenuTap(x, y)) return;
+        if (game.phase !== 'ACTIVE') return;
+
+        if (game.controlScheme === 'TOUCH') {
+            e.preventDefault();
+            // Register the touch FIRST. Pointer capture is a nicety - it keeps
+            // a thumb that slides off the canvas reporting to us - but it
+            // throws for a pointer the browser no longer considers active,
+            // and a throw here would abort the handler and swallow the input
+            // entirely. That is exactly what it did: the stick and the weapon
+            // pills registered nothing at all.
+            game.touch.down(
+                { id: e.pointerId, x, y },
+                game.touchLayout,
+                game.currentView === 'MACRO_DECK' ? 'DECK' : 'FLIGHT'
+            );
+            try {
+                canvas.setPointerCapture?.(e.pointerId);
+            } catch {
+                // Without capture the pointerup may not reach us, so the
+                // window-level blur handler is the backstop.
+            }
+            return;
+        }
+
+        // Keyboard players still get click-to-designate, which costs nothing
+        // and is the obvious thing to try with a mouse in hand.
+        if (game.currentView === 'MICRO_FLIGHT') game.designateAtPoint(x, y);
     });
+
+    canvas.addEventListener('pointermove', (e) => {
+        if (game.controlScheme !== 'TOUCH') return;
+        const { x, y } = pointAt(e);
+        game.touch.move({ id: e.pointerId, x, y });
+    });
+
+    const releasePointer = (e: PointerEvent) => {
+        game.touch.up(e.pointerId);
+    };
+    canvas.addEventListener('pointerup', releasePointer);
+    canvas.addEventListener('pointercancel', releasePointer);
+    canvas.addEventListener('lostpointercapture', releasePointer);
+
+    // A phone browser will happily scroll, zoom or bounce the page out from
+    // under a game that does not say otherwise.
+    canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
 
     // Releasing focus must not leave keys stuck down mid-manoeuvre.
     window.addEventListener('blur', () => {
         game.inputState = {};
+        game.touch.clear();
     });
+    // An orientation change fires before the viewport settles on some
+    // browsers, so re-solve once it has.
+    window.addEventListener('orientationchange', () => setTimeout(handleResize, 120));
 
     game.start();
 });
