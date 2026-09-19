@@ -14,7 +14,8 @@ function makeFakeCanvas(width = 800, height = 600) {
     const ctx = {
         fillStyle: '', strokeStyle: '', lineWidth: 0, shadowColor: '', shadowBlur: 0,
         globalAlpha: 1, globalCompositeOperation: 'source-over',
-        fillRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn()
+        fillRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+        save: vi.fn(), restore: vi.fn(), setTransform: vi.fn()
     };
     const canvas = {
         width, height,
@@ -51,6 +52,81 @@ describe('VectorRenderer projection pipeline', () => {
         );
         const screen = renderer.projectCameraPoint(camPoint);
         expect(screen.x).toBeGreaterThan(400);
+    });
+
+    // REGRESSION: transformToCamera used to rotate by -pitch and -roll where
+    // the world->camera transform needs +pitch and +roll, so the cockpit view
+    // was mirrored about the horizon and about the vertical axis. Checking it
+    // against the aircraft's own orientation basis - the one AircraftPhysics
+    // uses for lift and thrust - is what makes that impossible to reintroduce.
+    it('agrees with the aircraft orientation basis for every axis', () => {
+        const { canvas } = makeFakeCanvas(800, 600);
+        const renderer = new VectorRenderer(canvas, 380);
+        const dot = (a: Vector3, b: Vector3) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+        const cases: [Vector3, Vector3, number, number, number][] = [
+            [{ x: 0, y: 0, z: 1000 }, { x: 0, y: 0, z: 0 }, 0.2, 0, 0],
+            [{ x: 0, y: 0, z: 1000 }, { x: 0, y: 0, z: 0 }, 0, 0.3, 0],
+            [{ x: 100, y: 50, z: 1000 }, { x: 0, y: 0, z: 0 }, 0, 0, 0.4],
+            [{ x: 120, y: -80, z: 900 }, { x: 10, y: 20, z: -5 }, 0.25, -0.4, 0.3],
+            [{ x: -40, y: 900, z: -600 }, { x: 5, y: 120, z: 30 }, -0.6, 2.1, -0.8]
+        ];
+
+        for (const [p, cam, pitch, yaw, roll] of cases) {
+            const { forward, up, right } = VectorRenderer.basisVectors(pitch, yaw, roll);
+            const d: Vector3 = { x: p.x - cam.x, y: p.y - cam.y, z: p.z - cam.z };
+            const actual = renderer.transformToCamera(p, cam, pitch, yaw, roll);
+
+            expect(actual.x).toBeCloseTo(dot(d, right), 6);
+            expect(actual.y).toBeCloseTo(dot(d, up), 6);
+            expect(actual.z).toBeCloseTo(dot(d, forward), 6);
+        }
+    });
+
+    it('drops the horizon BELOW screen centre when the nose is pitched up', () => {
+        const { canvas } = makeFakeCanvas(800, 600);
+        const renderer = new VectorRenderer(canvas, 380);
+
+        const pitch = 0.2;
+        // Level with the camera and dead ahead: the true horizon direction,
+        // with no depression angle from altitude to muddy the comparison.
+        const camPos = { x: 0, y: 1000, z: 0 };
+        const horizon = renderer.projectCameraPoint(
+            renderer.transformToCamera({ x: 0, y: 1000, z: 60000 }, camPos, pitch, 0, 0)
+        );
+
+        expect(horizon.y).toBeGreaterThan(300);
+        // And it must land where the HUD pitch ladder draws its 00 rung,
+        // which is fov * tan(pitch) below centre.
+        expect(horizon.y).toBeCloseTo(300 + renderer.fov * Math.tan(pitch), 0);
+    });
+
+    it('puts the flight path marker on the horizon rung in level flight', () => {
+        const { canvas } = makeFakeCanvas(800, 600);
+        const renderer = new VectorRenderer(canvas, 380);
+
+        // Level flight at 8 degrees angle of attack: the velocity vector is
+        // horizontal, so the FPM belongs exactly on the horizon.
+        const pitch = 8 * (Math.PI / 180);
+        const camPos = { x: 0, y: 1200, z: 0 };
+        const fpm = renderer.projectCameraPoint(
+            renderer.transformToCamera({ x: 0, y: 1200, z: 5000 }, camPos, pitch, 0, 0)
+        );
+        const ladderRung = 300 + renderer.fov * Math.tan(pitch);
+
+        expect(fpm.y).toBeCloseTo(ladderRung, 3);
+    });
+
+    it('rolls the world opposite to the aircraft roll input', () => {
+        const { canvas } = makeFakeCanvas(800, 600);
+        const renderer = new VectorRenderer(canvas, 380);
+
+        // Banking RIGHT must swing a point that was straight up over to the
+        // LEFT of the screen, not the right.
+        const above = renderer.projectCameraPoint(
+            renderer.transformToCamera({ x: 0, y: 500, z: 1000 }, { x: 0, y: 0, z: 0 }, 0, 0, 0.5)
+        );
+        expect(above.x).toBeLessThan(400);
     });
 
     it('inverts screen Y so a world point above camera projects above center', () => {

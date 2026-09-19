@@ -28,6 +28,16 @@ import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
 import { DeckView } from '../renderer/DeckView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
+import { THEME, WORLD } from '../renderer/Theme';
+import {
+    DEFAULT_DISPLAY_MODE,
+    applyDisplayModeToDocument,
+    displayModeSpec,
+    nextDisplayMode
+} from '../renderer/DisplayMode';
+import type { DisplayModeId } from '../renderer/DisplayMode';
+import { deckObjective, flightObjective } from './Objectives';
+import type { ObjectiveStep } from './Objectives';
 
 export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
 
@@ -73,13 +83,30 @@ export class GameLoop {
     public isCatapultLaunching = false;
     public catapultProgress = 0;
 
+    /** Display mode: one switch for persistence, bloom, scanlines, vignette. */
+    public displayMode: DisplayModeId = DEFAULT_DISPLAY_MODE;
+
+    /**
+     * Logical (CSS pixel) viewport. The canvas backing store is this times
+     * the device pixel ratio, with the 2D context pre-scaled - so every
+     * layout number in the game stays in CSS pixels while text and vectors
+     * render at native resolution. The old build pinned the backing store to
+     * CSS pixels and set `image-rendering: pixelated`, which is why HUD
+     * glyphs looked soft and ragged on any HiDPI screen.
+     */
+    public viewWidth = 1;
+    public viewHeight = 1;
+    /** Device pixel ratio the backing store is currently sized for. */
+    public dpr = 1;
+
     private lastTimestamp = 0;
     private audioStarted = false;
     private timestep = new FixedTimestepAccumulator();
     private elapsedSeconds = 0;
     private bootTimer = 0;
     private lastSpawnedWave = 0;
-    private currentHint: Hint | null = null;
+    /** Latest coach line. Public so the wiring can be asserted headlessly. */
+    public currentHint: Hint | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -90,10 +117,12 @@ export class GameLoop {
         // The 3D world renders into an offscreen buffer so it can carry
         // phosphor persistence without smearing the HUD (which is drawn
         // directly to the visible canvas after compositing).
-        this.post = new PostProcess(canvas.width || 1, canvas.height || 1);
+        this.viewWidth = canvas.width || 1;
+        this.viewHeight = canvas.height || 1;
+        this.post = new PostProcess(this.viewWidth, this.viewHeight);
         this.renderer = new VectorRenderer(this.post.worldTarget);
 
-        this.hud = new HUD(canvas.width, canvas.height);
+        this.hud = new HUD(this.viewWidth, this.viewHeight);
         this.terrain = new TacticalTerrain();
         this.sensors = new SensorTacticsManager(this.terrain);
         this.deck = new DeckManager();
@@ -104,7 +133,21 @@ export class GameLoop {
         this.deckView = new DeckView();
         this.briefing = new BriefingScreen();
 
+        this.applyDisplayMode();
         this.spawnEnemyThreats();
+    }
+
+    /** Push the current display mode into the renderer, post chain and CSS. */
+    private applyDisplayMode() {
+        const spec = displayModeSpec(this.displayMode);
+        this.post.bloomStrength = spec.bloom;
+        this.post.quality = spec.bloom === 0 ? 'OFF' : spec.bloom > 0.45 ? 'HIGH' : 'LOW';
+        this.renderer.glowBlur = spec.bloom === 0 ? 0 : 4;
+        applyDisplayModeToDocument(spec);
+    }
+
+    public get displayModeLabel(): string {
+        return displayModeSpec(this.displayMode).label;
     }
 
     // -----------------------------------------------------------------
@@ -223,11 +266,25 @@ export class GameLoop {
     // -----------------------------------------------------------------
 
     public resize(width: number, height: number) {
-        this.canvas.width = width;
-        this.canvas.height = height;
-        this.post.resize(width, height);
-        this.renderer.resize(width, height);
-        this.hud.resize(width, height);
+        const dpr = typeof window !== 'undefined' && window.devicePixelRatio
+            ? Math.min(2, Math.max(1, window.devicePixelRatio))
+            : 1;
+        this.dpr = dpr;
+        this.viewWidth = Math.max(1, Math.round(width));
+        this.viewHeight = Math.max(1, Math.round(height));
+
+        this.canvas.width = Math.round(this.viewWidth * dpr);
+        this.canvas.height = Math.round(this.viewHeight * dpr);
+        if (this.canvas.style) {
+            this.canvas.style.width = `${this.viewWidth}px`;
+            this.canvas.style.height = `${this.viewHeight}px`;
+        }
+        // Everything downstream draws in CSS pixels.
+        this.ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+
+        this.post.resize(this.viewWidth, this.viewHeight, dpr);
+        this.renderer.resize(this.viewWidth, this.viewHeight);
+        this.hud.resize(this.viewWidth, this.viewHeight);
     }
 
     public start() {
@@ -461,21 +518,48 @@ export class GameLoop {
         }
     }
 
-    private buildHint(): Hint | null {
-        const trainingStep = this.training.currentStep;
-        if (trainingStep && this.deck.aircraftState === 'AIRBORNE') {
-            return { text: trainingStep.prompt, severity: 'INFO' };
+    /** Phosphor decay constant for the active display mode. */
+    private get persistenceTau(): number {
+        return displayModeSpec(this.displayMode).persistenceTau;
+    }
+
+    /**
+     * The always-on "what should I be doing" line, derived from whichever
+     * loop the player is currently in.
+     */
+    public currentObjective(): ObjectiveStep {
+        const live = this.deck.strikeTimeline.filter(p => !p.isIntercepted && !p.hasAttacked);
+        const soonest = live.length ? Math.min(...live.map(p => p.etaSeconds)) : null;
+
+        if (this.currentView === 'MICRO_FLIGHT' && this.deck.aircraftState === 'AIRBORNE') {
+            return flightObjective({
+                liveInboundCount: live.length,
+                soonestEtaSeconds: soonest,
+                airborneContacts: this.airborneTargets.filter(t => t.isAlive).length,
+                fuel: this.physics.fuel,
+                damage: this.physics.damage,
+                distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
+                rwrState: this.sensors.masterRwrState
+            });
         }
 
-        if (this.deck.aircraftState !== 'AIRBORNE') {
-            if (this.deck.aircraftState === 'CATAPULT_READY') {
-                return { text: 'READY ON CAT 1 - PRESS [ENTER] TO LAUNCH', severity: 'INFO' };
-            }
-            return null;
-        }
+        return deckObjective({
+            aircraftState: this.deck.aircraftState,
+            taskProgressPct: this.deck.currentTaskProgress,
+            scrambleAlert: this.deck.scrambleAlert,
+            soonestEtaSeconds: soonest,
+            liveInboundCount: live.length,
+            spareAirframes: this.deck.inventory.spareAirframes
+        });
+    }
+
+    private buildHint(): Hint | null {
+        // The deck's "press ENTER" prompt now lives in the orders panel, so
+        // the ticker stays silent unless something actually needs attention.
+        if (this.deck.aircraftState !== 'AIRBORNE') return null;
 
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
-        return getContextualHint({
+        const contextual = getContextualHint({
             isStalled: this.physics.isStalled,
             rwrState: this.sensors.masterRwrState,
             altitudeAgl: this.physics.position.y - groundElevation,
@@ -487,6 +571,16 @@ export class GameLoop {
             isAirborne: true,
             bayOpen: this.physics.bayOpen
         });
+
+        // BUG THIS FIXES: the training prompt used to be returned FIRST and
+        // unconditionally, so a new pilot - exactly the player who needs them
+        // most - had stall, terrain and missile-launch warnings suppressed
+        // for the whole of their first sortie.
+        if (contextual) return contextual;
+
+        const trainingStep = this.training.currentStep;
+        if (trainingStep) return { text: trainingStep.prompt, severity: 'INFO' };
+        return null;
     }
 
     // -----------------------------------------------------------------
@@ -494,12 +588,18 @@ export class GameLoop {
     // -----------------------------------------------------------------
 
     private draw(frameDt: number) {
-        const w = this.canvas.width;
-        const h = this.canvas.height;
+        const w = this.viewWidth;
+        const h = this.viewHeight;
 
+        this.ctx.save();
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.globalAlpha = 1;
+        this.ctx.globalCompositeOperation = 'source-over';
         this.ctx.clearRect(0, 0, w, h);
-        this.ctx.fillStyle = '#051008';
+        this.ctx.fillStyle = THEME.ground;
         this.ctx.fillRect(0, 0, w, h);
+        this.ctx.restore();
 
         if (this.phase === 'BOOT') {
             this.briefing.drawWarmUp(this.ctx, this.bootTimer, w, h);
@@ -509,7 +609,7 @@ export class GameLoop {
         if (this.phase === 'BRIEFING') {
             // Wireframe backdrop into the offscreen world layer (with a gentle
             // phosphor trail), composite it, then the crisp text overlay.
-            this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), 0.12);
+            this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau * 1.8);
             this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds);
             this.post.composite(this.ctx);
             this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds);
@@ -526,7 +626,18 @@ export class GameLoop {
             this.drawCockpitSim(frameDt);
         } else {
             this.post.hardClear();
-            this.deckView.draw(this.ctx, this.deck, this.score, this.currentHint, w, h, this.elapsedSeconds);
+            this.deckView.draw(
+                this.ctx,
+                this.deck,
+                this.score,
+                {
+                    objective: this.currentObjective(),
+                    hint: this.currentHint,
+                    displayModeLabel: this.displayModeLabel,
+                    trainingLine: this.training.currentStep?.prompt ?? null
+                },
+                w, h, this.elapsedSeconds
+            );
         }
 
         if (this.helpVisible) {
@@ -548,15 +659,15 @@ export class GameLoop {
         // Phosphor decay instead of a hard clear: old strokes fade out over
         // ~60ms leaving authentic vector-CRT trails. This happens on the
         // OFFSCREEN world layer only, so HUD text stays crisp.
-        this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)));
+        this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau);
 
         this.drawHorizonAndSea(camPos, camPitch, camYaw, camRoll);
 
-        this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll);
+        this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll, WORLD.carrier);
         this.terrain.render(this.renderer, camPos, camPitch, camYaw, camRoll);
 
         for (const sam of this.sensors.samSites) {
-            this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, '#ff4422');
+            this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, WORLD.hostile);
 
             if (sam.missileActive && sam.missilePos && sam.missileVel) {
                 const tail: Vector3 = {
@@ -564,7 +675,7 @@ export class GameLoop {
                     y: sam.missilePos.y - (sam.missileVel.y / 480) * 8,
                     z: sam.missilePos.z - (sam.missileVel.z / 480) * 8
                 };
-                this.renderer.drawLine(tail, sam.missilePos, camPos, camPitch, camYaw, camRoll, '#ff1111', 2.8);
+                this.renderer.drawLine(tail, sam.missilePos, camPos, camPitch, camYaw, camRoll, WORLD.missile, 2.8);
             }
         }
 
@@ -595,8 +706,13 @@ export class GameLoop {
             this.airborneTargets,
             this.selectedWeapon,
             this.renderer,
-            this.currentHint,
-            this.score
+            {
+                hint: this.currentHint,
+                score: this.score,
+                objective: this.currentObjective(),
+                checklist: this.training.checklist(),
+                displayModeLabel: this.displayModeLabel
+            }
         );
     }
 
@@ -614,7 +730,7 @@ export class GameLoop {
             const a = (i / segments) * Math.PI * 2;
             const p: Vector3 = { x: camPos.x + Math.sin(a) * R, y: 0, z: camPos.z + Math.cos(a) * R };
             if (prev) {
-                this.renderer.drawLine(prev, p, camPos, camPitch, camYaw, camRoll, '#1d8a2c', 1.6);
+                this.renderer.drawLine(prev, p, camPos, camPitch, camYaw, camRoll, WORLD.horizon, 1.6);
             }
             prev = p;
         }
@@ -630,8 +746,8 @@ export class GameLoop {
                 const a: Vector3 = { x: gx, y: 0, z: gz };
                 const b: Vector3 = { x: gx + grid, y: 0, z: gz };
                 const c: Vector3 = { x: gx, y: 0, z: gz + grid };
-                this.renderer.drawLine(a, b, camPos, camPitch, camYaw, camRoll, '#00632a', 1.0);
-                this.renderer.drawLine(a, c, camPos, camPitch, camYaw, camRoll, '#00632a', 1.0);
+                this.renderer.drawLine(a, b, camPos, camPitch, camYaw, camRoll, WORLD.sea, 1.0);
+                this.renderer.drawLine(a, c, camPos, camPitch, camYaw, camRoll, WORLD.sea, 1.0);
             }
         }
     }
@@ -662,10 +778,17 @@ export class GameLoop {
         this.post.hardClear();
     }
 
-    public cyclePostQuality() {
-        this.post.quality = this.post.quality === 'HIGH' ? 'LOW'
-            : this.post.quality === 'LOW' ? 'OFF'
-                : 'HIGH';
-        this.deck.log(`CRT POST-PROCESSING: ${this.post.quality}`);
+    /**
+     * Cycle CLEAN -> MODERN -> RETRO. One key now controls every screen
+     * effect (vector trails, bloom, scanlines, vignette) instead of only the
+     * bloom pass, so a player who finds the texture hard to read has a
+     * single, discoverable way to turn it off.
+     */
+    public cycleDisplayMode() {
+        this.displayMode = nextDisplayMode(this.displayMode);
+        this.applyDisplayMode();
+        this.post.hardClear();
+        const spec = displayModeSpec(this.displayMode);
+        this.deck.log(`DISPLAY: ${spec.label} - ${spec.description}`);
     }
 }

@@ -1,9 +1,12 @@
 /**
  * CARRIER VECTOR: 1988 - Boot Sequence, Mission Briefing, Help & Debrief
  *
- * Onboarding rendering. Previously the game dropped the player straight
- * into a cockpit at 750m with zero explanation of the controls, the
- * objective, or even what the dual-loop structure was.
+ * The briefing is the game's only chance to explain itself, and the old one
+ * spent it on four bordered boxes of dense uppercase body copy in two
+ * colours of green - 24 lines the player had to read before anything told
+ * them what to press. It has been rebuilt as three numbered phase cards
+ * (deck -> intercept -> recover) with the controls shown as keycaps, a
+ * single one-line loss condition, and one unmistakable call to action.
  */
 
 import type { VectorRenderer } from './VectorRenderer';
@@ -11,11 +14,8 @@ import { WireframeModels } from './VectorRenderer';
 import type { ScoreKeeper } from '../core/ScoreKeeper';
 import { CONTROL_SCHEMA, bindingsFor } from '../core/Controls';
 import type { ControlContext } from '../core/Controls';
-
-const PHOSPHOR = '#00ff66';
-const DIM = '#00aa44';
-const CAUTION = '#ffff33';
-const ALERT = '#ff3333';
+import { THEME, WORLD, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
+import type { Rect } from './Theme';
 
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
@@ -49,7 +49,8 @@ export class BriefingScreen {
         const env = BriefingScreen.warmupEnvelope(t);
 
         ctx.save();
-        ctx.fillStyle = '#030a04';
+        noGlow(ctx);
+        ctx.fillStyle = THEME.ground;
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
@@ -57,45 +58,40 @@ export class BriefingScreen {
         const bandH = Math.max(2, env.lineH * h);
         const bandW = env.lineW * w;
 
-        // Raster band igniting
         const grad = ctx.createLinearGradient(0, cy - bandH / 2, 0, cy + bandH / 2);
-        grad.addColorStop(0, 'rgba(0,255,102,0)');
-        grad.addColorStop(0.5, `rgba(0,255,102,${0.10 + 0.35 * (1 - env.reveal)})`);
-        grad.addColorStop(1, 'rgba(0,255,102,0)');
+        grad.addColorStop(0, 'rgba(87,227,155,0)');
+        grad.addColorStop(0.5, `rgba(87,227,155,${0.08 + 0.3 * (1 - env.reveal)})`);
+        grad.addColorStop(1, 'rgba(87,227,155,0)');
         ctx.fillStyle = grad;
         ctx.fillRect(cx - bandW / 2, cy - bandH / 2, bandW, bandH);
 
-        // Bright scan hairline while the tube is still striking
         if (env.lineH < 1) {
-            ctx.strokeStyle = '#aaffcc';
-            ctx.shadowColor = PHOSPHOR;
-            ctx.shadowBlur = 12;
+            ctx.strokeStyle = '#d6fff0';
+            glow(ctx, THEME.phosphor, 12);
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(cx - bandW / 2, cy);
             ctx.lineTo(cx + bandW / 2, cy);
             ctx.stroke();
+            noGlow(ctx);
         }
 
-        // Rolling horizontal noise bar
         if (env.noise > 0.01) {
-            ctx.globalAlpha = env.noise * 0.25;
-            ctx.fillStyle = PHOSPHOR;
-            const barY = (t * 420) % h;
-            ctx.fillRect(0, barY, w, 3);
+            ctx.globalAlpha = env.noise * 0.2;
+            ctx.fillStyle = THEME.phosphor;
+            ctx.fillRect(0, (t * 420) % h, w, 3);
             ctx.globalAlpha = 1;
         }
 
         if (env.reveal > 0) {
             ctx.globalAlpha = env.reveal;
-            ctx.fillStyle = PHOSPHOR;
-            ctx.shadowColor = PHOSPHOR;
-            ctx.shadowBlur = 6;
-            ctx.font = 'bold 15px monospace';
             ctx.textAlign = 'center';
+            ctx.fillStyle = THEME.ink;
+            ctx.font = font(15, 700);
             ctx.fillText('CV-68 TACTICAL DISPLAY SYSTEM', cx, cy - 10);
-            ctx.font = '12px monospace';
-            ctx.fillText('PHOSPHOR RASTER ONLINE', cx, cy + 12);
+            ctx.font = font(12);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText('DISPLAY ONLINE', cx, cy + 12);
             ctx.textAlign = 'left';
             ctx.globalAlpha = 1;
         }
@@ -104,249 +100,322 @@ export class BriefingScreen {
     }
 
     /**
-     * Mission briefing. Explains the situation, the objective and the
-     * controls, over a slowly orbiting wireframe of the carrier reusing
-     * the existing 3D pipeline.
-     */
-    /**
      * Draw the orbiting carrier backdrop into the renderer's (offscreen)
      * world layer. Must be called BEFORE compositing; the text overlay is
      * drawn separately afterwards so it stays crisp.
      */
     public drawBriefingBackdrop(renderer: VectorRenderer, timeSec: number) {
+        // Orbit radius and pitch are chosen so the camera actually LOOKS AT
+        // the origin: the old values pointed 9 degrees down from a 95 m
+        // height at 330 m range, which parked the ship low and small in the
+        // lower third of the screen instead of filling the card gap.
         const orbitYaw = timeSec * 0.16;
+        const radius = 205;
+        const height = 66;
         const camPos = {
-            x: Math.sin(orbitYaw) * 330,
-            y: 95,
-            z: Math.cos(orbitYaw) * 330
+            x: Math.sin(orbitYaw) * radius,
+            y: height,
+            z: Math.cos(orbitYaw) * radius
         };
         renderer.renderMesh(
             this.carrierMesh,
-            { x: 0, y: 0, z: 0 },
+            // Sunk slightly so the ship sits in the gap between the phase
+            // cards and the call to action rather than on the text.
+            { x: 0, y: -34, z: 0 },
             0,
             camPos,
-            -0.16,
+            -Math.atan2(height, radius),
             orbitYaw + Math.PI,
-            0
+            0,
+            WORLD.carrier
         );
     }
 
-    public drawBriefing(
-        ctx: CanvasRenderingContext2D,
-        w: number,
-        h: number,
-        timeSec: number
-    ) {
+    public drawBriefing(ctx: CanvasRenderingContext2D, w: number, h: number, timeSec: number) {
         ctx.save();
+        noGlow(ctx);
 
-        // Dim the backdrop so text stays readable
-        ctx.fillStyle = 'rgba(3,10,4,0.55)';
+        // Dim the backdrop. A vertical gradient keeps the wireframe visible
+        // in the middle of the screen while guaranteeing contrast at the top
+        // and bottom, where all the copy lives.
+        const veil = ctx.createLinearGradient(0, 0, 0, h);
+        veil.addColorStop(0, 'rgba(7,13,17,0.94)');
+        veil.addColorStop(0.5, 'rgba(7,13,17,0.62)');
+        veil.addColorStop(1, 'rgba(7,13,17,0.94)');
+        ctx.fillStyle = veil;
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
+        const compact = h < 700 || w < 900;
+
+        // --- Masthead ---
         ctx.textAlign = 'center';
-        ctx.shadowColor = PHOSPHOR;
-        ctx.shadowBlur = 6;
+        ctx.fillStyle = THEME.ink;
+        ctx.font = font(compact ? 34 : 44, 700);
+        ctx.fillText('CARRIER VECTOR: 1988', cx, compact ? 62 : 84);
 
-        ctx.fillStyle = PHOSPHOR;
-        ctx.font = 'bold 42px monospace';
-        ctx.fillText('CARRIER VECTOR: 1988', cx, 96);
-
-        ctx.font = '14px monospace';
-        ctx.fillStyle = DIM;
-        ctx.shadowColor = DIM;
-        ctx.fillText('CV-68 USS NIMITZ  ·  NORWEGIAN SEA  ·  CARRIER STRIKE GROUP', cx, 122);
-
-        ctx.textAlign = 'left';
-        const colW = Math.min(420, (w - 140) / 2);
-        const leftX = cx - colW - 20;
-        const rightX = cx + 20;
-        let y = 180;
-
-        this.section(ctx, leftX, y, colW, 'SITUATION', [
-            'Soviet strike packages are inbound on your',
-            'carrier group. Each package that reaches ETA',
-            'zero hits the flight deck: bombers cost 35%',
-            'hull integrity and an airframe, fighters 15%.',
-            '',
-            'Hull integrity at zero ends the mission.'
-        ]);
-
-        this.section(ctx, rightX, y, colW, 'YOUR JOB', [
-            '1. Arm and fuel your jet on the deck',
-            '2. Take the catapult shot [ENTER]',
-            '3. Splash the inbounds before ETA zero',
-            '4. Use the canyon to break SAM radar lock',
-            '5. Trap back aboard: under 90 m/s,',
-            '   18-28 m altitude, within 180 m'
-        ]);
-
-        y += 168;
-        this.section(ctx, leftX, y, colW, 'FLIGHT CONTROLS',
-            bindingsFor('FLIGHT').slice(0, 6).map(b => `${b.display.padEnd(12)} ${b.label}`)
+        ctx.font = font(12);
+        ctx.fillStyle = THEME.muted;
+        ctx.fillText(
+            'Run the flight deck. Fly the sortie. Bring the jet home.',
+            cx,
+            compact ? 84 : 110
         );
 
-        this.section(ctx, rightX, y, colW, 'THREAT DOCTRINE', [
-            'RWR SEARCH  a radar is sweeping for you',
-            'RWR TRACK   you are locked - get low',
-            'RWR LAUNCH  missile inbound - break and',
-            '            descend below the ridge line',
-            '',
-            'Open bay doors quadruple your radar signature.'
-        ]);
+        // --- Three phase cards ---
+        const cards: PhaseCard[] = [
+            {
+                n: '1',
+                title: 'ON THE DECK',
+                body: 'Crews arm and fuel your jet. Set the payload, then take the cat shot.',
+                keys: [['1-4', 'payload'], ['ENTER', 'launch']]
+            },
+            {
+                n: '2',
+                title: 'INTERCEPT',
+                body: 'Kill the inbound strike packages before their ETA reaches zero. Drop below the ridge line to break a SAM lock.',
+                keys: [['WASD', 'fly'], ['SPACE', 'fire']]
+            },
+            {
+                n: '3',
+                title: 'TRAP ABOARD',
+                body: 'Come back under 90 m/s at 18-28 m. Fly the meatball. A 3-wire is a perfect trap.',
+                keys: [['SHIFT', 'power'], ['CTRL', 'idle']]
+            }
+        ];
 
-        // Blinking prompt
-        if (Math.floor(timeSec * 2) % 2 === 0) {
-            ctx.textAlign = 'center';
-            ctx.fillStyle = CAUTION;
-            ctx.shadowColor = CAUTION;
-            ctx.font = 'bold 17px monospace';
-            ctx.fillText('PRESS [ENTER] TO MAN YOUR AIRCRAFT', cx, h - 64);
-        }
+        const margin = 44;
+        const gutter = 16;
+        const cardsY = compact ? 104 : 148;
+        const cardW = Math.min(320, (w - margin * 2 - gutter * 2) / 3);
+        const cardH = compact ? 150 : 172;
+        const totalW = cardW * 3 + gutter * 2;
+        cards.forEach((card, i) => {
+            this.phaseCard(ctx, {
+                x: cx - totalW / 2 + i * (cardW + gutter),
+                y: cardsY,
+                w: cardW,
+                h: cardH
+            }, card);
+        });
 
+        // --- Loss condition: one line, not a paragraph ---
+        const lossY = cardsY + cardH + (compact ? 26 : 40);
         ctx.textAlign = 'center';
-        ctx.fillStyle = DIM;
-        ctx.shadowColor = DIM;
-        ctx.font = '12px monospace';
-        ctx.fillText('[H] FULL CONTROL REFERENCE      [S] SKIP TO AIRBORNE QUICK START', cx, h - 36);
+        ctx.font = font(13, 600);
+        ctx.fillStyle = THEME.alert;
+        ctx.fillText(
+            'Every package that gets through hits CV-68. At 0% hull integrity the mission is over.',
+            cx,
+            lossY
+        );
+
+        // --- Primary call to action ---
+        const ctaY = h - (compact ? 74 : 92);
+        const pulse = 0.72 + 0.28 * Math.sin(timeSec * 3.2);
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        const ctaText = 'MAN YOUR AIRCRAFT';
+        ctx.font = font(17, 700);
+        const ctaW = ctx.measureText(ctaText).width + 128;
+        const ctaX = cx - ctaW / 2;
+        roundRect(ctx, ctaX, ctaY - 24, ctaW, 48, 6);
+        ctx.fillStyle = 'rgba(95,216,255,0.12)';
+        ctx.fill();
+        ctx.strokeStyle = THEME.key;
+        ctx.lineWidth = 1.6;
+        glow(ctx, THEME.key, 12);
+        ctx.stroke();
+        noGlow(ctx);
+        ctx.restore();
+
+        const capW = keycap(ctx, ctaX + 22, ctaY, 'ENTER', { size: 15 });
+        ctx.font = font(17, 700);
+        ctx.fillStyle = THEME.ink;
         ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ctaText, ctaX + 22 + capW + 16, ctaY);
+
+        // --- Secondary options ---
+        ctx.textBaseline = 'middle';
+        const secY = h - 32;
+        const secs: [string, string][] = [['H', 'all controls'], ['S', 'skip to airborne'], ['P', 'screen style']];
+        let secW = 0;
+        ctx.font = font(11);
+        for (const [k, label] of secs) {
+            ctx.font = font(11, 600);
+            secW += ctx.measureText(k).width + 14 + 5;
+            ctx.font = font(11);
+            secW += ctx.measureText(label).width + 18;
+        }
+        let sx = cx - secW / 2;
+        for (const [k, label] of secs) {
+            sx += keycap(ctx, sx, secY, k, { size: 11 }) + 5;
+            ctx.font = font(11);
+            ctx.fillStyle = THEME.muted;
+            ctx.textAlign = 'left';
+            ctx.fillText(label, sx, secY);
+            sx += ctx.measureText(label).width + 18;
+        }
 
         ctx.restore();
     }
 
-    private section(
-        ctx: CanvasRenderingContext2D,
-        x: number,
-        y: number,
-        w: number,
-        title: string,
-        lines: string[]
-    ) {
-        ctx.strokeStyle = DIM;
-        ctx.shadowColor = DIM;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.5;
-        ctx.strokeRect(x, y - 18, w, 24 + lines.length * 17);
-        ctx.globalAlpha = 1;
+    private phaseCard(ctx: CanvasRenderingContext2D, r: Rect, card: PhaseCard) {
+        plate(ctx, r, { fill: 'rgba(9,19,25,0.86)', border: THEME.edgeSoft, radius: 6 });
 
-        ctx.fillStyle = '#030a04';
-        ctx.shadowBlur = 0;
-        const tw = ctx.measureText(title).width;
-        ctx.fillRect(x + 12, y - 25, tw + 14, 14);
-        ctx.shadowBlur = 6;
+        ctx.save();
+        noGlow(ctx);
 
-        ctx.font = 'bold 12px monospace';
-        ctx.fillStyle = PHOSPHOR;
-        ctx.shadowColor = PHOSPHOR;
-        ctx.fillText(title, x + 18, y - 14);
+        // Step number badge
+        ctx.beginPath();
+        ctx.arc(r.x + 26, r.y + 26, 13, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(87,227,155,0.16)';
+        ctx.fill();
+        ctx.strokeStyle = THEME.phosphor;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.font = font(13, 700);
+        ctx.fillStyle = THEME.phosphor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(card.n, r.x + 26, r.y + 27);
 
-        ctx.font = '12px monospace';
-        let ly = y + 8;
-        for (const line of lines) {
-            ctx.fillStyle = line.startsWith('RWR LAUNCH') ? ALERT : PHOSPHOR;
-            ctx.shadowColor = ctx.fillStyle;
-            ctx.fillText(line, x + 14, ly);
-            ly += 17;
+        ctx.textAlign = 'left';
+        ctx.font = font(14, 700);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText(card.title, r.x + 48, r.y + 27);
+
+        // Body copy, wrapped to the card width
+        ctx.font = font(11.5);
+        ctx.fillStyle = THEME.muted;
+        ctx.textBaseline = 'alphabetic';
+        const lines = wrapText(ctx, card.body, r.w - 32);
+        lines.slice(0, 5).forEach((line, i) => {
+            ctx.fillText(line, r.x + 16, r.y + 58 + i * 16);
+        });
+
+        // Keys for this phase
+        let kx = r.x + 16;
+        const ky = r.y + r.h - 20;
+        ctx.textBaseline = 'middle';
+        for (const [key, label] of card.keys) {
+            kx += keycap(ctx, kx, ky, key, { size: 10 }) + 5;
+            ctx.font = font(10);
+            ctx.fillStyle = THEME.muted;
+            ctx.textAlign = 'left';
+            ctx.fillText(label, kx, ky);
+            kx += ctx.measureText(label).width + 12;
         }
+
+        ctx.restore();
     }
 
     /** Full control reference, grouped, pausing the sim while it's open. */
     public drawHelp(ctx: CanvasRenderingContext2D, w: number, h: number, context: ControlContext) {
         ctx.save();
-        ctx.fillStyle = 'rgba(3,10,4,0.88)';
+        noGlow(ctx);
+        ctx.fillStyle = 'rgba(7,13,17,0.97)';
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
         ctx.textAlign = 'center';
-        ctx.fillStyle = PHOSPHOR;
-        ctx.shadowColor = PHOSPHOR;
-        ctx.shadowBlur = 6;
-        ctx.font = 'bold 26px monospace';
-        ctx.fillText('CONTROL REFERENCE', cx, 70);
+        ctx.fillStyle = THEME.ink;
+        ctx.font = font(24, 700);
+        ctx.fillText('CONTROLS', cx, 60);
 
-        ctx.font = '12px monospace';
-        ctx.fillStyle = DIM;
-        ctx.shadowColor = DIM;
+        ctx.font = font(12);
+        ctx.fillStyle = THEME.muted;
         ctx.fillText(
             context === 'DECK' ? 'FLIGHT DECK OPERATIONS' : 'COCKPIT / FLIGHT OPERATIONS',
             cx,
-            92
+            82
         );
-        ctx.textAlign = 'left';
 
         const bindings = bindingsFor(context);
         const groups = [...new Set(bindings.map(b => b.group))];
 
-        const colW = Math.min(440, (w - 160) / 2);
-        let col = 0;
-        let y = 140;
-        const startY = 140;
+        const ROW_H = 24;
+        const GROUP_HEAD = 30;
+        const GROUP_GAP = 18;
+        const startY = 126;
+        const available = h - startY - 80;
 
+        // Measure first, then decide on one centred column or two. The old
+        // version always laid out as if there were two columns and only
+        // wrapped on overflow, so a short list sat lopsided on the left.
+        const groupHeight = (g: string) =>
+            GROUP_HEAD + bindings.filter(b => b.group === g).length * ROW_H + GROUP_GAP;
+        const totalH = groups.reduce((sum, g) => sum + groupHeight(g), 0);
+        const twoCols = totalH > available;
+
+        const colW = Math.min(440, twoCols ? (w - 140) / 2 : w - 160);
+        const colX = (col: number) => twoCols
+            ? cx - colW - 20 + col * (colW + 40)
+            : cx - colW / 2;
+
+        let col = 0;
+        let y = startY;
+
+        ctx.textBaseline = 'middle';
         for (const group of groups) {
-            const items = bindings.filter(b => b.group === group);
-            if (y + items.length * 19 + 40 > h - 70 && col === 0) {
+            if (twoCols && col === 0 && y + groupHeight(group) > startY + available) {
                 col = 1;
                 y = startY;
             }
-            const x = cx - colW - 20 + col * (colW + 40);
+            const x = colX(col);
 
-            ctx.font = 'bold 13px monospace';
-            ctx.fillStyle = CAUTION;
-            ctx.shadowColor = CAUTION;
+            ctx.font = font(11, 700);
+            ctx.fillStyle = THEME.caution;
+            ctx.textAlign = 'left';
             ctx.fillText(group, x, y);
-            y += 8;
 
-            ctx.strokeStyle = DIM;
-            ctx.shadowColor = DIM;
-            ctx.globalAlpha = 0.4;
+            ctx.strokeStyle = THEME.edgeSoft;
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + colW, y);
+            ctx.moveTo(x, y + 12);
+            ctx.lineTo(x + colW, y + 12);
             ctx.stroke();
-            ctx.globalAlpha = 1;
-            y += 18;
+            y += GROUP_HEAD;
 
-            ctx.font = '12px monospace';
-            for (const b of items) {
-                ctx.fillStyle = PHOSPHOR;
-                ctx.shadowColor = PHOSPHOR;
-                ctx.fillText(b.display, x, y);
-                ctx.fillStyle = DIM;
-                ctx.shadowColor = DIM;
-                ctx.fillText(b.label, x + 130, y);
-                y += 19;
+            for (const b of bindings.filter(bb => bb.group === group)) {
+                keycap(ctx, x, y, b.display, { size: 11 });
+                ctx.font = font(12);
+                ctx.fillStyle = THEME.muted;
+                ctx.textAlign = 'left';
+                ctx.fillText(b.label, x + 124, y);
+                y += ROW_H;
             }
-            y += 22;
+            y += GROUP_GAP;
         }
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = CAUTION;
-        ctx.shadowColor = CAUTION;
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText('PRESS [H] OR [ESC] TO RESUME', cx, h - 40);
+        const capW = keycap(ctx, cx - 60, h - 40, 'ESC', { size: 12 });
+        ctx.font = font(12, 600);
+        ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'left';
+        ctx.fillText('resume', cx - 60 + capW + 10, h - 40);
         ctx.restore();
     }
 
     /** End-of-mission debrief with final score and rank. */
     public drawDebrief(ctx: CanvasRenderingContext2D, w: number, h: number, score: ScoreKeeper, wave: number) {
         ctx.save();
-        ctx.fillStyle = 'rgba(3,10,4,0.92)';
+        noGlow(ctx);
+        ctx.fillStyle = 'rgba(7,13,17,0.96)';
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
         ctx.textAlign = 'center';
-        ctx.shadowBlur = 8;
 
-        ctx.fillStyle = ALERT;
-        ctx.shadowColor = ALERT;
-        ctx.font = 'bold 40px monospace';
-        ctx.fillText('MISSION FAILED', cx, 120);
+        ctx.fillStyle = THEME.alert;
+        ctx.font = font(38, 700);
+        glow(ctx, THEME.alert, 12);
+        ctx.fillText('MISSION FAILED', cx, 104);
+        noGlow(ctx);
 
-        ctx.fillStyle = DIM;
-        ctx.shadowColor = DIM;
-        ctx.font = '14px monospace';
-        ctx.fillText('CV-68 NIMITZ IS COMBAT INEFFECTIVE', cx, 150);
+        ctx.fillStyle = THEME.muted;
+        ctx.font = font(13);
+        ctx.fillText('CV-68 NIMITZ IS COMBAT INEFFECTIVE', cx, 130);
 
         const b = score.breakdown;
         const rows: [string, string][] = [
@@ -361,37 +430,65 @@ export class BriefingScreen {
             ['HULL DAMAGE TAKEN', `${Math.round(b.hullDamageTaken)}%`]
         ];
 
-        ctx.textAlign = 'left';
-        ctx.font = '13px monospace';
-        const boxW = 420;
-        let y = 200;
-        for (const [label, value] of rows) {
-            ctx.fillStyle = DIM;
-            ctx.shadowColor = DIM;
-            ctx.fillText(label, cx - boxW / 2, y);
-            ctx.fillStyle = PHOSPHOR;
-            ctx.shadowColor = PHOSPHOR;
-            ctx.textAlign = 'right';
-            ctx.fillText(value, cx + boxW / 2, y);
+        const boxW = Math.min(460, w - 80);
+        const boxH = rows.length * 22 + 36;
+        const boxX = cx - boxW / 2;
+        const boxY = 162;
+        plate(ctx, { x: boxX, y: boxY, w: boxW, h: boxH }, { border: THEME.edgeSoft, radius: 5 });
+
+        ctx.font = font(12);
+        ctx.textBaseline = 'middle';
+        rows.forEach(([label, value], i) => {
+            const y = boxY + 26 + i * 22;
+            ctx.fillStyle = THEME.muted;
             ctx.textAlign = 'left';
-            y += 22;
-        }
+            ctx.fillText(label, boxX + 18, y);
+            ctx.fillStyle = THEME.ink;
+            ctx.textAlign = 'right';
+            ctx.fillText(value, boxX + boxW - 18, y);
+        });
 
+        const scoreY = boxY + boxH + 46;
         ctx.textAlign = 'center';
-        ctx.fillStyle = CAUTION;
-        ctx.shadowColor = CAUTION;
-        ctx.font = 'bold 30px monospace';
-        ctx.fillText(`${score.totalScore} PTS`, cx, y + 44);
-        ctx.font = 'bold 20px monospace';
-        ctx.fillText(`FINAL RANK: ${score.rank}`, cx, y + 76);
+        ctx.fillStyle = THEME.caution;
+        ctx.font = font(30, 700);
+        ctx.fillText(`${score.totalScore} PTS`, cx, scoreY);
+        ctx.font = font(17, 700);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 32);
 
-        ctx.fillStyle = DIM;
-        ctx.shadowColor = DIM;
-        ctx.font = '13px monospace';
-        ctx.fillText('PRESS [ENTER] TO RETURN TO BRIEFING', cx, h - 44);
+        const capW = keycap(ctx, cx - 70, h - 46, 'ENTER', { size: 13 });
+        ctx.font = font(13, 600);
+        ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'left';
+        ctx.fillText('fly again', cx - 70 + capW + 12, h - 46);
         ctx.restore();
     }
+}
+
+interface PhaseCard {
+    n: string;
+    title: string;
+    body: string;
+    keys: [string, string][];
+}
+
+/** Greedy word wrap against a measured pixel width. */
+export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+    for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(candidate).width > maxWidth) {
+            lines.push(line);
+            line = word;
+        } else {
+            line = candidate;
+        }
+    }
+    if (line) lines.push(line);
+    return lines;
 }
 
 export { CONTROL_SCHEMA };

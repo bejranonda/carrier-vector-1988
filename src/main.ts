@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (key === 'p') {
-            game.cyclePostQuality();
+            game.cycleDisplayMode();
             return;
         }
 
@@ -130,6 +130,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keyup', (e) => {
         game.inputState[e.key.toLowerCase()] = false;
+    });
+
+    /**
+     * Click-to-continue on the menu screens. A keyboard-only game still owes
+     * a new player an obvious way past the title card: clicking the briefing
+     * or the debrief does what the highlighted key does. Deliberately NOT
+     * wired into the deck or the cockpit, where a stray click must never
+     * fire a catapult.
+     */
+    canvas.addEventListener('pointerdown', () => {
+        if (game.helpVisible) {
+            game.helpVisible = false;
+            return;
+        }
+        if (game.phase === 'BRIEFING') game.confirmBriefing();
+        else if (game.phase === 'DEBRIEF') game.restartFromDebrief();
     });
 
     // Releasing focus must not leave keys stuck down mid-manoeuvre.

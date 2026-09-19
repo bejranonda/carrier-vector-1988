@@ -1,80 +1,126 @@
+/**
+ * CARRIER VECTOR: 1988 - Screen shell
+ *
+ * The screen "texture" (scanline mask, vignette, flicker) used to be a
+ * fixed, always-on CSS overlay at full strength: a 35%-black scanline every
+ * 3px, a 6px RGB phosphor mask, and a vignette reaching 92% black at the
+ * corners. That sat on top of every readout, so the deck panels in the
+ * screen corners and all the small grey labels dropped well below usable
+ * contrast.
+ *
+ * It is now driven by the display mode (CLEAN / MODERN / RETRO), which
+ * writes `--fx-scanlines` and `--fx-vignette` onto <html>. MODERN is the
+ * default: a faint vignette, no scanlines, no flicker.
+ */
+
 :root {
-  --phosphor-green: #00ff66;
-  --bg-color: #030a04;
+  --fx-scanlines: 0;
+  --fx-vignette: 0.28;
+
+  --ground: #070d11;
+  --phosphor: #57e39b;
+  --ink: #eafff5;
+
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body, html {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: var(--bg-color);
+  background-color: var(--ground);
   overflow: hidden;
-  font-family: 'Courier New', Courier, monospace;
-  color: var(--phosphor-green);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo,
+    Consolas, monospace;
+  color: var(--phosphor);
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-#gameCanvas {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  image-rendering: pixelated;
-  background-color: #020803;
-}
-
-/* Authentic 1980s CRT Phosphor Shader Emulation */
-.crt {
+.screen {
   position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
 }
 
-/* Horizontal scanlines & phosphor mask */
-.crt::before {
-  content: " ";
+#gameCanvas {
   display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background: 
-    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%),
-    linear-gradient(90deg, rgba(0, 255, 100, 0.03), rgba(0, 0, 0, 0.05), rgba(0, 255, 100, 0.03));
-  z-index: 10;
-  background-size: 100% 3px, 6px 100%;
-  pointer-events: none;
-  opacity: 0.85;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--ground);
+  /* The canvas backing store is now device-pixel accurate, so let the
+     browser sample it normally - `pixelated` was blurring/aliasing HUD
+     glyphs on every HiDPI display. */
+  image-rendering: auto;
+  touch-action: none;
 }
 
-/* Vignette curvature & electron bloom */
-.crt::after {
-  content: " ";
-  display: block;
+/* Scanline + phosphor mask. Opacity 0 in CLEAN and MODERN, so the browser
+   skips it entirely rather than compositing an invisible layer. */
+.screen::before {
+  content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background: radial-gradient(circle at center, rgba(0, 255, 100, 0.02) 0%, rgba(0, 0, 0, 0.55) 75%, rgba(0, 0, 0, 0.92) 100%);
-  box-shadow: inset 0 0 100px rgba(0, 20, 5, 0.8);
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  opacity: var(--fx-scanlines);
+  background:
+    linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.28) 50%),
+    linear-gradient(
+      90deg,
+      rgba(87, 227, 155, 0.025),
+      rgba(0, 0, 0, 0.035),
+      rgba(87, 227, 155, 0.025)
+    );
+  background-size: 100% 3px, 6px 100%;
+}
+
+/* Vignette. Peaks at 62% black in RETRO (was 92%) and 17% in MODERN, so the
+   corner panels stay inside their contrast budget. */
+.screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   z-index: 11;
   pointer-events: none;
+  opacity: var(--fx-vignette);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 45%,
+    rgba(0, 0, 0, 0.35) 78%,
+    rgba(0, 0, 0, 0.62) 100%
+  );
 }
 
-/* Subtle CRT phosphor screen flicker */
+/* Tube flicker only exists in RETRO, and never for players who have asked
+   the platform for reduced motion - a 6.7 Hz global opacity animation is a
+   textbook readability and accessibility problem. */
 @keyframes crt-flicker {
-  0% { opacity: 0.98; }
-  50% { opacity: 1.0; }
+  0% { opacity: 0.985; }
+  50% { opacity: 1; }
   100% { opacity: 0.99; }
 }
 
-.crt canvas {
+:root[data-display='RETRO'] #gameCanvas {
   animation: crt-flicker 0.15s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-display='RETRO'] #gameCanvas {
+    animation: none;
+  }
+}
+
+noscript {
+  display: block;
+  padding: 3rem clamp(1rem, 6vw, 6rem);
+  color: var(--ink);
+  line-height: 1.6;
 }
