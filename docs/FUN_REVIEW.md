@@ -166,42 +166,66 @@ What changed, and the reasoning that is worth keeping:
 
 ## 5. Still open — ranked by what they would buy
 
-1. **No mobile.** Half of casual web traffic is on a phone and this game is
-   keyboard-only, so half the addressable audience cannot open it at all. With
-   the autopilot and designation already built, a touch build is closer than it
-   looks: the jet flies itself, the player taps a target and a fire button.
-   This is the single largest remaining constraint on reach.
-2. **The deck loop is mostly waiting.** The macro layer's interesting decision
+1. **The deck loop is mostly waiting.** The macro layer's interesting decision
    (fuel versus ordnance) is made once, in about four seconds, and the rest is
    watching a progress bar. It wants a second axis — a choice with a cost, such
    as a rushed turnaround that risks a crew-fatigue penalty, or holding a jet
    back as alert-five cover. This is the largest remaining gap between the
    game's structure and its fun.
-3. **The strike missions have no second act.** Every scenario resolves in one
+2. **The strike missions have no second act.** Every scenario resolves in one
    pass. A mission that changes its mind halfway — a pop-up threat, a target
    that turns out to be defended, a recall — would make the mission director
    earn its structure.
-4. **No map choice on the endless mode.** Carrier defence is the mission people
+3. **No map choice on the endless mode.** Carrier defence is the mission people
    will replay most and it is locked to one map. Letting it be flown on any of
    the three is cheap and triples its replay value.
-5. **The story is scenery, not stakes.** The briefing prose is good and the
+4. **The story is scenery, not stakes.** The briefing prose is good and the
    world is coherent, but nothing carries between missions: the campaign has no
    memory beyond a score. Carrying *losses* forward — airframes, stores, hull
    damage — across a run of missions would make each sortie cost something.
-6. **The autopilot cannot fly the one mission that needs flying well.** It
+5. **The autopilot cannot fly the one mission that needs flying well.** It
    climbs over terrain rather than threading it (see KNOWN_ISSUES §19), so
    handing it the canyon ingress gets you locked. Defensible — the low-level run
    *is* the mission's skill — but a terrain-following mode would let the
    weapons-officer fantasy reach the game's best mission instead of stopping
    just short of it.
+6. **Landing on a phone is brutal.** Touch mode makes flying and fighting
+   comfortable and leaves the trap exactly as hard as it was, on a virtual
+   stick. An assisted approach - the autopilot flying the glideslope and
+   handing over at short final - is the missing piece, and is the one place
+   where "the autopilot does not land" costs more than it buys.
 7. **Difficulty is fixed per scenario.** (A combo multiplier, medals and local
-   leaderboards were all considered for this pass and deliberately left out;
-   the daily was judged the one hook worth building first.)
+   leaderboards were all considered and deliberately left out; the daily was
+   judged the one hook worth building first.)
 8. **Difficulty is fixed per scenario.** There is no way to ask for a harder
    carrier defence or an easier canyon strike. With assist levels and ops tempo
    now in place, a threat-level selector would compose neatly with both.
 
 ---
+
+## 5b. Reach: the phone
+
+Half of casual web traffic is a handset, and the game was keyboard-only. That
+is not a missing feature; it is a closed door, and nothing behind it counts for
+anyone holding a phone.
+
+The thing that made it tractable is that the door had already been unlocked by
+accident. `AUTOPILOT` flies the aeroplane and designation picks the target, so
+the mobile fantasy was already built and only needed a way to reach it: the
+player becomes a weapons officer rather than a pilot short of eight fingers.
+
+Two judgements worth keeping:
+
+- **Tap the thing you want.** Cycling a list with a button is a keyboard idiom
+  wearing a thumb's clothing. Pointing is the gesture a touchscreen is for, and
+  it turned out to be better on a desktop too, so mouse players got it as well.
+- **Shed, do not shrink.** At 568x320 the instruments and the controls were
+  drawn on top of each other. The answer was not smaller instruments but fewer:
+  the keyboard legends, the checklist, the compass tape, the RWR scope and the
+  briefing's tutorial cards all stand down, and each one's information is
+  carried by something that stayed. That is the same rule the deck screen and
+  the cockpit already followed - it just had to be told that a thumb is a
+  layout constraint.
 
 ## 6. Principles these passes followed
 
