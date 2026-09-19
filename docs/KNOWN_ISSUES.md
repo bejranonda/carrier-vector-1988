@@ -103,26 +103,32 @@ The upside is that it is fully deterministic, trivially testable, and the canyon
 corridor is guaranteed navigable — important because terrain masking is a core
 mechanic that a random heightfield could break.
 
-## 11b. Every mission shares one map **[By design]**
+## 11b. Three maps, each with its own navigability guarantee
 
-All five scenarios run on the same deterministic canyon and the same carrier at
-the origin. The strike target sits at the head of the fjord past all three SAM
-sites; there is no second map.
+`tactics/TerrainProfiles.ts` holds three analytic maps — BJORNFJORD (the
+original), NORWEGIAN SEA and KVITOYA RIDGES — each with its own height
+function and SAM order of battle. A scenario names the one it is flown on.
 
-**Consequence:** mission variety comes from objectives, threat profiles and
-time pressure rather than from terrain. Given the map is analytic (see §11) and
-the canyon corridor is guaranteed navigable, a second map would mean a second
-guarantee to maintain.
+**Consequence:** every map must satisfy the invariants in
+`TerrainProfiles.test.ts`: a low continuous corridor wide enough to turn in, a
+clear approach tube along the deck centreline, and terrain that can mask a
+radar somewhere on the route. NORWEGIAN SEA is exempt from the masking
+invariant by design — being unable to hide is its whole identity — which is
+why the intro scenario is not flown there: its flight checkout asks the pilot
+to descend until the RWR goes silent, and on open water that step can never be
+satisfied. Adding a fourth map means adding a fourth set of guarantees, and the
+tests will say so.
 
-## 11c. Scenario progress is not saved
+## 11c. Progress is per-scenario, but there is still no unlock gating
 
-Only the display mode and the personal best persist. There is no record of
-which missions you have completed, no per-mission best score, and no unlock
-progression — every mission is available from the first run.
+`core/MissionRecords.ts` stores `{best, completions, attempts}` per scenario:
+the selector ticks a cleared mission, the debrief compares against that
+mission's own best, and `recommendScenario()` marks one pill START HERE.
 
-**Consequence:** the debrief cannot say "your best CANYON STRIKE" and the
-selector cannot mark a mission as cleared. `core/HighScore.ts` is deliberately
-one number; per-scenario records would want a different shape.
+**Consequence:** the recommendation is a suggestion, not a gate — every
+mission is selectable from the first run, including the five-pip ones. That is
+deliberate (a player who wants the canyon strike first should get it), but it
+does mean a new player can still pick a mission that will beat them.
 
 ## 12. Enemy contacts spawn within the canyon corridor
 
@@ -161,14 +167,17 @@ at all. Panel priorities live in the spec list at the top of
 
 ## 16. Local storage is best-effort
 
-The display mode and the personal best are the only two things persisted, both to
-`localStorage` under `carrier-vector-1988.*`. Storage throws in Safari private
-mode and when third-party storage is blocked, so every access is wrapped and
-falls back silently — the display mode reverts to `MODERN` and the personal best
-reads as zero.
+Four things are persisted, all to `localStorage` under `carrier-vector-1988.*`:
+the display mode, the global personal best, the flight assist level and the
+per-mission records. Storage throws in Safari private mode and when
+third-party storage is blocked, so every access is wrapped and falls back
+silently — the display mode reverts to `MODERN`, the assist level to `ASSIST`,
+and the scores read as zero. The mission records are also sanitised field by
+field on load, so hand-edited or half-written JSON cannot crash the briefing.
 
-**Consequence:** in those browsers the settings do not stick, with no warning.
-Surfacing that would cost more UI than it is worth.
+**Consequence:** in those browsers nothing sticks, with no warning, and a
+returning player is treated as a new one. Surfacing that would cost more UI
+than it is worth.
 
 ## 17. The cockpit sheds instruments on small viewports
 

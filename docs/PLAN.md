@@ -152,3 +152,76 @@ Both complaints had concrete causes rather than being matters of taste.
 - Browser pass in Chromium at 800x620 through 2560x1440, at 1x and 2x device
   pixel ratio, across all three display modes, with pixel sampling to confirm
   the background wash is gone and frame-time sampling to confirm the cost
+
+---
+
+## 8. Follow-up Pass — Missions, Maps, Assist & Progression
+
+**Status:** Complete
+**Trigger:** player requests, in order — "can we integrate a mission like the
+final mission in Top Gun 2 as a selectable scenario, and provide more fun and
+attractive scenarios"; then "put more maps?", "review workflow, story, UX for
+increasing fun factors", and "should we put assistant, autopilot or semi-auto
+to increase fun, e.g. let autopilot fly, user can easily select what to shoot".
+**Result:** 367 tests across 23 suites, `strict: true`, zero runtime
+dependencies retained
+
+### 8a. Selectable scenarios
+
+Five missions, each a `ScenarioDef` in `core/Scenarios.ts`: world setup,
+ordered phases, a failure predicate and its own prose. The canyon strike is an
+**original** low-level fjord raid against a hardened submarine pen — no names,
+fiction or branding lifted from any film. Supporting work: `StrikeTarget` (a
+target a near miss does not kill), CCIP bombing prediction from the same
+ballistic integration the live bomb uses, and a mission director that tests
+victory **before** failure, because both can become true on the same tick.
+
+### 8b. Maps
+
+| Finding | Evidence |
+| --- | --- |
+| Every mission shared one world | One hardcoded height function plus three SAM sites nailed into `SensorTacticsManager`'s constructor. Learning the map once removed most of the tension from all five missions. |
+| A map can silently break a mechanic | `OPEN_SEA`'s first draft put its launchers on island peaks, where each one is masked by its own island — quietly giving the "nowhere to hide" map total cover. |
+| A map can silently break a mission | Moving the intro scenario to `OPEN_SEA` would have made its flight-checkout step "descend until the RWR goes silent" unsatisfiable. |
+| A clamped height function leaves a cliff | `SHATTERED_RIDGE` originally clamped its ridge field off at `z < 1400`, producing a 300 m wall 1.2 km off the bow, out of flat sea, on every launch. |
+
+`tactics/TerrainProfiles.ts` makes a map data, and `TerrainProfiles.test.ts`
+states the guarantees: navigable corridor, clear approach tube, masking
+possible. Those tests found five real defects, including the last two rows
+above.
+
+### 8c. Flight assist and autopilot
+
+| Finding | Evidence |
+| --- | --- |
+| A height-based terrain floor cannot save a dive | At 180 m AGL and 60 m/s sink there is one second left, against a 1.35 rad/s pitch rate. The floor now measures seconds to impact. |
+| A bank-only autopilot never turns | `AircraftPhysics` changes `yaw` only via `applyYawInput`; banking curves the flight path but not the heading. The autopilot flies bank **and** rudder. |
+| A protection that is always on is not a protection | The first alpha limiter scaled *every* pull from zero alpha upward, halving manoeuvrability and pinning a `STALL` caption to the glass permanently. It now bites only in the last 40% of the margin. |
+| The assists would have made landing impossible | A carrier approach is a controlled descent to a deck 20 m above the water. Ground-proximity laws stand down on an approach, and the autopilot hands the jet back on final. |
+
+### 8d. Target designation
+
+`T` cycles a priority-ordered scope; the designation drives the HUD bracket,
+the weapon recommendation, the Sidewinder's seeker and the autopilot's
+intercept. Before it, every contact drew an identical bracket and the missile
+chose its own target, so the player had positional agency but no tactical
+agency.
+
+### 8e. Progression
+
+`core/MissionRecords.ts` — per-scenario best, completions and attempts; a
+cleared tick on the selector; a `START HERE` recommendation; a "next up" line on
+the debrief. A brand-new player is pointed at the mission carrying the flight
+checkout rather than the one with the fewest difficulty pips.
+
+The full design reasoning, including what was deliberately **not** changed, is
+in [FUN_REVIEW.md](FUN_REVIEW.md).
+
+### Verification
+
+- `npx tsc --noEmit` — zero errors under `strict: true`
+- `npm run test` — 367 tests across 23 suites
+- `npm run build` — clean production bundle (~139 kB, ~46 kB gzipped)
+- Browser pass in Chromium at 1440x900, 1024x700 and 820x560: all five
+  missions selected and flown, designation and all three assist levels
+  exercised, terrain pull-up triggered deliberately, no console errors

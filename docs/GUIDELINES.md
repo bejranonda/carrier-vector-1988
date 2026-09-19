@@ -160,6 +160,19 @@ Rules:
   logic and mission copy are both unit-testable. Adding a mission means adding a
   `ScenarioDef` — if you find yourself branching on a `ScenarioId` inside
   `GameLoop`, the thing you need belongs in `ScenarioSetup` instead.
+- **A map is data too.** `src/tactics/TerrainProfiles.ts` holds every height
+  function and every SAM order of battle. `TacticalTerrain` samples a profile
+  and `SensorTacticsManager` builds its launchers from one; neither knows which
+  map it is. A new map is a new `TerrainProfile` plus the invariants in
+  `TerrainProfiles.test.ts` — do not add one without making those pass, because
+  a map that cannot mask a radar breaks a core mechanic silently.
+- **Flight assistance is control law, never teleportation.**
+  `src/flight/FlightAssist.ts` produces the same stick, rudder and throttle
+  demands a pilot would, and `GameLoop` feeds them to the same
+  `applyPitchInput` / `applyRollInput` / `applyYawInput` the keyboard uses.
+  Nothing in an assist may set position, velocity or attitude directly: if the
+  assist can put the aircraft somewhere it could not have flown, the simulation
+  is lying to the player.
 
 ## 7. Mission Rules
 
@@ -177,6 +190,19 @@ Rules:
   `onDeck` returns `null` from `objective()` while the jet is on deck, so a
   pilot in the hangar is told what the hangar is doing — not "RUN THE FJORD,
   8.1 km to the pen". The mission clock follows them across either way.
+- **The assists stand down where the mission needs them to.** Ground-proximity
+  protection is inhibited on a carrier approach and the autopilot disengages on
+  final, because an approach *is* a controlled descent to a deck 20 m above the
+  water. Any new protection must answer the question "what legitimate thing does
+  this make impossible?" before it ships.
+- **An annunciator that is always lit is not an annunciator.** Auto-levelling
+  happens on every frame the stick is centred and is deliberately silent.
+  Captions are reserved for a protection actually taking authority away, and
+  only past a threshold — otherwise the one caption that matters
+  (`TERRAIN — AUTO PULL-UP`) is the one the player has learned to ignore.
+- **A designation outlives its frame, not its target.** The lock is stored as an
+  id and re-solved every tick, so a contact that dies drops the lock rather than
+  leaving the HUD bracketing wreckage or, worse, a recycled id.
 - **A hardened target is not killed by a near miss.** That single number
   (`hitRadius`) is what makes a bombing run a skill, so any cue that helps aim
   it — the CCIP cross, the designator diamond — must be computed from the same
