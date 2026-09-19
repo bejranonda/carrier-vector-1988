@@ -179,6 +179,42 @@ export function pursuitNav(solution: TargetSolution, groundElevation: number): N
     };
 }
 
+/** A designatable target as it appears on the glass. */
+export interface ScreenTarget {
+    id: string;
+    x: number;
+    y: number;
+}
+
+/**
+ * Which target a tap chose.
+ *
+ * On a touchscreen the natural way to pick something is to point at it, and
+ * cycling a list with a button is a keyboard idiom wearing a thumb's
+ * clothing. The radius is generous because a fingertip covers about 40 px and
+ * lands slightly below where its owner thinks it did; ties go to whatever is
+ * nearest the touch, so a crowded furball still resolves to one contact.
+ */
+export function pickTargetAt(
+    x: number,
+    y: number,
+    targets: readonly ScreenTarget[],
+    radius = 80
+): string | null {
+    let bestId: string | null = null;
+    let bestDistance = radius;
+
+    for (const t of targets) {
+        if (!Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+        const d = Math.hypot(t.x - x, t.y - y);
+        if (d <= bestDistance) {
+            bestDistance = d;
+            bestId = t.id;
+        }
+    }
+    return bestId;
+}
+
 /**
  * Holds the pilot's choice across frames. The lock is stored as an ID, not a
  * reference or an index: a destroyed contact simply stops appearing in the

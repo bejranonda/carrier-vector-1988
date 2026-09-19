@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     DESIGNATION_TUNING,
+    pickTargetAt,
     TargetTracker,
     pursuitNav,
     rankTargets,
@@ -305,5 +306,46 @@ describe('pursuitNav', () => {
             expect(nav.airSpeed).toBeGreaterThan(100);
             expect(nav.maxBank!).toBeGreaterThan(0);
         }
+    });
+});
+
+describe('pickTargetAt', () => {
+    const scope = [
+        { id: 'LEFT', x: 200, y: 300 },
+        { id: 'RIGHT', x: 700, y: 280 },
+        { id: 'HIGH', x: 420, y: 90 }
+    ];
+
+    it('picks the contact under the thumb', () => {
+        expect(pickTargetAt(205, 305, scope)).toBe('LEFT');
+        expect(pickTargetAt(690, 290, scope)).toBe('RIGHT');
+    });
+
+    it('picks the nearest when a thumb covers two of them', () => {
+        const pair = [{ id: 'NEAR', x: 400, y: 300 }, { id: 'FAR', x: 445, y: 300 }];
+        expect(pickTargetAt(405, 300, pair)).toBe('NEAR');
+        expect(pickTargetAt(440, 300, pair)).toBe('FAR');
+    });
+
+    it('chooses nothing when the tap is nowhere near a contact', () => {
+        expect(pickTargetAt(20, 20, scope)).toBeNull();
+    });
+
+    it('is forgiving, because a fingertip is not a cursor', () => {
+        // ~40 px off still selects: a fingertip covers about that much.
+        expect(pickTargetAt(240, 330, scope)).toBe('LEFT');
+    });
+
+    it('respects a tightened radius', () => {
+        expect(pickTargetAt(260, 300, scope, 30)).toBeNull();
+    });
+
+    it('ignores a contact whose projection is not a number', () => {
+        const broken = [{ id: 'BEHIND', x: Number.NaN, y: Number.NaN }, { id: 'OK', x: 300, y: 300 }];
+        expect(pickTargetAt(300, 300, broken)).toBe('OK');
+    });
+
+    it('returns nothing for an empty scope', () => {
+        expect(pickTargetAt(100, 100, [])).toBeNull();
     });
 });

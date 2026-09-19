@@ -23,6 +23,54 @@ import { isCleared, recordFor } from '../core/MissionRecords';
 import type { MissionRecords } from '../core/MissionRecords';
 import type { DailyResult } from '../core/DailySortie';
 
+/**
+ * Where the briefing's interactive elements are.
+ *
+ * Extracted so that drawing and hit-testing read the same numbers. A touch
+ * player taps the mission pill they want; if the layout and the hit test
+ * computed their geometry separately they would drift apart on the first
+ * change to either, and the symptom would be a menu that selects the wrong
+ * mission on some screen sizes.
+ */
+export interface BriefingHitAreas {
+    compact: boolean;
+    selectorY: number;
+    pills: Rect[];
+    daily: Rect | null;
+    cta: Rect;
+}
+
+export function briefingHitAreas(
+    w: number,
+    h: number,
+    scenarioCount: number,
+    hasDaily: boolean
+): BriefingHitAreas {
+    const cx = w / 2;
+    const compact = h < 760 || w < 900;
+    const selectorY = (compact ? 82 : 112) + (hasDaily ? 34 : 0);
+
+    const gap = 8;
+    const totalW = Math.min(w - 72, 1000);
+    const pillW = (totalW - gap * (scenarioCount - 1)) / scenarioCount;
+    const pillH = 44;
+    const pills: Rect[] = [];
+    for (let i = 0; i < scenarioCount; i++) {
+        pills.push({ x: cx - totalW / 2 + i * (pillW + gap), y: selectorY, w: pillW, h: pillH });
+    }
+
+    const dailyW = Math.min(w - 72, 520);
+    const daily: Rect | null = hasDaily
+        ? { x: cx - dailyW / 2, y: compact ? 74 : 98, w: dailyW, h: 30 }
+        : null;
+
+    const ctaY = h - (compact ? 70 : 88);
+    const ctaW = Math.min(w - 60, 420);
+    const cta: Rect = { x: cx - ctaW / 2, y: ctaY - 24, w: ctaW, h: 48 };
+
+    return { compact, selectorY, pills, daily, cta };
+}
+
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
 
@@ -148,7 +196,8 @@ export class BriefingScreen {
         bestScore = 0,
         records: MissionRecords = {},
         pacingLabel = 'ops tempo',
-        daily: DailyPanel | null = null
+        daily: DailyPanel | null = null,
+        touchMode = false
     ) {
         ctx.save();
         noGlow(ctx);
@@ -164,7 +213,15 @@ export class BriefingScreen {
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
-        const compact = h < 760 || w < 900;
+        const areas = briefingHitAreas(w, h, SCENARIOS.length, daily !== null);
+        const compact = areas.compact;
+        /**
+         * A phone-height briefing cannot hold the three phase cards, the loss
+         * condition and a keyboard legend as well as the things you can
+         * actually press. It keeps the mission list and the button; the cards
+         * are a tutorial for a screen that has room for one.
+         */
+        const phone = touchMode || h < 430;
 
         // --- Masthead ---
         ctx.textAlign = 'center';
@@ -182,12 +239,12 @@ export class BriefingScreen {
         ctx.fillText(fitText(ctx, sub, w - 60), cx, compact ? 66 : 90);
 
         // --- Daily sortie ---
-        if (daily) this.dailyPanel(ctx, cx, compact ? 74 : 98, w, daily, timeSec);
+        if (daily && areas.daily) this.dailyPanel(ctx, cx, areas.daily.y, w, daily, timeSec);
 
         // --- Scenario selector ---
-        const selectorY = (compact ? 82 : 112) + (daily ? 34 : 0);
+        const selectorY = areas.selectorY;
         const recommended = recommendScenario(records);
-        this.scenarioSelector(ctx, cx, selectorY, w, scenario, records, recommended.id);
+        this.scenarioSelector(ctx, areas.pills, scenario, records, recommended.id);
 
         // --- Selected scenario headline ---
         const headY = selectorY + (compact ? 66 : 76);
@@ -200,7 +257,13 @@ export class BriefingScreen {
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
         ctx.fillText(
-            fitText(ctx, `${scenario.tagline}   ·   ${scenario.duration}   ·   ${map.name}: ${map.blurb}`, w - 80),
+            fitText(
+                ctx,
+                phone
+                    ? `${scenario.duration}   ·   ${map.name}`
+                    : `${scenario.tagline}   ·   ${scenario.duration}   ·   ${map.name}: ${map.blurb}`,
+                w - 40
+            ),
             cx,
             headY + 19
         );
@@ -224,6 +287,7 @@ export class BriefingScreen {
 
         // --- Three phase cards, supplied by the scenario ---
         const gutter = 16;
+        if (!phone) {
         const cardsY = headY + (compact ? 48 : 56);
         const cardW = Math.min(320, (w - 88 - gutter * 2) / 3);
         const cardH = compact ? 144 : 168;
@@ -243,13 +307,14 @@ export class BriefingScreen {
         ctx.font = font(12, 600);
         ctx.fillStyle = THEME.alert;
         ctx.fillText(fitText(ctx, scenario.lossCondition, w - 80), cx, lossY);
+        }
 
         // --- Primary call to action ---
         const ctaY = h - (compact ? 70 : 88);
         const pulse = 0.72 + 0.28 * Math.sin(timeSec * 3.2);
         ctx.save();
         ctx.globalAlpha = pulse;
-        const ctaText = 'FLY THIS MISSION';
+        const ctaText = phone ? 'FLY' : 'FLY THIS MISSION';
         ctx.font = font(17, 700);
         const ctaW = ctx.measureText(ctaText).width + 128;
         const ctaX = cx - ctaW / 2;
@@ -263,14 +328,27 @@ export class BriefingScreen {
         noGlow(ctx);
         ctx.restore();
 
-        const capW = keycap(ctx, ctaX + 22, ctaY, 'ENTER', { size: 15 });
-        ctx.font = font(17, 700);
-        ctx.fillStyle = THEME.ink;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(ctaText, ctaX + 22 + capW + 16, ctaY);
+        if (phone) {
+            // No keyboard: the button is the instruction.
+            ctx.font = font(17, 700);
+            ctx.fillStyle = THEME.ink;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(ctaText, cx, ctaY);
+        } else {
+            const capW = keycap(ctx, ctaX + 22, ctaY, 'ENTER', { size: 15 });
+            ctx.font = font(17, 700);
+            ctx.fillStyle = THEME.ink;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(ctaText, ctaX + 22 + capW + 16, ctaY);
+        }
 
         // --- Secondary options ---
+        if (phone) {
+            ctx.restore();
+            return;
+        }
         ctx.textBaseline = 'middle';
         const secY = h - 30;
         const secs: [string, string][] = [
@@ -364,24 +442,21 @@ export class BriefingScreen {
      */
     private scenarioSelector(
         ctx: CanvasRenderingContext2D,
-        cx: number,
-        y: number,
-        viewportW: number,
+        pills: Rect[],
         selected: ScenarioDef,
         records: MissionRecords,
         recommendedId: string
     ) {
-        const gap = 8;
-        const totalW = Math.min(viewportW - 72, 1000);
-        const pillW = (totalW - gap * (SCENARIOS.length - 1)) / SCENARIOS.length;
-        const pillH = 44;
-        let x = cx - totalW / 2;
+        const pillW = pills[0].w;
+        const pillH = pills[0].h;
 
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
 
         SCENARIOS.forEach((s, i) => {
+            const x = pills[i].x;
+            const y = pills[i].y;
             const isSelected = s.id === selected.id;
             const isRecommended = s.id === recommendedId && !isCleared(records, s.id);
             const accent = isSelected ? THEME.key
@@ -452,8 +527,6 @@ export class BriefingScreen {
                     y + pillH + 10
                 );
             }
-
-            x += pillW + gap;
         });
         ctx.restore();
     }

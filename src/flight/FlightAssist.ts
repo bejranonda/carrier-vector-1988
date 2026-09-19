@@ -357,6 +357,20 @@ function isAssistLevel(value: unknown): value is AssistLevel {
     return typeof value === 'string' && (ASSIST_LEVELS as readonly string[]).includes(value);
 }
 
+/**
+ * The stored level, or null when the player has never chosen one. Touch mode
+ * uses this to start a phone on AUTOPILOT without overriding a choice
+ * somebody has actually made.
+ */
+export function storedAssistLevel(): AssistLevel | null {
+    try {
+        const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+        return isAssistLevel(raw) ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Best-effort restore; storage can throw or be blocked and the game must boot. */
 export function loadAssistLevel(): AssistLevel {
     try {

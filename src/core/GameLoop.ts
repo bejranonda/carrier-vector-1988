@@ -36,7 +36,8 @@ import {
     displayModeSpec,
     loadDisplayMode,
     nextDisplayMode,
-    saveDisplayMode
+    saveDisplayMode,
+    storedDisplayMode
 } from '../renderer/DisplayMode';
 import type { DisplayModeId } from '../renderer/DisplayMode';
 import { deckObjective, flightObjective } from './Objectives';
@@ -53,6 +54,7 @@ import { StrikeTarget } from '../tactics/StrikeTarget';
 import {
     assistSpec,
     loadAssistLevel,
+    storedAssistLevel,
     nextAssistLevel,
     resolveControls,
     saveAssistLevel
@@ -71,6 +73,22 @@ import {
     scaleOpeningEta
 } from './Pacing';
 import type { PacingId } from './Pacing';
+import {
+    loadSchemePreference,
+    needsRotation,
+    nextSchemePreference,
+    readPlatformSignals,
+    resolveScheme,
+    saveSchemePreference
+} from './Platform';
+import type { ControlScheme, SchemePreference } from './Platform';
+import { TouchInput } from './TouchInput';
+import { solveTouchLayout } from '../renderer/TouchLayout';
+import type { SafeArea, TouchControlId, TouchLayout } from '../renderer/TouchLayout';
+import { drawLaunchButton, drawRotatePrompt, drawTouchControls } from '../renderer/TouchControls';
+import { pickTargetAt } from '../tactics/TargetDesignation';
+import type { ScreenTarget } from '../tactics/TargetDesignation';
+import { briefingHitAreas } from '../renderer/BriefingScreen';
 import {
     SHAKE_SOURCES,
     addTrauma,
@@ -99,6 +117,9 @@ import type { MissionRecords } from './MissionRecords';
 import type { ObjectiveStep } from './Objectives';
 
 export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
+
+const inside = (r: { x: number; y: number; w: number; h: number }, x: number, y: number) =>
+    x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 /** How long the camera stays in the cockpit after catching a wire. */
 const TRAP_CINEMATIC_SECONDS = 1.6;
@@ -183,6 +204,19 @@ export class GameLoop {
      * SIM restores the original deliberate timings. See core/Pacing.ts.
      */
     public pacing: PacingId = loadPacing();
+
+    /**
+     * Touch mode. Not a parallel implementation of the game: the autopilot
+     * flies, designation picks the target, and the flight model, assists and
+     * weapons are the ones the keyboard drives. See core/Platform.ts.
+     */
+    public schemePreference: SchemePreference = loadSchemePreference();
+    public controlScheme: ControlScheme = 'KEYBOARD';
+    public touch = new TouchInput();
+    public touchLayout: TouchLayout = solveTouchLayout(1280, 800);
+    private safeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+    /** Analog stick demand, which overrides the keyboard axes when present. */
+    private analog: { pitch: number; roll: number } | null = null;
 
     public assistLevel: AssistLevel = loadAssistLevel();
     /** Which protection, if any, is currently taking authority. For the HUD. */
@@ -645,6 +679,52 @@ export class GameLoop {
     // Frame lifecycle
     // -----------------------------------------------------------------
 
+    /**
+     * Re-resolve the control scheme and the thumb layout. Called from resize,
+     * so an orientation change or a window drag is enough to pick it up.
+     */
+    public applyControlScheme(insets: SafeArea = this.safeArea) {
+        this.safeArea = insets;
+        const signals = readPlatformSignals();
+        const previous = this.controlScheme;
+        this.controlScheme = resolveScheme(this.schemePreference, {
+            ...signals,
+            width: this.viewWidth,
+            height: this.viewHeight
+        });
+        this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets);
+
+        if (this.controlScheme === 'TOUCH' && previous !== 'TOUCH') this.applyTouchDefaults();
+    }
+
+    /**
+     * What a phone should start with, unless the player has already said
+     * otherwise: the jet flying itself, and the cheapest screen mode. Neither
+     * overrides a stored choice - somebody who set MANUAL on a desktop and
+     * then opened the game on their phone meant it.
+     */
+    private applyTouchDefaults() {
+        if (storedAssistLevel() === null) this.assistLevel = 'AUTO';
+        if (storedDisplayMode() === null) {
+            this.displayMode = 'CLEAN';
+            this.applyDisplayMode();
+        }
+    }
+
+    /** Cycle AUTO -> TOUCH -> KEYBOARD, for players detection got wrong. */
+    public cycleControlScheme() {
+        soundFX.playUiMove();
+        this.schemePreference = nextSchemePreference(this.schemePreference);
+        saveSchemePreference(this.schemePreference);
+        this.applyControlScheme();
+        this.deck.log(`CONTROLS: ${this.schemePreference} (${this.controlScheme}).`);
+    }
+
+    /** True while the cockpit is unusable because the device is upright. */
+    public get awaitingRotation(): boolean {
+        return needsRotation(this.controlScheme, this.viewWidth, this.viewHeight);
+    }
+
     public resize(width: number, height: number) {
         const dpr = typeof window !== 'undefined' && window.devicePixelRatio
             ? Math.min(2, Math.max(1, window.devicePixelRatio))
@@ -665,6 +745,7 @@ export class GameLoop {
         this.post.resize(this.viewWidth, this.viewHeight, dpr);
         this.renderer.resize(this.viewWidth, this.viewHeight);
         this.hud.resize(this.viewWidth, this.viewHeight);
+        this.applyControlScheme();
     }
 
     public start() {
@@ -700,6 +781,11 @@ export class GameLoop {
             // would lurch forward the instant it resumes.
             this.timestep.reset();
         } else {
+            // Touch is folded in once per FRAME, not per fixed step: it is an
+            // input device, and sampling it several times inside one frame
+            // would just repeat the same pointer positions.
+            this.updateTouch();
+
             const steps = this.timestep.consume(elapsed);
             for (let i = 0; i < steps; i++) {
                 this.fixedUpdate(FIXED_DT);
@@ -728,9 +814,16 @@ export class GameLoop {
         if (this.deck.aircraftState !== 'AIRBORNE') return;
         const k = this.inputState;
 
+        // A thumb gives an analog demand; a key gives ±1. Both arrive here as
+        // the same PilotInput, so the assist laws and the flight model below
+        // never learn which one the player used.
         const pilot = {
-            pitch: (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0),
-            roll: (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
+            pitch: this.analog
+                ? this.analog.pitch
+                : (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0),
+            roll: this.analog
+                ? this.analog.roll
+                : (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
             throttle: (k['shift'] ? 1 : 0) + (k['control'] ? -1 : 0)
         };
 
@@ -799,6 +892,131 @@ export class GameLoop {
             p.y - this.physics.position.y,
             p.z - this.physics.position.z
         );
+    }
+
+    /**
+     * Fold the current touch state into the game: the stick becomes an analog
+     * demand, the throttle track sets power directly, and every press that
+     * has happened since the last frame is dispatched.
+     */
+    private updateTouch() {
+        if (this.controlScheme !== 'TOUCH') {
+            this.analog = null;
+            return;
+        }
+
+        const airborne = this.deck.aircraftState === 'AIRBORNE' && this.currentView === 'MICRO_FLIGHT';
+        const demand = this.touch.demand(this.touchLayout);
+
+        this.analog = airborne && demand.stickOrigin
+            ? { pitch: demand.pitch, roll: demand.roll }
+            : null;
+
+        if (airborne && demand.throttle !== null) {
+            this.physics.throttle = Math.min(1.5, Math.max(0, demand.throttle));
+            this.training.progress.throttleChanged = true;
+        }
+
+        // The cannon is a held trigger; everything else is edge-triggered, so
+        // the same button can fire a burst or release a single bomb.
+        this.inputState[' '] = demand.firing && this.selectedWeapon === 'GUN';
+
+        for (const tap of this.touch.consumeTaps()) {
+            this.handleTouchTap(tap.control, tap.x, tap.y);
+        }
+    }
+
+    private handleTouchTap(control: TouchControlId, x: number, y: number) {
+        switch (control) {
+            case 'FIRE':
+                if (this.selectedWeapon !== 'GUN') this.fireSelectedWeapon();
+                return;
+            case 'TARGET':
+                this.cycleDesignation(1);
+                return;
+            case 'WEAPON_GUN':
+                this.selectedWeapon = 'GUN';
+                soundFX.playUiMove();
+                return;
+            case 'WEAPON_MISSILE':
+                this.selectedWeapon = 'AIM9';
+                soundFX.playUiMove();
+                return;
+            case 'WEAPON_BOMB':
+                this.selectedWeapon = 'BOMB';
+                soundFX.playUiMove();
+                return;
+            case 'MENU':
+                this.helpVisible = !this.helpVisible;
+                soundFX.playUiMove();
+                return;
+            case 'LAUNCH':
+                this.requestCatapultLaunch();
+                return;
+            case 'WORLD':
+                this.designateAtPoint(x, y);
+                return;
+            default:
+                // STICK and THROTTLE are continuous, handled in updateTouch().
+        }
+    }
+
+    /**
+     * Designate whatever the player pointed at.
+     *
+     * Pointing at a thing is the natural way to choose it on a touchscreen;
+     * cycling a list with a button is a keyboard idiom wearing a thumb's
+     * clothing. The cycle button still exists for anything off the glass.
+     */
+    public designateAtPoint(x: number, y: number): boolean {
+        if (this.deck.aircraftState !== 'AIRBORNE') return false;
+        this.refreshDesignation();
+
+        const screen: ScreenTarget[] = [];
+        for (const solution of this.tracker.solutions) {
+            const camPt = this.renderer.transformToCamera(
+                solution.target.position,
+                this.physics.position, this.physics.pitch, this.physics.yaw, this.physics.roll
+            );
+            if (camPt.z < 2) continue;
+            const proj = this.renderer.projectCameraPoint(camPt);
+            screen.push({ id: solution.target.id, x: proj.x, y: proj.y });
+        }
+
+        const id = pickTargetAt(x, y, screen);
+        if (!id) return false;
+
+        const chosen = this.tracker.designateById(id);
+        if (chosen) {
+            soundFX.playLockTone();
+            this.deck.log(`DESIGNATED ${chosen.target.name} - ${(chosen.range / 1000).toFixed(1)} KM.`);
+        }
+        return chosen !== null;
+    }
+
+    /** A tap on a menu screen, in CSS pixels. Returns true if it was used. */
+    public handleMenuTap(x: number, y: number): boolean {
+        if (this.phase === 'BRIEFING') {
+            const areas = briefingHitAreas(this.viewWidth, this.viewHeight, SCENARIOS.length, true);
+            if (areas.daily && inside(areas.daily, x, y)) {
+                this.startDailySortie();
+                return true;
+            }
+            for (let i = 0; i < areas.pills.length; i++) {
+                if (inside(areas.pills[i], x, y)) {
+                    this.selectScenarioByIndex(i);
+                    return true;
+                }
+            }
+            this.confirmBriefing();
+            return true;
+        }
+
+        if (this.phase === 'DEBRIEF') {
+            this.restartFromDebrief();
+            return true;
+        }
+        return false;
     }
 
     /** Register a shake event. Presentation only - see the field comment. */
@@ -1402,7 +1620,8 @@ export class GameLoop {
             this.briefing.drawBriefing(
                 this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords,
                 `${pacingSpec(this.pacing).label} pacing`,
-                { number: this.dailyNumberToday(), result: this.todaysDaily() }
+                { number: this.dailyNumberToday(), result: this.todaysDaily() },
+                this.controlScheme === 'TOUCH'
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
@@ -1437,7 +1656,14 @@ export class GameLoop {
                 {
                     objective: this.currentObjective(),
                     hint: this.currentHint,
-                    displayModeLabel: this.displayModeLabel
+                    displayModeLabel: this.displayModeLabel,
+                    touchMode: this.controlScheme === 'TOUCH',
+                    touchReserveBottom: this.controlScheme === 'TOUCH'
+                        ? Math.max(56, this.viewHeight - this.touchLayout.launch.y + 10)
+                        : undefined,
+                    touchReserveTopRight: this.controlScheme === 'TOUCH'
+                        ? this.viewWidth - this.touchLayout.menu.x + 10
+                        : undefined
                 },
                 w, h, this.elapsedSeconds
             );
@@ -1452,7 +1678,57 @@ export class GameLoop {
             );
         }
 
+        if (this.controlScheme === 'TOUCH' && this.phase === 'ACTIVE' && !this.helpVisible) {
+            this.drawTouchChrome();
+        }
+
         this.drawImpactFlash(w, h);
+
+        // Last of all: a cockpit at phone-portrait width cannot hold its
+        // instruments, so the game asks for the device rather than shipping
+        // something unreadable.
+        if (this.awaitingRotation) {
+            drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds);
+        }
+    }
+
+    /**
+     * The edges the thumb controls claim, handed to the instrument solver so
+     * it places the airspeed block, the RWR and the systems line inside what
+     * is left rather than underneath a button.
+     */
+    private hudReserve() {
+        const l = this.touchLayout;
+        return {
+            left: Math.max(0, l.stickZone.x + l.stickZone.w - l.safe.x),
+            right: Math.max(0, l.safe.x + l.safe.w - (l.weapons[0]?.x ?? l.fire.cx - l.fire.r)),
+            bottom: Math.max(0, l.safe.y + l.safe.h - Math.min(l.stickZone.y, l.target.cy - l.target.r)),
+            top: 0
+        };
+    }
+
+    private drawTouchChrome() {
+        if (this.currentView === 'MACRO_DECK') {
+            const ready = this.deck.aircraftState === 'CATAPULT_READY';
+            drawLaunchButton(
+                this.ctx,
+                this.touchLayout,
+                ready,
+                ready ? 'LAUNCH' : this.deck.aircraftState.replace(/_/g, ' '),
+                0.5 + 0.5 * Math.sin(this.elapsedSeconds * 3.2)
+            );
+            return;
+        }
+
+        const loadout = this.physics.loadout;
+        drawTouchControls(this.ctx, this.touchLayout, {
+            demand: this.touch.demand(this.touchLayout),
+            selectedWeapon: this.selectedWeapon,
+            ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
+            throttle: this.physics.throttle,
+            hasDesignation: this.tracker.designatedId !== null,
+            fireArmed: this.deck.aircraftState === 'AIRBORNE'
+        });
     }
 
     /**
@@ -1556,7 +1832,9 @@ export class GameLoop {
                 assistOverride: this.assistOverride,
                 callouts: this.callouts.active(),
                 hitMarker: this.hitMarker,
-                trapStamp: this.trapGrade
+                trapStamp: this.trapGrade,
+                touchMode: this.controlScheme === 'TOUCH',
+                touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined
             }
         );
     }

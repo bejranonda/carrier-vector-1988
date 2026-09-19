@@ -46,6 +46,17 @@ export interface DeckViewContext {
     objective: ObjectiveStep;
     hint: Hint | null;
     displayModeLabel: string;
+    /**
+     * Touch mode sheds the keyboard cheat strip and the keycaps, and leaves a
+     * band at the bottom for the launch button. On a 320 px phone the strip
+     * and the button were drawn on top of each other, and every keycap was
+     * advice the player had no way to take.
+     */
+    touchMode?: boolean;
+    /** Height reserved at the bottom for the launch button. */
+    touchReserveBottom?: number;
+    /** Width reserved at the top right for the menu button. */
+    touchReserveTopRight?: number;
 }
 
 export class DeckView {
@@ -60,7 +71,20 @@ export class DeckView {
         height: number,
         timeSec: number
     ) {
-        const specs: PanelSpec[] = [
+        /**
+         * A phone shows what it can act on: the orders, and how close the jet
+         * is to being ready. Crew stamina, the deck plan and the threat rose
+         * are wonderful and do not fit on a 320 px screen alongside a button
+         * big enough to press.
+         */
+        const specs: PanelSpec[] = context.touchMode ? [
+            // One row each. The solver will not drop an essential panel, so on
+            // a 320 px screen the row counts are what has to fit - asking for
+            // three rows of turnaround simply overflowed the content box.
+            { id: 'ORDERS', minW: 220, rows: 1, pin: 'top', essential: true },
+            { id: 'TURNAROUND', minW: 220, rows: 1, priority: 9, essential: true },
+            { id: 'THREATS', minW: 220, rows: 3, priority: 7 }
+        ] : [
             { id: 'ORDERS', minW: 420, rows: 2, pin: 'top', essential: true },
             { id: 'TURNAROUND', minW: 300, rows: 7, priority: 9, essential: true },
             { id: 'PAYLOAD', minW: 300, rows: 5, priority: 8 },
@@ -71,7 +95,13 @@ export class DeckView {
             { id: 'LOG', minW: 400, rows: 5, pin: 'bottom', priority: 4 }
         ];
 
-        const layout = computeDeckLayout(specs, { width, height });
+        const layout = computeDeckLayout(specs, {
+            width,
+            height,
+            // The footer is the keyboard strip; in touch mode that space
+            // belongs to the launch button instead.
+            footerH: context.touchMode ? (context.touchReserveBottom ?? 72) : undefined
+        });
 
         ctx.save();
         ctx.textAlign = 'left';
@@ -79,11 +109,13 @@ export class DeckView {
         noGlow(ctx);
 
         this.drawBackdrop(ctx, width, height);
-        this.drawHeader(ctx, layout.header, deck, score);
+        this.drawHeader(ctx, layout.header, deck, score, context.touchReserveTopRight ?? 0);
 
         const p = layout.panels;
-        if (p['ORDERS']) this.drawOrders(ctx, p['ORDERS'], context.objective, deck.scrambleAlert);
-        if (p['TURNAROUND']) this.drawTurnaround(ctx, p['TURNAROUND'], deck);
+        if (p['ORDERS']) {
+            this.drawOrders(ctx, p['ORDERS'], context.objective, deck.scrambleAlert, context.touchMode);
+        }
+        if (p['TURNAROUND']) this.drawTurnaround(ctx, p['TURNAROUND'], deck, context.touchMode);
         if (p['PAYLOAD']) this.drawPayload(ctx, p['PAYLOAD'], deck);
         if (p['THREATS']) this.drawThreatRose(ctx, p['THREATS'], deck, timeSec);
         if (p['STATUS']) this.drawStatus(ctx, p['STATUS'], deck);
@@ -117,7 +149,14 @@ export class DeckView {
         ctx.restore();
     }
 
-    private drawHeader(ctx: CanvasRenderingContext2D, r: Rect, deck: DeckManager, score: ScoreKeeper) {
+    private drawHeader(
+        ctx: CanvasRenderingContext2D,
+        r: Rect,
+        deck: DeckManager,
+        score: ScoreKeeper,
+        reserveRight = 0
+    ) {
+        r = { ...r, w: Math.max(120, r.w - reserveRight) };
         ctx.save();
         noGlow(ctx);
 
@@ -168,7 +207,8 @@ export class DeckView {
         ctx: CanvasRenderingContext2D,
         r: Rect,
         objective: ObjectiveStep,
-        scramble: boolean
+        scramble: boolean,
+        touchMode = false
     ) {
         const accent = objective.urgency === 'URGENT' ? THEME.alert
             : objective.urgency === 'ACTION' ? THEME.caution
@@ -182,9 +222,10 @@ export class DeckView {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
 
-        // Key first, so the eye lands on the pressable thing.
+        // Key first, so the eye lands on the pressable thing - unless there
+        // is no keyboard, in which case the big button below is the thing.
         let textX = inner.x;
-        if (objective.key) {
+        if (objective.key && !touchMode) {
             const capW = keycap(ctx, inner.x, inner.y + 6, objective.key, { size: 15, color: THEME.key });
             textX = inner.x + capW + 14;
         }
@@ -237,7 +278,12 @@ export class DeckView {
         ctx.restore();
     }
 
-    private drawTurnaround(ctx: CanvasRenderingContext2D, r: Rect, deck: DeckManager) {
+    private drawTurnaround(
+        ctx: CanvasRenderingContext2D,
+        r: Rect,
+        deck: DeckManager,
+        touchMode = false
+    ) {
         const ready = deck.aircraftState === 'CATAPULT_READY';
         const accent = ready ? THEME.caution : THEME.phosphor;
         const inner = panel(ctx, r, 'AIRCRAFT TURNAROUND', { accent, emphasis: ready });
@@ -253,13 +299,18 @@ export class DeckView {
         ctx.fillStyle = THEME.muted;
         ctx.fillText(STATE_BLURB[deck.aircraftState], inner.x, inner.y + 32);
 
-        const barY = inner.y + 46;
+        // Clamp the bar inside the panel: on a phone this panel is one row
+        // tall, and a fixed +46 put the progress bar and its percentage
+        // outside its own border.
+        const barY = Math.min(inner.y + 46, inner.y + inner.h - 10);
         bar(ctx, { x: inner.x, y: barY, w: inner.w, h: 8 }, deck.currentTaskProgress / 100, accent);
-        ctx.font = font(11, 600);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(`${Math.floor(deck.currentTaskProgress)}%`, inner.x, barY + 22);
+        if (barY + 22 <= inner.y + inner.h) {
+            ctx.font = font(11, 600);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(`${Math.floor(deck.currentTaskProgress)}%`, inner.x, barY + 22);
+        }
 
-        if (ready) {
+        if (ready && !touchMode) {
             const segs: Segment[] = [{ key: 'ENTER' }, { text: 'CAT SHOT', color: THEME.caution, weight: 600 }];
             drawSegments(ctx, inner.x + 44, barY + 18, segs, 11);
         }
@@ -268,7 +319,9 @@ export class DeckView {
         // PAYLOAD panel's plan for the next sortie.
         const loadBase = barY + 46;
         const loadStep = Math.max(16, Math.min(24, (inner.y + inner.h - loadBase) / 3));
-        if (loadStep > 12) {
+        // On a phone this panel is two rows tall and the stores list would
+        // run out of the bottom of it.
+        if (loadStep > 12 && !touchMode) {
             row(ctx, inner, loadBase, 'LOADED FUEL', `${deck.plannedFuel} L`);
             row(ctx, inner, loadBase + loadStep, 'LOADED AIM-9', `${deck.plannedLoadout.sidewinders}`);
             row(ctx, inner, loadBase + loadStep * 2, 'LOADED MK.82', `${deck.plannedLoadout.ironBombs}`);
@@ -622,14 +675,16 @@ export class DeckView {
             ctx.fillText(fitText(ctx, context.hint.text, r.w), r.x, r.y + 10);
         }
 
-        const segs: Segment[] = [
-            { key: 'TAB' }, { text: 'cockpit' },
-            { key: 'ENTER' }, { text: 'cat shot' },
-            { key: '1-4' }, { text: 'payload' },
-            { key: 'H' }, { text: 'all controls' },
-            { key: 'P' }, { text: context.displayModeLabel }
-        ];
-        drawSegments(ctx, r.x, r.y + 32, segs, 11);
+        if (!context.touchMode) {
+            const segs: Segment[] = [
+                { key: 'TAB' }, { text: 'cockpit' },
+                { key: 'ENTER' }, { text: 'cat shot' },
+                { key: '1-4' }, { text: 'payload' },
+                { key: 'H' }, { text: 'all controls' },
+                { key: 'P' }, { text: context.displayModeLabel }
+            ];
+            drawSegments(ctx, r.x, r.y + 32, segs, 11);
+        }
         ctx.restore();
     }
 }

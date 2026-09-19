@@ -99,6 +99,16 @@ const STORAGE_KEY = 'carrier-vector-1988.displayMode';
  * Storage can throw (Safari private mode, blocked third-party storage), and
  * the game must still boot, so both directions are best-effort.
  */
+export function storedDisplayMode(): DisplayModeId | null {
+    try {
+        const stored = globalThis.localStorage?.getItem(STORAGE_KEY);
+        if (stored && DISPLAY_MODES.some(m => m.id === stored)) return stored as DisplayModeId;
+    } catch {
+        // Storage unavailable.
+    }
+    return null;
+}
+
 export function loadDisplayMode(): DisplayModeId {
     try {
         const stored = globalThis.localStorage?.getItem(STORAGE_KEY);

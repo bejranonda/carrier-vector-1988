@@ -12,6 +12,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { angleDelta } from '../flight/FlightAssist';
 import type { AirborneTarget } from '../renderer/HUD';
+import { briefingHitAreas } from '../renderer/BriefingScreen';
+import { SCENARIOS } from './Scenarios';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -477,6 +479,216 @@ describe('GameLoop integration smoke test', () => {
         expect(game.scenario.id).toBe(first);
         game.selectScenario(-1);
         expect(game.scenario.id).toBe('CARRIER_QUALS');
+    });
+
+    // -----------------------------------------------------------------
+    // Touch mode
+    // -----------------------------------------------------------------
+
+    /** Force the touch scheme, as a phone's signals would. */
+    function touchGame() {
+        const game = new GameLoop(makeCanvasStub());
+        game.schemePreference = 'TOUCH';
+        game.resize(844, 390);
+        return game;
+    }
+
+    it('resolves the touch scheme and starts a phone on the autopilot', () => {
+        const game = touchGame();
+        expect(game.controlScheme).toBe('TOUCH');
+        // The jet flying itself is what makes one-thumb play possible.
+        expect(game.assistLevel).toBe('AUTO');
+        expect(game.displayMode).toBe('CLEAN');
+    });
+
+    it('leaves a keyboard player untouched', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.resize(1440, 900);
+        expect(game.controlScheme).toBe('KEYBOARD');
+        expect(game.assistLevel).toBe('ASSIST');
+    });
+
+    it('asks a phone held upright to turn, and stops asking once it is', () => {
+        const game = touchGame();
+        game.resize(390, 844);
+        expect(game.awaitingRotation).toBe(true);
+        game.resize(844, 390);
+        expect(game.awaitingRotation).toBe(false);
+    });
+
+    it('launches from the deck button', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        runFrames(game, 5);
+        expect(game.deck.aircraftState).toBe('CATAPULT_READY');
+
+        const l = game.touchLayout.launch;
+        game.touch.down({ id: 1, x: l.x + l.w / 2, y: l.y + l.h / 2 }, game.touchLayout, 'DECK');
+        game.touch.up(1);
+        runFrames(game, 10);
+
+        expect(game.deck.aircraftState).not.toBe('CATAPULT_READY');
+        runFrames(game, 240);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+    });
+
+    it('flies from the thumb stick', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 5);
+
+        const stick = game.touchLayout.stick;
+        game.touch.down({ id: 1, x: stick.cx, y: stick.cy }, game.touchLayout);
+        game.touch.move({ id: 1, x: stick.cx + stick.r, y: stick.cy });
+        runFrames(game, 60);
+
+        expect(game.physics.roll).toBeGreaterThan(0.2);
+    });
+
+    it('sets the throttle from the track', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        const t = game.touchLayout.throttle;
+        game.touch.down({ id: 1, x: t.x + t.w / 2, y: t.y }, game.touchLayout);
+        runFrames(game, 5);
+        expect(game.physics.throttle).toBeCloseTo(1.5, 2);
+
+        game.touch.move({ id: 1, x: t.x + t.w / 2, y: t.y + t.h });
+        runFrames(game, 5);
+        expect(game.physics.throttle).toBeCloseTo(0, 2);
+    });
+
+    it('selects a weapon and releases it from the thumb buttons', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        game.physics.loadout.sidewinders = 2;
+
+        const missilePill = game.touchLayout.weapons[1];
+        game.touch.down(
+            { id: 1, x: missilePill.x + missilePill.w / 2, y: missilePill.y + missilePill.h / 2 },
+            game.touchLayout
+        );
+        game.touch.up(1);
+        runFrames(game, 3);
+        expect(game.selectedWeapon).toBe('AIM9');
+
+        const fire = game.touchLayout.fire;
+        game.touch.down({ id: 2, x: fire.cx, y: fire.cy }, game.touchLayout);
+        game.touch.up(2);
+        runFrames(game, 3);
+        expect(game.weapons.missiles.length).toBe(1);
+    });
+
+    /**
+     * Pointing at a thing is the natural way to choose it on a touchscreen.
+     * The cycle button still exists for whatever is off the glass.
+     */
+    it('designates the contact under a tap on the world', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        game.sensors.samSites = [];
+
+        const p = game.physics.position;
+        game.airborneTargets = [{
+            id: 'BANDIT', name: 'MiG-23 FLOGGER #1', isAlive: true,
+            position: { x: p.x, y: p.y, z: p.z + 2000 },
+            velocity: { x: 0, y: 0, z: 0 }
+        }];
+        runFrames(game, 3);
+
+        // Dead ahead projects to the centre of the glass.
+        expect(game.designateAtPoint(game.viewWidth / 2, game.viewHeight / 2)).toBe(true);
+        expect(game.tracker.designatedId).toBe('BANDIT');
+    });
+
+    it('does not designate empty sky', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        runFrames(game, 3);
+
+        expect(game.designateAtPoint(10, 10)).toBe(false);
+        expect(game.tracker.designatedId).toBeNull();
+    });
+
+    it('picks a mission from a tap on its pill', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        expect(game.phase).toBe('BRIEFING');
+
+        const areas = briefingHitAreas(game.viewWidth, game.viewHeight, SCENARIOS.length, true);
+        const third = areas.pills[2];
+        expect(game.handleMenuTap(third.x + third.w / 2, third.y + third.h / 2)).toBe(true);
+        expect(game.scenario.id).toBe(SCENARIOS[2].id);
+        // Still on the briefing: choosing is not committing.
+        expect(game.phase).toBe('BRIEFING');
+    });
+
+    it('flies the daily from a tap on its line', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        const areas = briefingHitAreas(game.viewWidth, game.viewHeight, SCENARIOS.length, true);
+        game.handleMenuTap(areas.daily!.x + 20, areas.daily!.y + 15);
+        expect(game.isDailyRun).toBe(true);
+        expect(game.phase).toBe('ACTIVE');
+    });
+
+    it('commits the mission from a tap anywhere else on the briefing', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        expect(game.handleMenuTap(game.viewWidth / 2, game.viewHeight - 30)).toBe(true);
+        expect(game.phase).toBe('ACTIVE');
+    });
+
+    it('draws every phase in touch mode without throwing', () => {
+        for (const [w, h] of [[568, 320], [844, 390], [1024, 768]] as const) {
+            const game = new GameLoop(makeCanvasStub());
+            game.schemePreference = 'TOUCH';
+            game.resize(w, h);
+            runFrames(game, 150);          // boot + briefing
+            game.confirmBriefing();
+            runFrames(game, 30);           // deck
+            game.hotStartAirborne();
+            runFrames(game, 60);           // cockpit
+            game.helpVisible = true;
+            runFrames(game, 5);            // help overlay
+            game.helpVisible = false;
+            game.deck.inventory.carrierHealth = 0;
+            runFrames(game, 30);           // debrief
+            expect(game.phase).toBe('DEBRIEF');
+        }
+    });
+
+    it('drops every finger when focus is lost', () => {
+        const game = touchGame();
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        const stick = game.touchLayout.stick;
+        game.touch.down({ id: 1, x: stick.cx, y: stick.cy }, game.touchLayout);
+        game.touch.clear();
+        runFrames(game, 5);
+        expect(game.touch.activeCount).toBe(0);
     });
 
     // -----------------------------------------------------------------

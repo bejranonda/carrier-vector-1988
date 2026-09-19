@@ -36,7 +36,7 @@ import type { ControlDemand } from '../flight/FlightAssist';
 import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
-import type { HudLayout } from './HudLayout';
+import type { HudLayout, HudReserve } from './HudLayout';
 import {
     THEME,
     fitText,
@@ -107,6 +107,9 @@ export interface HudContext {
     hitMarker?: number;
     /** Wire grade to stamp over the deck while the trap payoff plays. */
     trapStamp?: string | null;
+    /** Screen edges the thumb controls occupy, in touch mode. */
+    touchReserve?: HudReserve;
+    touchMode?: boolean;
 }
 
 /**
@@ -153,6 +156,8 @@ const BAND = {
 export class HUD {
     public width: number;
     public height: number;
+    /** Score handed through to the touch systems line for one frame. */
+    private touchScore?: ScoreKeeper;
 
     constructor(width: number, height: number) {
         this.width = width;
@@ -173,7 +178,9 @@ export class HUD {
         renderer: VectorRenderer,
         context: HudContext
     ) {
-        const layout = this.solveLayout(physics, context.checklist.length > 0);
+        const layout = this.solveLayout(
+            physics, context.checklist.length > 0, context.touchReserve, context.touchMode
+        );
 
         ctx.save();
         ctx.lineWidth = 1.5;
@@ -192,12 +199,13 @@ export class HUD {
         }
 
         // --- Instruments (all on backplates, all outside the centre box) ---
-        this.drawObjectiveStrip(ctx, context.objective, layout.cx);
-        this.drawCompassTape(ctx, physics, layout.cx);
+        this.drawObjectiveStrip(ctx, context.objective, layout.cx, layout.touchMode);
+        if (layout.showCompass) this.drawCompassTape(ctx, physics, layout.cx);
         this.drawSpeedBlock(ctx, physics, layout);
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
+        this.touchScore = layout.touchMode ? context.score : undefined;
         this.drawSystemsBlock(ctx, physics, selectedWeapon, layout);
-        this.drawRWR(ctx, sensors, layout);
+        if (layout.showRwr) this.drawRWR(ctx, sensors, layout);
         if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
         const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
 
@@ -212,11 +220,11 @@ export class HUD {
         if (context.hitMarker) this.drawHitMarker(ctx, layout, context.hitMarker);
         this.drawCallouts(ctx, context.callouts ?? [], layout);
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
-        this.drawScoreChip(ctx, context.score);
+        if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
         );
-        this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
+        if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
         ctx.restore();
     }
@@ -237,12 +245,19 @@ export class HUD {
     }
 
     /** Solve instrument placement for the current viewport. */
-    private solveLayout(physics: AircraftPhysics, hasChecklist: boolean): HudLayout {
+    private solveLayout(
+        physics: AircraftPhysics,
+        hasChecklist: boolean,
+        reserve?: HudReserve,
+        touchMode?: boolean
+    ): HudLayout {
         return solveHudLayout({
             width: this.width,
             height: this.height,
             showApproach: HUD.isOnApproach(physics),
-            hasChecklist
+            hasChecklist,
+            reserve,
+            touchMode
         });
     }
 
@@ -255,7 +270,14 @@ export class HUD {
      * what this sortie wants from you. Everything else on screen is state;
      * this is intent.
      */
-    private drawObjectiveStrip(ctx: CanvasRenderingContext2D, objective: ObjectiveStep, cx: number) {
+    private drawObjectiveStrip(
+        ctx: CanvasRenderingContext2D,
+        objective: ObjectiveStep,
+        cx: number,
+        touchMode = false
+    ) {
+        // "Press SPACE" is not advice you can act on without a keyboard.
+        const showKey = objective.key !== undefined && !touchMode;
         const accent = objective.urgency === 'URGENT' ? THEME.alert
             : objective.urgency === 'ACTION' ? THEME.caution
                 : THEME.phosphor;
@@ -278,7 +300,7 @@ export class HUD {
         ctx.font = font(22, 700);
         const clockW = showClock ? ctx.measureText(clockText).width + 22 : 0;
 
-        const keyW = objective.key ? 58 : 0;
+        const keyW = showKey ? 58 : 0;
         // The strip is centred, so its half-width has to clear the score chip
         // in the same band on the right. Without this reserve the plate ran
         // under the chip on anything narrower than about 1000px.
@@ -298,7 +320,7 @@ export class HUD {
         ctx.fill();
 
         let textX = x + 16;
-        if (objective.key) {
+        if (showKey && objective.key) {
             textX += keycap(ctx, textX, y + 20, objective.key, { size: 12 }) + 10;
         }
 
@@ -486,6 +508,10 @@ export class HUD {
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
         layout: HudLayout
     ) {
+        if (layout.touchMode) {
+            this.drawTouchSystemsLine(ctx, physics, layout, this.touchScore);
+            return;
+        }
         if (layout.compactSystems) {
             this.drawSystemsStrip(ctx, physics, selectedWeapon);
             return;
@@ -571,6 +597,42 @@ export class HUD {
      * bottom. The 150px panel would otherwise eat a third of the screen and
      * climb into the centre instrument band.
      */
+    /**
+     * Touch mode's systems readout: fuel, hull and G only.
+     *
+     * Throttle, armed weapon and rounds remaining are all drawn on the thumb
+     * controls themselves, so repeating them in a strip across the bottom
+     * both wastes the scarcest screen in the game and puts text under the
+     * stick. What is left is what the controls cannot show.
+     */
+    private drawTouchSystemsLine(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        layout: HudLayout,
+        score?: ScoreKeeper
+    ) {
+        ctx.save();
+        noGlow(ctx);
+        ctx.font = font(10, 600);
+        const fuelLow = physics.fuel < 900;
+        const hurt = physics.damage > 25;
+        // The score rides here too: a separate chip in the top-right corner
+        // collided with the objective strip on a narrow screen, and this
+        // plate is already paid for.
+        const text = `FUEL ${Math.round(physics.fuel)}L   HULL ${Math.round(100 - physics.damage)}%   ${physics.gLoad.toFixed(1)}G`
+            + (score ? `   ${score.totalScore} PTS` : '');
+        const w = ctx.measureText(text).width + 20;
+        const x = HUD_METRICS.edge + layout.reserve.left;
+        const y = this.height - layout.reserve.bottom - 24;
+
+        plate(ctx, { x, y, w, h: 20 }, { fill: 'rgba(6,13,17,0.7)', border: THEME.edgeSoft, radius: 4 });
+        ctx.fillStyle = fuelLow || hurt ? THEME.caution : THEME.muted;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x + 10, y + 10);
+        ctx.restore();
+    }
+
     private drawSystemsStrip(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
@@ -867,13 +929,15 @@ export class HUD {
         ctx.restore();
     }
 
-    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper) {
+    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout) {
         ctx.save();
         noGlow(ctx);
         ctx.font = font(11, 600);
         const text = `${score.totalScore} PTS · ${score.rank}`;
         const w = ctx.measureText(text).width + 22;
-        const x = this.width - w - 20;
+        // The menu button lives in the top-right corner in touch mode; the
+        // chip has to clear it rather than sit underneath it.
+        const x = this.width - w - 20 - (layout.touchMode ? 58 : 0);
         plate(ctx, { x, y: 18, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
         ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
@@ -1052,7 +1116,12 @@ export class HUD {
     private drawRWR(ctx: CanvasRenderingContext2D, sensors: SensorTacticsManager, layout: HudLayout) {
         const size = layout.rwrSize;
         const x = this.width - size - HUD_METRICS.edge;
-        const y = this.height - size - (layout.compactSystems ? 76 : 54);
+        // In touch mode the bottom-right corner is the fire button, so the
+        // scope hangs under the altitude block instead.
+        const y = layout.touchMode
+            ? Math.min(layout.cy + 40, this.height - layout.reserve.bottom - size - 4)
+            : this.height - size - layout.reserve.bottom
+                - (layout.compactSystems ? 76 : 54);
         const rwrX = x + size / 2;
         const rwrY = y + size / 2 + 6;
         const rwrRadius = size / 2 - 16;
