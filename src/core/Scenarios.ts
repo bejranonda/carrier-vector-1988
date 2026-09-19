@@ -25,7 +25,10 @@
 import type { AircraftLoadout } from '../flight/AircraftPhysics';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import type { StrikeTargetSpec } from '../tactics/StrikeTarget';
+import type { MapId } from '../tactics/TerrainProfiles';
 import type { ObjectiveStep } from './Objectives';
+import { isCleared, recordFor } from './MissionRecords';
+import type { MissionRecords } from './MissionRecords';
 import { formatEta } from './Objectives';
 
 export type ScenarioId =
@@ -103,6 +106,8 @@ export interface ScenarioCard {
 
 export interface ScenarioSetup {
     threat: ThreatProfile;
+    /** Which map to fly. Defaults to the fjord. */
+    map?: MapId;
     /** Skip the deck and start over the canyon. */
     startAirborne?: boolean;
     /** Remove the SAM belt entirely (used by carrier qualification). */
@@ -249,7 +254,14 @@ const CARRIER_DEFENSE: ScenarioDef = {
     tagline: 'Endless waves. How long can you hold CV-68?',
     difficulty: 2,
     duration: 'Endless',
-    setup: { threat: { endlessWaves: true }, showTrainingChecklist: true },
+    setup: {
+        // The flight checkout's last step is "descend until the RWR goes
+        // silent", so the intro mode has to be on a map that can actually
+        // mask. Open water would have silently broken the lesson.
+        threat: { endlessWaves: true },
+        map: 'FJORD',
+        showTrainingChecklist: true
+    },
     cards: [
         {
             n: '1',
@@ -292,6 +304,7 @@ const CANYON_STRIKE: ScenarioDef = {
             inventory: { ironBombs: 6, sidewinders: 8 },
             plannedFuel: 4800
         },
+        map: 'FJORD',
         strikeTarget: HARDENED_PEN,
         timeLimitSeconds: 240,
         // The window is the raid window. Once the pen is down the clock has
@@ -377,7 +390,7 @@ const CANYON_STRIKE: ScenarioDef = {
 const IRON_HAND: ScenarioDef = {
     id: 'IRON_HAND',
     name: 'IRON HAND',
-    tagline: 'Roll back the SAM belt. Three sites, one jet.',
+    tagline: 'Roll back the SAM belt. Four sites behind four ridges.',
     difficulty: 3,
     duration: '~8 min',
     setup: {
@@ -387,6 +400,9 @@ const IRON_HAND: ScenarioDef = {
             inventory: { ironBombs: 12 },
             plannedFuel: 5000
         },
+        // Four launchers behind offset ridge gaps: each kill needs its own
+        // route in, which is the whole point of a SEAD mission.
+        map: 'SHATTERED_RIDGE',
         loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4 }
     },
     cards: [
@@ -399,13 +415,13 @@ const IRON_HAND: ScenarioDef = {
         {
             n: '2',
             title: 'WORK THE BELT',
-            body: 'Three sites up the fjord. Break each lock behind a ridge, then come over the top and bomb the launcher.',
+            body: 'Four launchers, each behind its own ridge with the gap offset from the last. Break the lock, pop over, bomb it.',
             keys: [['3', 'select bomb'], ['SPACE', 'release']]
         },
         {
             n: '3',
             title: 'RELOAD AND REPEAT',
-            body: 'Four bombs a sortie. Trap aboard, rearm and go back for the rest - the boat is your magazine.',
+            body: 'Four bombs a sortie, four launchers. Trap aboard, rearm and go back for the rest - the boat is your magazine.',
             keys: [['TAB', 'deck'], ['ENTER', 'relaunch']]
         }
     ],
@@ -443,6 +459,7 @@ const LAST_STAND: ScenarioDef = {
             inventory: { carrierHealth: 70, spareAirframes: 2, sidewinders: 12 },
             plannedFuel: 4200
         },
+        map: 'OPEN_SEA',
         loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0 }
     },
     cards: [
@@ -495,6 +512,7 @@ const CARRIER_QUALS: ScenarioDef = {
     duration: '~5 min',
     setup: {
         threat: { openingTimeline: [], endlessWaves: false, plannedFuel: 4000 },
+        map: 'OPEN_SEA',
         noSamSites: true,
         startAirborne: true,
         loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0 }
@@ -553,6 +571,47 @@ export function scenarioById(id: ScenarioId): ScenarioDef {
 export function scenarioAt(index: number): ScenarioDef {
     const n = SCENARIOS.length;
     return SCENARIOS[((index % n) + n) % n];
+}
+
+/**
+ * What to fly next, given what has been flown already.
+ *
+ * Five missions all available at once, with nothing marking which you have
+ * beaten, is a menu rather than a campaign: a new player picks by name and
+ * lands in the canyon strike, which is a five-pip mission with a four-minute
+ * clock, and concludes the game is impossible. This is the recommendation the
+ * briefing and the debrief make instead, and it is deliberately a suggestion
+ * and not a lock - everything stays selectable from the first run.
+ *
+ * Easiest uncleared first, preferring one already attempted (you were in the
+ * middle of it), and once everything is cleared, the hardest one - which is
+ * where the replay value actually is.
+ */
+export function recommendScenario(records: MissionRecords): ScenarioDef {
+    // A player who has flown nothing at all goes to the mission that runs the
+    // six-step flight checkout, whatever its difficulty pips say. Sending a
+    // first-time pilot to the gentlest mission instead would send them to
+    // carrier qualification - which has no tutorial and consists entirely of
+    // the hardest skill in the game.
+    const neverFlown = SCENARIOS.every(s => recordFor(records, s.id).attempts === 0);
+    const checkout = SCENARIOS.find(s => s.setup.showTrainingChecklist);
+    if (neverFlown && checkout) return checkout;
+
+    const uncleared = SCENARIOS.filter(s => !isCleared(records, s.id));
+    if (uncleared.length === 0) {
+        return [...SCENARIOS].sort((a, b) => b.difficulty - a.difficulty)[0];
+    }
+
+    return [...uncleared].sort((a, b) =>
+        a.difficulty - b.difficulty
+        || recordFor(records, b.id).attempts - recordFor(records, a.id).attempts
+        || SCENARIOS.indexOf(a) - SCENARIOS.indexOf(b)
+    )[0];
+}
+
+/** How many of the scenarios have been cleared at least once. */
+export function clearedCount(records: MissionRecords): number {
+    return SCENARIOS.filter(s => isCleared(records, s.id)).length;
 }
 
 // ---------------------------------------------------------------------

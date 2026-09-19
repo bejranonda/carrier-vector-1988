@@ -263,6 +263,18 @@ export function keycap(
     return w;
 }
 
+/**
+ * Advance width a keycap WOULD take, without drawing it. Lets a caller decide
+ * whether the next item on a strip fits before committing ink to the glass.
+ */
+export function keycapWidth(ctx: CanvasRenderingContext2D, label: string, size = 12): number {
+    ctx.save();
+    ctx.font = font(size, 600);
+    const w = Math.ceil(ctx.measureText(label).width) + 14;
+    ctx.restore();
+    return w;
+}
+
 export type Segment = { key: string } | { text: string; color?: string; weight?: 400 | 600 };
 
 /**

@@ -12,6 +12,8 @@
 import type { AircraftPhysics, Vector3 } from '../flight/AircraftPhysics';
 import { WORLD } from '../renderer/Theme';
 import type { VectorRenderer } from '../renderer/VectorRenderer';
+import { DEFAULT_MAP, mapById } from './TerrainProfiles';
+import type { MapId, TerrainProfile } from './TerrainProfiles';
 
 export type RadarThreatState = 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
 
@@ -44,8 +46,17 @@ export class TacticalTerrain {
     public readonly depthCells = 50;
     public readonly cellSize = 250; // 250m per cell -> 10km x 12.5km terrain
     public heights: number[][] = [];
+    /** The map this terrain was sampled from. */
+    public readonly profile: TerrainProfile;
 
-    constructor() {
+    /**
+     * The height function used to live inline here, so there was exactly one
+     * possible world. It now comes from a map profile, sampled onto the same
+     * grid - everything downstream (LOS raycasting, the renderer, the bomb
+     * predictor) is unchanged because they all go through getElevation().
+     */
+    constructor(map: MapId | TerrainProfile = DEFAULT_MAP) {
+        this.profile = typeof map === 'string' ? mapById(map) : map;
         this.generateTerrain();
     }
 
@@ -55,29 +66,7 @@ export class TacticalTerrain {
             for (let z = 0; z <= this.depthCells; z++) {
                 const worldX = (x - this.widthCells / 2) * this.cellSize;
                 const worldZ = z * this.cellSize;
-
-                // Valley corridor down the center (X ~ 0)
-                const distFromCenter = Math.abs(worldX);
-                
-                // Canyon walls rise steeply outside the 800m center slot
-                let h = 0;
-                if (distFromCenter < 500) {
-                    // Sea level / canyon floor
-                    h = 15 + Math.sin(worldZ * 0.003) * 10;
-                } else {
-                    const wallFactor = (distFromCenter - 500) / 2000;
-                    h = 50 + Math.min(1800, wallFactor ** 1.3 * 900);
-                    // Add mountain ridges & peaks
-                    h += Math.sin(worldX * 0.002) * 180 + Math.cos(worldZ * 0.0018) * 220;
-                    h += Math.sin((worldX + worldZ) * 0.004) * 80;
-                }
-
-                // Ridge gaps / passes to duck through
-                if (Math.sin(worldZ * 0.0012) > 0.7 && distFromCenter < 1800) {
-                    h *= 0.35; // Valley pass
-                }
-
-                this.heights[x][z] = Math.max(0, h);
+                this.heights[x][z] = Math.max(0, this.profile.heightAt(worldX, worldZ));
             }
         }
     }
@@ -206,12 +195,16 @@ export class SensorTacticsManager {
     /** Damage at a direct hit, falling off linearly to zero at FUZE_RADIUS. */
     public static readonly MAX_MISSILE_DAMAGE = 55;
 
+    /**
+     * The order of battle comes from the map, not from here: three launchers
+     * at three hardcoded coordinates meant every mission on every map fought
+     * the same belt.
+     */
     constructor(terrain: TacticalTerrain) {
         this.terrain = terrain;
-        // Place SAM sites on ridges overlooking the canyon
-        this.samSites.push(new SAMSite('SAM-1', 'SA-6 GAINFUL', -1800, 3500, terrain));
-        this.samSites.push(new SAMSite('SAM-2', 'SA-8 GECKO', 1600, 6000, terrain));
-        this.samSites.push(new SAMSite('SAM-3', 'SA-11 GADFLY', -1200, 8500, terrain));
+        for (const sam of terrain.profile.sams) {
+            this.samSites.push(new SAMSite(sam.id, sam.name, sam.x, sam.z, terrain));
+        }
     }
 
     /**

@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 233 headless Vitest tests
+npm run test     # 367 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -68,13 +68,29 @@ Pick a mission on the briefing screen with `←` / `→` or the number keys, the
 press `ENTER`. Each one sets the world up differently, writes its own briefing
 cards, and tracks its own ordered objectives.
 
-| # | Mission | Difficulty | What it asks of you |
-| --- | --- | --- | --- |
-| 1 | **CARRIER DEFENSE** | ●●○○○ | The endless mode. Hold CV-68 against escalating waves for as long as you can. This is the one that teaches the game. |
-| 2 | **CANYON STRIKE** | ●●●●● | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
-| 3 | **IRON HAND** | ●●●○○ | Roll back the SAM belt. Three launchers, four bombs a sortie — trap aboard and rearm as many times as it takes. |
-| 4 | **LAST STAND** | ●●●●● | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
-| 5 | **CARRIER QUALS** | ●○○○○ | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
+| # | Mission | Difficulty | Map | What it asks of you |
+| --- | --- | --- | --- | --- |
+| 1 | **CARRIER DEFENSE** | ●●○○○ | BJORNFJORD | The endless mode. Hold CV-68 against escalating waves for as long as you can. This is the one that teaches the game. |
+| 2 | **CANYON STRIKE** | ●●●●● | BJORNFJORD | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
+| 3 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges, four bombs a sortie — trap aboard and rearm as many times as it takes. |
+| 4 | **LAST STAND** | ●●●●● | NORWEGIAN SEA | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
+| 5 | **CARRIER QUALS** | ●○○○○ | NORWEGIAN SEA | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
+
+### The three maps
+
+A map is data — a height function, a SAM order of battle, and the landmarks a
+scenario places things against. Each one is a different bargain with the terrain.
+
+| Map | What it is | What it does to you |
+| --- | --- | --- |
+| **BJORNFJORD** | One deep slot, vertical walls | Total cover, no choices. The route is the mission. |
+| **NORWEGIAN SEA** | Open water and a few skerries | Nowhere to mask. Against a lock the answer is speed, aspect and the bay doors. Also the sane place to learn to land. |
+| **KVITOYA RIDGES** | Ridge after ridge, each gap offset from the last | Cover is available but brief, and only if you are in the right gap. The low route weaves. |
+
+Every map is unit-tested for the same guarantees: a low corridor wide enough to
+turn in, a clear approach tube off the bow, and terrain that can actually mask a
+radar. Those tests caught a 300 m cliff step 1.2 km off the bow and a belt of
+SAM sites masked by their own island.
 
 **CANYON STRIKE** is the set-piece. The canyon, the radar line-of-sight model and
 the iron bombs were all already in the simulation; this mission is what finally
@@ -117,6 +133,39 @@ The briefing screen lays this out in three cards; here it is in full.
 Hull integrity reaching zero ends the mission. Survive waves to raise your
 score and rank from **NUGGET** to **ADMIRAL**.
 
+### How much of the aeroplane do you want to fly?
+
+Press `F` to cycle. The setting is remembered between sessions, and every level
+is a control law feeding the same physics — nothing here can put the jet
+somewhere it could not have flown.
+
+| Level | What it does |
+| --- | --- |
+| `MANUAL` | Nothing between you and the aerodynamics. |
+| `ASSIST` | **Default.** The jet levels itself when you let go, refuses to pull into a stall, and pulls up out of the dirt. You still fly it everywhere. |
+| `AUTOPILOT` | The jet flies and you fight: pick a target, pick a weapon, decide when to shoot and when to break. |
+
+The ground-proximity protections stand down on a carrier approach — an approach
+*is* a deliberate descent to a deck 20 m above the water — and the autopilot
+hands the aeroplane back when you turn onto final. Nobody wants the trap flown
+for them.
+
+### Picking what to shoot
+
+`T` steps through everything shootable, nearest-ahead first; `SHIFT`+`T` steps
+back; `Y` releases. The designated target gets a solid box, a range, and the
+weapon its geometry actually supports — and then the rest of the game follows
+it: the Sidewinder guides on *that* contact instead of whichever one it liked,
+and the autopilot flies the intercept. If it is off the glass, a chevron on the
+boresight ring tells you which way to turn.
+
+### Progress
+
+Each mission keeps its own best score and completion count. The selector ticks
+what you have cleared, marks one mission `START HERE`, and the debrief tells you
+what to fly next. Nothing is locked — the five-pip missions are selectable from
+the first run if you want them.
+
 > **First sortie:** a six-step **FLIGHT CHECKOUT** checklist walks you through
 > pitch, roll, throttle, the weapons bay, guns and terrain masking, ticking
 > each one off as you demonstrate it. A contextual coach calls out stalls,
@@ -153,6 +202,9 @@ exceeding the mode you picked.
 | `SPACE` | Fire selected weapon |
 | `1` / `2` / `3` | Select 20mm Vulcan / AIM-9 Sidewinder / Mk.82 bomb |
 | `B` | Toggle weapons bay (open = **RCS ×4.0**) |
+| `T` | Designate next target (`SHIFT`+`T` steps back) |
+| `Y` | Release the designation |
+| `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
 
 ### Flight Deck
 
@@ -186,6 +238,8 @@ exceeding the mode you picked.
 ## Features
 
 ### Missions
+- **Three maps**, each a pure height function plus a SAM order of battle, each with
+  unit-tested navigability guarantees
 - **Five selectable scenarios** with their own world setup, briefing cards, ordered
   objectives, win conditions and loss conditions — all defined as data in one pure module
 - **Hardened ground targets** with a tight hit radius, so an iron bomb is an aimed
@@ -193,6 +247,29 @@ exceeding the mode you picked.
 - **CCIP bombing cue** computed from the same ballistic integration the live bomb uses
 - **Mission clock** with a scenario-defined window, shown on both the cockpit HUD and
   the flight deck, that stops mattering the moment its objective is met
+
+### Flight Assist & Autopilot
+- **Three assist levels behind one key** — `MANUAL`, `ASSIST` and `AUTOPILOT` — all of
+  them pure control laws feeding the same physics, so the assist can only fly the jet
+  where the jet could have gone
+- **Alpha limiter** that bites only in the last 40% of the margin, so ordinary
+  manoeuvring is untaxed and the annunciator is not permanently lit
+- **Terrain floor measured in seconds to impact**, not in metres — a height-only floor
+  cannot save a jet descending at 60 m/s, because it engages with one second left
+- **Coordinated autopilot turns**: this flight model has no bank-to-turn yaw coupling,
+  so the autopilot flies bank *and* rudder, and captures the bearing it is given
+- **Protections stand down on the approach**, and the autopilot hands the aeroplane back
+  when you turn final
+
+### Target Designation
+- **One key cycles a priority-ordered scope** — air contacts, SAM sites and hardened
+  structures, nearest-ahead first, with a stable order that does not reshuffle under
+  the key
+- **The designation drives everything downstream**: the HUD bracket, the recommended
+  weapon for the current range and aspect, the Sidewinder's seeker, and the autopilot's
+  intercept
+- **Off-boresight steering chevron** when the designated target is not on the glass
+- A lock drops itself the moment its target dies, so the HUD never brackets wreckage
 
 ### Flight & Combat
 - **Fixed-timestep 6-DOF flight dynamics** at 120 Hz — lift, drag, thrust, gravity, and dynamic angle of attack
@@ -234,6 +311,8 @@ exceeding the mode you picked.
   viewport instead of fixed offsets, scaling and clipping the pitch ladder into
   whatever space is left — both solvers are pure and both are tested for overlap
 - **Personal best** carried across sessions, shown on the briefing and the debrief
+- **Per-mission records** — best score, completions and attempts for each scenario,
+  with a cleared tick on the selector and a suggested mission to fly next
 - Procedurally synthesized Web Audio: engine whine, afterburner roar, RWR tones, flak
 
 ## Architecture
@@ -248,13 +327,17 @@ src/
 │   ├── Objectives.ts      # "What do I do right now?" for both loops (pure)
 │   ├── Scenarios.ts       # Selectable missions + the phase director (pure)
 │   ├── HighScore.ts       # Persisted personal best
+│   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
+│   ├── FlightAssist.ts    # MANUAL / ASSIST / AUTOPILOT control laws (pure)
 │   └── Weapons.ts         # Ballistics, homing, explosions
 ├── tactics/
+│   ├── TerrainProfiles.ts # The three maps: height functions + SAM order of battle
 │   ├── RadarLOS.ts        # Terrain, SAM sites, LOS raycasting, RCS, RWR
 │   ├── StrikeTarget.ts    # Hardened ground targets and their hit geometry
+│   ├── TargetDesignation.ts # Target ranking, weapon envelopes, pursuit nav (pure)
 │   └── EnemyAI.ts         # INGRESS / ENGAGE / RTB behaviour
 ├── carrier/
 │   └── DeckManager.ts     # Inventory, crews, state machine, threat director
@@ -321,7 +404,13 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**233 headless tests** across 19 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, hardened-target hit geometry, CCIP prediction against the real bomb path, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**367 headless tests** across 23 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+
+Some of those tests exist because they are the cheapest way to state a rule the
+game would otherwise break silently: every map must have a navigable corridor
+and a place to mask; the terrain floor must save a dive that the flight model
+can actually recover from; and the same suicidal input must lose the airframe at
+`MANUAL` and survive at `ASSIST`.
 
 The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `computeDeckLayout`, `gradeTrap`, `warmupEnvelope`) specifically so it can be verified without a browser.
 
@@ -334,6 +423,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
 | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
+| [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 
 ---
 

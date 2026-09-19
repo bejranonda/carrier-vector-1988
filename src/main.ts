@@ -88,6 +88,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Target designation ---
+        if (key === 't') {
+            e.preventDefault();
+            game.cycleDesignation(e.shiftKey ? -1 : 1);
+            return;
+        }
+        if (key === 'y') {
+            e.preventDefault();
+            game.releaseDesignation();
+            return;
+        }
+
+        // --- Flight assist level ---
+        if (key === 'f') {
+            e.preventDefault();
+            game.cycleAssistLevel();
+            return;
+        }
+
         // --- Weapons bay ---
         if (key === 'b') {
             e.preventDefault();
@@ -126,11 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === ' ' || e.code === 'Space') {
             e.preventDefault();
             if (game.currentView !== 'MICRO_FLIGHT') return;
-            if (game.selectedWeapon === 'AIM9') {
-                game.weapons.fireSidewinder(game.physics, game.airborneTargets);
-            } else if (game.selectedWeapon === 'BOMB') {
-                game.weapons.dropBomb(game.physics);
-            }
+            game.fireSelectedWeapon();
         }
     });
 

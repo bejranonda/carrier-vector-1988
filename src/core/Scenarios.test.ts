@@ -3,10 +3,15 @@ import {
     DEFAULT_SCENARIO,
     MissionDirector,
     SCENARIOS,
+    clearedCount,
+    recommendScenario,
     scenarioAt,
     scenarioById
 } from './Scenarios';
+import type { MissionRecords } from './MissionRecords';
 import type { MissionSnapshot, ScenarioDef } from './Scenarios';
+import { MAPS } from '../tactics/TerrainProfiles';
+import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 
 /** A quiet world: nothing has happened yet, nothing is wrong. */
 function snapshot(over: Partial<MissionSnapshot> = {}): MissionSnapshot {
@@ -102,6 +107,36 @@ describe('scenario catalogue', () => {
             const wantsChecklist = s.setup.showTrainingChecklist === true;
             expect(wantsChecklist, s.id).toBe(s.id === 'CARRIER_DEFENSE');
         }
+    });
+
+    it('names a real map, and spreads the missions across them', () => {
+        const used = new Set<string>();
+        for (const s of SCENARIOS) {
+            const id = s.setup.map ?? 'FJORD';
+            expect(MAPS.some(m => m.id === id), `${s.id} -> ${id}`).toBe(true);
+            used.add(id);
+        }
+        // Three maps exist; if a change parks every mission on one of them the
+        // work of building the others has been quietly undone.
+        expect(used.size).toBeGreaterThanOrEqual(3);
+    });
+
+    // The flight checkout's last step is "descend until the RWR goes silent".
+    // On a map with no cover that step can never be satisfied, and a new
+    // player is stuck on it forever.
+    it('puts the flight checkout on a map that can actually mask', () => {
+        const intro = SCENARIOS.find(s => s.setup.showTrainingChecklist)!;
+        const terrain = new TacticalTerrain(intro.setup.map ?? 'FJORD');
+        const sensors = new SensorTacticsManager(terrain);
+        expect(sensors.samSites.length).toBeGreaterThan(0);
+
+        let canMask = false;
+        for (let z = 1000; z <= 10000 && !canMask; z += 250) {
+            const ground = terrain.getElevation(0, z);
+            const low = { x: 0, y: ground + 40, z };
+            canMask = sensors.samSites.some(site => !sensors.checkLOS(site.position, low));
+        }
+        expect(canMask, 'the intro map offers no terrain masking').toBe(true);
     });
 
     it('every phase produces prose for any world state', () => {
@@ -388,5 +423,67 @@ describe('MissionDirector', () => {
         // The hull cannot un-sink.
         const later = director.update(snapshot({ carrierHealth: 100 }));
         expect(later.outcome).toBe('FAILED');
+    });
+});
+
+describe('progression guidance', () => {
+    it('sends a brand-new player to the mission that teaches them to fly', () => {
+        const first = recommendScenario({});
+        expect(first.setup.showTrainingChecklist).toBe(true);
+    });
+
+    it('falls back to the gentlest uncleared mission once anything has been flown', () => {
+        const records: MissionRecords = {
+            CARRIER_DEFENSE: { best: 300, completions: 0, attempts: 1 }
+        };
+        const next = recommendScenario(records);
+        expect(next.id).toBe('CARRIER_QUALS');
+        expect(next.difficulty).toBe(Math.min(...SCENARIOS.map(s => s.difficulty)));
+    });
+
+    it('does not recommend a mission already cleared', () => {
+        const records: MissionRecords = { CARRIER_QUALS: { best: 900, completions: 1, attempts: 1 } };
+        expect(recommendScenario(records).id).not.toBe('CARRIER_QUALS');
+    });
+
+    it('prefers a mission already in progress among equally hard ones', () => {
+        const records: MissionRecords = {
+            CARRIER_QUALS: { best: 900, completions: 1, attempts: 1 },
+            // Both five-pip missions; one has been attempted three times.
+            LAST_STAND: { best: 400, completions: 0, attempts: 3 }
+        };
+        const withHarderOnly: MissionRecords = {
+            ...records,
+            CARRIER_DEFENSE: { best: 10, completions: 1, attempts: 1 },
+            CANYON_STRIKE: { best: 10, completions: 1, attempts: 1 },
+            IRON_HAND: { best: 10, completions: 1, attempts: 1 }
+        };
+        expect(recommendScenario(withHarderOnly).id).toBe('LAST_STAND');
+    });
+
+    it('points at the hardest mission once everything is cleared', () => {
+        const records: MissionRecords = {};
+        for (const s of SCENARIOS) records[s.id] = { best: 100, completions: 1, attempts: 1 };
+        const hardest = Math.max(...SCENARIOS.map(s => s.difficulty));
+        expect(recommendScenario(records).difficulty).toBe(hardest);
+    });
+
+    it('counts cleared missions and ignores attempts that never won', () => {
+        expect(clearedCount({})).toBe(0);
+        expect(clearedCount({
+            CANYON_STRIKE: { best: 50, completions: 0, attempts: 9 },
+            IRON_HAND: { best: 50, completions: 2, attempts: 4 }
+        })).toBe(1);
+    });
+
+    it('always recommends a real scenario, for any record set', () => {
+        const sets: MissionRecords[] = [
+            {},
+            { NOT_A_MISSION: { best: 5, completions: 5, attempts: 5 } },
+            { CARRIER_QUALS: { best: 0, completions: 0, attempts: 0 } }
+        ];
+        for (const records of sets) {
+            expect(SCENARIOS).toContain(recommendScenario(records));
+        }
     });
 });

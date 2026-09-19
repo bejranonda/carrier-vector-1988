@@ -31,6 +31,9 @@ import type { ScoreKeeper } from '../core/ScoreKeeper';
 import type { ObjectiveStep } from '../core/Objectives';
 import { formatEta } from '../core/Objectives';
 import type { StrikeTarget } from '../tactics/StrikeTarget';
+import type { TargetSolution } from '../tactics/TargetDesignation';
+import type { ControlDemand } from '../flight/FlightAssist';
+import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
 import type { HudLayout } from './HudLayout';
 import {
@@ -39,6 +42,7 @@ import {
     font,
     glow,
     keycap,
+    keycapWidth,
     noGlow,
     plate,
     roundRect
@@ -76,7 +80,46 @@ export interface HudContext {
     strikeTargets?: StrikeTarget[];
     /** Where the currently selected Mk.82 would land, if one is selected. */
     bombImpactPoint?: Vector3 | null;
+    /** The contact the pilot designated, if any. */
+    designated?: TargetSolution | null;
+    /** MANUAL / ASSIST / AUTOPILOT, shown on the key bar. */
+    assistLabel?: string;
+    /** Which flight-control protection is taking authority this frame. */
+    assistOverride?: ControlDemand['override'];
 }
+
+/**
+ * What the flight-control annunciator should say, if anything.
+ *
+ * Pure, because the decision is the interesting part and it is easy to get
+ * wrong in a way nobody notices: LEVEL is the assist doing its normal job on
+ * every frame the stick is centred, so annunciating it would pin a permanent
+ * caption to the glass and train the player to ignore the one line that
+ * matters when the jet really is about to hit something.
+ */
+export function assistCaption(
+    override: ControlDemand['override'],
+    hasDesignation = false
+): { text: string; tone: 'ALERT' | 'CAUTION' | 'INFO' } | null {
+    switch (override) {
+        case 'TERRAIN':
+            return { text: 'TERRAIN — AUTO PULL-UP', tone: 'ALERT' };
+        case 'STALL':
+            return { text: 'ALPHA LIMIT', tone: 'CAUTION' };
+        case 'AUTOPILOT':
+            return hasDesignation
+                ? { text: 'AUTOPILOT — FLYING THE INTERCEPT', tone: 'INFO' }
+                : { text: 'AUTOPILOT FLYING — PRESS T TO PICK A TARGET', tone: 'INFO' };
+        default:
+            return null;
+    }
+}
+
+/**
+ * Width kept clear on each side of the objective strip for the score chip
+ * (right) and symmetry (left).
+ */
+const OBJECTIVE_SIDE_RESERVE = 150;
 
 /** Vertical anchors, so no two overlays can be given the same band. */
 const BAND = {
@@ -122,6 +165,7 @@ export class HUD {
         this.drawWaterline(ctx, layout.cx, layout.cy);
         this.drawCombatReticles(ctx, physics, targets, renderer);
         this.drawStrikeTargets(ctx, physics, context.strikeTargets ?? [], renderer);
+        if (context.designated) this.drawDesignation(ctx, physics, context.designated, renderer, layout);
         if (context.bombImpactPoint) {
             this.drawBombImpactPoint(ctx, physics, context.bombImpactPoint, context.strikeTargets ?? [], renderer);
         }
@@ -145,7 +189,10 @@ export class HUD {
         if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, layout.cx);
         if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
         this.drawScoreChip(ctx, context.score);
-        this.drawKeyBar(ctx, context.displayModeLabel);
+        this.drawAssistAnnunciator(
+            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
+        );
+        this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
         ctx.restore();
     }
@@ -208,8 +255,11 @@ export class HUD {
         const clockW = showClock ? ctx.measureText(clockText).width + 22 : 0;
 
         const keyW = objective.key ? 58 : 0;
+        // The strip is centred, so its half-width has to clear the score chip
+        // in the same band on the right. Without this reserve the plate ran
+        // under the chip on anything narrower than about 1000px.
         const w = Math.min(
-            this.width - 2 * HUD_METRICS.edge,
+            this.width - 2 * (HUD_METRICS.edge + OBJECTIVE_SIDE_RESERVE),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
         const h = 54;
@@ -542,7 +592,13 @@ export class HUD {
     }
 
     /** Bottom key bar so the flight controls are never more than a glance away. */
-    private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string) {
+    /**
+     * Bottom cheat strip. Ordered most-useful-first and truncated to what
+     * actually fits, because two more bindings (designation and the assist
+     * level) would otherwise run off the right-hand edge of a narrow window
+     * and the player would simply never learn about them.
+     */
+    private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string, assistLabel?: string) {
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
@@ -551,19 +607,149 @@ export class HUD {
         const pairs: [string, string][] = [
             ['WASD', 'fly'],
             ['SHIFT', 'power'],
+            ['T', 'target'],
             ['SPACE', 'fire'],
+            ['F', assistLabel ?? 'assist'],
             ['TAB', 'deck'],
             ['H', 'controls'],
             ['P', displayModeLabel]
         ];
+
         let x = 24;
+        const limit = this.width - 24;
         for (const [key, text] of pairs) {
+            ctx.font = font(10);
+            const cap = keycapWidth(ctx, key, 10);
+            const width = cap + 5 + ctx.measureText(text).width + 14;
+            if (x + width > limit) break;
+
             x += keycap(ctx, x, y, key, { size: 10 }) + 5;
             ctx.font = font(10);
             ctx.fillStyle = THEME.muted;
             ctx.fillText(text, x, y);
             x += ctx.measureText(text).width + 14;
         }
+        ctx.restore();
+    }
+
+    /**
+     * One line, just above the key bar, for a protection that is currently
+     * taking authority away from the pilot. Deliberately NOT in the warning
+     * band: a stall warning and "the assist is holding your nose up" are
+     * different kinds of news and must not queue for the same slot.
+     */
+    private drawAssistAnnunciator(
+        ctx: CanvasRenderingContext2D,
+        override: ControlDemand['override'],
+        hasDesignation: boolean,
+        cx: number
+    ) {
+        const caption = assistCaption(override, hasDesignation);
+        if (!caption) return;
+
+        const color = caption.tone === 'ALERT' ? THEME.alert
+            : caption.tone === 'CAUTION' ? THEME.caution
+                : THEME.phosphor;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.font = font(11, 700);
+        const w = ctx.measureText(caption.text).width + 24;
+        const y = this.height - 52;
+        plate(ctx, { x: cx - w / 2, y, w, h: 22 }, { border: color, radius: 11 });
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(caption.text, cx, y + 11);
+        ctx.restore();
+    }
+
+    /**
+     * The designated target. Everything about it is deliberately louder than
+     * the generic contact brackets: a solid box in the key colour, a data line
+     * with the weapon the geometry actually supports, and - when it is not on
+     * screen - a chevron round the boresight pointing the way to turn. Before
+     * this there was no way to tell which of five identical brackets you had
+     * chosen, which made choosing pointless.
+     */
+    private drawDesignation(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        solution: TargetSolution,
+        renderer: VectorRenderer,
+        layout: HudLayout
+    ) {
+        const camPt = renderer.transformToCamera(
+            solution.target.position, physics.position, physics.pitch, physics.yaw, physics.roll
+        );
+
+        ctx.save();
+        noGlow(ctx);
+
+        const label = `${shortName(solution.target.name)} · ${(solution.range / 1000).toFixed(1)}KM · ${solution.recommendedWeapon}`;
+        const shootable = solution.inMissileEnvelope || solution.inGunEnvelope;
+        const color = shootable ? THEME.caution : THEME.key;
+
+        const onScreen = camPt.z >= 2.0;
+        const proj = onScreen ? renderer.projectCameraPoint(camPt) : null;
+        const visible = proj !== null
+            && proj.x > -40 && proj.x < this.width + 40
+            && proj.y > -40 && proj.y < this.height + 40;
+
+        if (proj && visible) {
+            const s = Math.max(20, Math.min(70, 30000 / Math.max(1, solution.range))) / 2;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2.2;
+            ctx.strokeRect(proj.x - s, proj.y - s, s * 2, s * 2);
+
+            // Tick marks on the box edges, so the lock reads as a lock and not
+            // as another piece of terrain.
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.moveTo(proj.x, proj.y - s - 7); ctx.lineTo(proj.x, proj.y - s);
+            ctx.moveTo(proj.x, proj.y + s); ctx.lineTo(proj.x, proj.y + s + 7);
+            ctx.moveTo(proj.x - s - 7, proj.y); ctx.lineTo(proj.x - s, proj.y);
+            ctx.moveTo(proj.x + s, proj.y); ctx.lineTo(proj.x + s + 7, proj.y);
+            ctx.stroke();
+
+            ctx.font = font(11, 700);
+            const w = ctx.measureText(label).width + 18;
+            const plateX = Math.max(8, Math.min(this.width - w - 8, proj.x - w / 2));
+            const plateY = proj.y + s + 10;
+            plate(ctx, { x: plateX, y: plateY, w, h: 20 }, { border: color, radius: 4 });
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, plateX + w / 2, plateY + 10);
+        } else {
+            // Off the glass: put the data line under the boresight and a
+            // chevron on the ring pointing where to turn.
+            const bearingOff = angleDelta(physics.yaw, solution.bearing);
+            const radius = Math.min(layout.symHalf + 40, Math.min(this.width, this.height) / 2 - 30);
+            const ax = layout.cx + Math.sin(bearingOff) * radius;
+            const ay = layout.cy - Math.cos(bearingOff) * radius * 0.35;
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            const dir = bearingOff >= 0 ? 1 : -1;
+            ctx.moveTo(ax - dir * 9, ay - 9);
+            ctx.lineTo(ax + dir * 5, ay);
+            ctx.lineTo(ax - dir * 9, ay + 9);
+            ctx.stroke();
+
+            ctx.font = font(11, 700);
+            const text = `${label} · TURN ${bearingOff >= 0 ? 'RIGHT' : 'LEFT'}`;
+            const w = ctx.measureText(text).width + 18;
+            const plateX = Math.max(8, Math.min(this.width - w - 8, layout.cx - w / 2));
+            const plateY = layout.cy + 66;
+            plate(ctx, { x: plateX, y: plateY, w, h: 20 }, { border: color, radius: 4 });
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, plateX + w / 2, plateY + 10);
+        }
+
         ctx.restore();
     }
 

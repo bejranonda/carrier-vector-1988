@@ -314,9 +314,9 @@ Five selectable missions, each a `ScenarioDef` in `core/Scenarios.ts`.
 | --- | --- | --- |
 | `CARRIER_DEFENSE` | Endless escalating waves; the flight checkout runs | Hull reaches 0% (no scripted phases — score chase) |
 | `CANYON_STRIKE` | Quiet sky, 2x Mk.82, hardened pen at `z = 10 400`, 240s window | Pen destroyed **and** trapped aboard; fails on the window, the hull, or running the boat out of jets |
-| `IRON_HAND` | 12 bombs in stock, one late CAP package | All three launchers dead **and** trapped aboard |
-| `LAST_STAND` | Five packages at once, hull at 70%, 2 spares, wave 6 escalation | Every package resolved **and** trapped aboard |
-| `CARRIER_QUALS` | Starts airborne, no SAMs, no contacts, clean jet | 3 traps including at least one 3-wire |
+| `IRON_HAND` | Flown on `KVITOYA_RIDGES`; 12 bombs in stock, one late CAP package | All four launchers dead **and** trapped aboard |
+| `LAST_STAND` | Flown on `OPEN_SEA`; five packages at once, hull at 70%, 2 spares, wave 6 escalation | Every package resolved **and** trapped aboard |
+| `CARRIER_QUALS` | Flown on `OPEN_SEA`; starts airborne, no SAMs, no contacts, clean jet | 3 traps including at least one 3-wire |
 
 ### The director
 
@@ -335,6 +335,16 @@ A phase without `onDeck` returns no objective while the jet is on deck, so the
 deck's own director speaks there; the mission clock is carried across either
 way via `MissionDirector.clock()`.
 
+### Per-mission records
+
+`core/MissionRecords.ts` keeps `{best, completions, attempts}` per scenario id.
+A finished run is folded in by a pure merge; a **losing** run still counts as an
+attempt and can still set a best, because surviving nine waves before dying is
+a real result. `recommendScenario(records)` returns the suggested next mission:
+the flight-checkout scenario when nothing has ever been flown, otherwise the
+easiest uncleared one (preferring one already attempted), and once everything is
+cleared, the hardest.
+
 ### Hardened targets
 
 ```
@@ -351,6 +361,86 @@ it, so the delivery has to be low, fast and aimed.
 live bomb uses, from the same release state (`y - 1.5`, `vel.y - 5`), stepping
 at 1/30 s until it crosses the terrain. Tested against a real dropped bomb:
 agreement within 25 m, comfortably inside the 55 m hit radius.
+
+## 7c. Maps
+
+`tactics/TerrainProfiles.ts`. A map is `{heightAt(x,z), sams, corridorHalfWidth,
+corridorLength}`. `TacticalTerrain` samples `heightAt` into its 40x50 grid at
+250 m per cell, and `SensorTacticsManager` builds its launchers from `sams`.
+
+| Map | Height function | Sites |
+| --- | --- | --- |
+| `FJORD` | Flat slot inside \|x\| < 500 (h ≈ 15 ± 10), walls rising as `((\|x\|−500)/2000)^1.3 × 900`, capped at 1800; passes where `sin(0.0012 z) > 0.7` cut height to 35% | 3 |
+| `OPEN_SEA` | Four cosine domes (`h = peak/2 × (1 + cos(πd/r))`) plus a ±3 m swell | 2, ship-borne, on open water |
+| `SHATTERED_RIDGE` | Ridges every 1800 m of z, crest 620 ± 200, gap centre walking as `1000 sin(1.7 n)`, notch `0.12 + 0.88 (d/800)²`, faded in by `clamp((z−2200)/1200)` | 4 |
+
+Invariants enforced by `TerrainProfiles.test.ts` for every map: heights finite
+and non-negative; a clear approach tube along the deck centreline; a continuous
+corridor under 220 m at least 300 m wide from the boat to the far end; SAM sites
+above the waterline; and somewhere on the corridor a place where terrain masks a
+site. `OPEN_SEA` is exempt from the last one by design, which is why the
+flight-checkout scenario is not flown there — its "descend until the RWR goes
+silent" step would be unsatisfiable.
+
+## 7d. Flight assist
+
+`flight/FlightAssist.ts`. Pure control laws; `GameLoop.applyFlightInput()` turns
+the keyboard into a `PilotInput`, resolves it, and feeds the result to the same
+`applyPitchInput` / `applyRollInput` / `applyYawInput` the player was using.
+
+```
+stall limiter   gate = 0.6 × αlimit (αlimit = 0.26 rad)
+                α ≤ gate            -> pass through
+                α > gate            -> demand × (αlimit − α)/(αlimit − gate)
+                stalled             -> min(demand, −0.6)   (push, always)
+
+terrain floor   onApproach          -> pass through
+                agl ≤ 70            -> max(demand, 1)
+                t_impact = (agl − 70)/sink
+                byTime   = clamp((8 − t_impact)/4)
+                byHeight = clamp(1 − (agl − 70)/110) × 0.6
+                urgency  = max(byTime, byHeight)
+                demand × (1 − urgency) + urgency
+
+autopilot       bank    = clamp(Δψ × 1.5, ±maxBank);  roll = clamp((bank − φ) × 2.2)
+                rudder  = clamp(Δψ × 1.1)
+                pitch   = clamp(Δh × 0.0016 × max(0.25, cos φ), −0.8..0.9) − 0.8 θ
+                throttle= clamp(ΔV × 0.05)
+```
+
+Two facts the laws are built around:
+
+- **Time, not height, is what saves a dive.** A floor engaging at 180 m AGL has
+  one second to work with at 60 m/s and a 1.35 rad/s pitch rate, which is not
+  enough. Hence `t_impact`.
+- **This flight model has no bank-to-turn yaw coupling.** `AircraftPhysics`
+  changes `yaw` only through `applyYawInput`; banking tilts the lift vector and
+  curves the flight path while the nose keeps pointing where it pointed. A
+  bank-only autopilot therefore never captures a bearing, so the autopilot flies
+  bank *and* rudder.
+
+Order of authority: terrain floor > stall limiter > autopilot or pilot. A stall
+at 2000 m is survivable; a controlled descent into a ridge is not.
+
+## 7e. Target designation
+
+`tactics/TargetDesignation.ts`. For each candidate:
+
+```
+range     = |target − shooter|
+bearing   = atan2(Δx, Δz) mod 2π            (same convention as yaw)
+aspect    = (Δ · forward)/(|Δ||forward|)    (1 = dead ahead)
+priority  = range / max(0.08, (aspect + 1)/2)
+```
+
+Envelopes: the Sidewinder wants an **air** target with `aspect ≥ 0.64`
+(≈50° seeker FOV) at 300–8000 m; the gun wants `aspect ≥ 0.985` inside 1800 m
+and never applies to a hardened structure. Ranking sorts on `priority`, ties
+broken by id so the cycle order is stable frame to frame.
+
+`pursuitNav()` turns a solution into an autopilot `NavTarget`: co-altitude for an
+air intercept (floored at 260 m AGL, bank limit 1.15), 520 m AGL at 250 m/s with
+a 0.8 bank limit for a ground attack run.
 
 ## 8. Scoring
 
