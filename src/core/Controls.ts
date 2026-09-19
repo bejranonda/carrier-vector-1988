@@ -51,11 +51,11 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['4'], display: '4', label: 'Cycle Mk.82 bomb loadout', context: 'DECK', group: 'DECK OPS' },
 
     // --- System (available everywhere) ---
-    { keys: ['tab'], display: 'TAB', label: 'Toggle cockpit / flight deck view', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['h', 'f1'], display: 'H / F1', label: 'Show control reference', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['escape'], display: 'ESC', label: 'Close overlay', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['tab'], display: 'TAB', label: 'Toggle cockpit / flight deck view', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['p'], display: 'P', label: 'Cycle CRT post-processing quality', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' }
 ];
 
 /** All bindings valid in a given context, including GLOBAL ones. */

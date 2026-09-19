@@ -22,9 +22,11 @@ function makeContextStub() {
         filter: 'none', imageSmoothingEnabled: true,
         fillRect: vi.fn(), clearRect: vi.fn(), strokeRect: vi.fn(),
         beginPath: vi.fn(), closePath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-        arc: vi.fn(), stroke: vi.fn(), fill: vi.fn(),
+        arc: vi.fn(), arcTo: vi.fn(), ellipse: vi.fn(), rect: vi.fn(),
+        stroke: vi.fn(), fill: vi.fn(), clip: vi.fn(),
         save: vi.fn(), restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
-        scale: vi.fn(), setLineDash: vi.fn(), drawImage: vi.fn(),
+        scale: vi.fn(), setTransform: vi.fn(), resetTransform: vi.fn(),
+        setLineDash: vi.fn(), drawImage: vi.fn(),
         fillText: vi.fn(),
         measureText: (t: string) => ({ width: t.length * 7 }),
         createLinearGradient: () => ({ addColorStop: vi.fn() }),
@@ -36,12 +38,14 @@ function makeCanvasStub(width = 1280, height = 800) {
     const ctx = makeContextStub();
     return {
         width, height,
+        style: {} as CSSStyleDeclaration,
         getContext: () => ctx as unknown as CanvasRenderingContext2D
     } as unknown as HTMLCanvasElement;
 }
 
 describe('GameLoop integration smoke test', () => {
     let GameLoop: typeof import('./GameLoop').GameLoop;
+    let TrainingSequence: typeof import('./Tutorial').TrainingSequence;
 
     beforeEach(async () => {
         // PostProcess allocates offscreen canvases via document.createElement.
@@ -50,12 +54,14 @@ describe('GameLoop integration smoke test', () => {
                 if (tag === 'canvas') return makeCanvasStub();
                 return {};
             },
-            addEventListener: vi.fn()
+            addEventListener: vi.fn(),
+            documentElement: { dataset: {}, style: { setProperty: vi.fn() } }
         });
         vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 1280, innerHeight: 800 });
         vi.stubGlobal('requestAnimationFrame', vi.fn());
 
         GameLoop = (await import('./GameLoop')).GameLoop;
+        TrainingSequence = (await import('./Tutorial')).TrainingSequence;
     });
 
     afterEach(() => {
@@ -212,9 +218,14 @@ describe('GameLoop integration smoke test', () => {
         runFrames(game, 150);
         game.confirmBriefing();
 
+        game.score.recordKill('BOMBER');
         game.deck.inventory.carrierHealth = 0;
         runFrames(game, 20);
         expect(game.phase).toBe('DEBRIEF');
+
+        // The run's score is banked as the personal best, so a second sortie
+        // has something to beat.
+        expect(game.bestScore).toBe(game.score.totalScore);
 
         // And the debrief screen must render.
         runFrames(game, 10);
@@ -236,17 +247,78 @@ describe('GameLoop integration smoke test', () => {
         expect(Number.isFinite(game.physics.position.y)).toBe(true);
     });
 
-    it('cycles post-processing quality without throwing', () => {
+    // REGRESSION: buildHint() used to return the training prompt first and
+    // unconditionally, so a first-time pilot - the one who most needs them -
+    // never saw a stall, terrain or missile-launch warning.
+    it('never lets the training prompt suppress a lethal warning', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
         game.confirmBriefing();
         game.hotStartAirborne();
 
-        game.cyclePostQuality();
+        // hotStartAirborne() skips training; put a fresh pilot back in the seat.
+        game.training = new TrainingSequence();
+        expect(game.training.currentStep).not.toBeNull();
+
+        game.physics.applyDamage(70);
+        runFrames(game, 5);
+
+        // Whatever the most lethal condition currently is, it must win the
+        // single hint channel - never the "TRAINING n/6" prompt.
+        expect(game.currentHint?.severity).toBe('CRITICAL');
+        expect(game.currentHint?.text).not.toMatch(/TRAINING/);
+    });
+
+    it('surfaces the training prompt once nothing more urgent is happening', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.training = new TrainingSequence();
+
+        // Silence the SAM belt so the only thing left to say is the checkout.
+        game.sensors.samSites.length = 0;
+
+        // Straight and level, high, fast, far from the boat and undamaged:
+        // the coach has nothing to warn about, so the checkout gets the channel.
+        game.physics.position = { x: 0, y: 2000, z: 9000 };
+        game.physics.velocity = { x: 0, y: 0, z: 240 };
+        game.physics.pitch = 0;
+        game.physics.roll = 0;
+        game.physics.throttle = 0.9;
+        runFrames(game, 5);
+
+        expect(game.currentHint?.text).toMatch(/TRAINING 1\/6/);
+        expect(game.training.checklist()).toHaveLength(6);
+        expect(game.training.checklist()[0].state).toBe('ACTIVE');
+    });
+
+    it('builds an objective for both loops', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+
+        game.currentView = 'MACRO_DECK';
+        const deckObj = game.currentObjective();
+        expect(deckObj.title.length).toBeGreaterThan(0);
+
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        const flightObj = game.currentObjective();
+        expect(flightObj.title.length).toBeGreaterThan(0);
+    });
+
+    it('cycles the display mode without throwing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        game.cycleDisplayMode();
         runFrames(game, 10);
-        game.cyclePostQuality();
+        game.cycleDisplayMode();
         runFrames(game, 10);
-        game.cyclePostQuality();
+        game.cycleDisplayMode();
         runFrames(game, 10);
         expect(game.phase).toBe('ACTIVE');
     });

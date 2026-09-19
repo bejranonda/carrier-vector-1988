@@ -116,6 +116,10 @@ export type TrainingStepId =
 export interface TrainingStep {
     id: TrainingStepId;
     prompt: string;
+    /** 2-3 word label for the on-screen checklist. */
+    short: string;
+    /** Key(s) the step is asking for, drawn as keycaps on the checklist. */
+    keys: string[];
     /** Pilot has demonstrated this step. */
     isSatisfied: (s: TrainingProgress) => boolean;
 }
@@ -133,35 +137,53 @@ export interface TrainingProgress {
 export const TRAINING_STEPS: TrainingStep[] = [
     {
         id: 'PITCH',
+        short: 'PITCH',
+        keys: ['W', 'S'],
         prompt: 'TRAINING 1/6 - PITCH: HOLD [W] NOSE UP / [S] NOSE DOWN',
         isSatisfied: (p) => p.pitchInputSeconds >= 1.0
     },
     {
         id: 'ROLL',
+        short: 'ROLL',
+        keys: ['A', 'D'],
         prompt: 'TRAINING 2/6 - ROLL: HOLD [A] LEFT / [D] RIGHT TO BANK',
         isSatisfied: (p) => p.rollInputSeconds >= 1.0
     },
     {
         id: 'THROTTLE',
+        short: 'THROTTLE',
+        keys: ['SHIFT', 'CTRL'],
         prompt: 'TRAINING 3/6 - THROTTLE: [SHIFT] ADVANCE / [CTRL] RETARD. PAST 100% IS AFTERBURNER',
         isSatisfied: (p) => p.throttleChanged
     },
     {
         id: 'BAY',
+        short: 'WEAPONS BAY',
+        keys: ['B'],
         prompt: 'TRAINING 4/6 - PRESS [B] TO CYCLE THE WEAPONS BAY. OPEN DOORS QUADRUPLE YOUR RADAR SIGNATURE',
         isSatisfied: (p) => p.bayToggled
     },
     {
         id: 'GUNS',
+        short: 'FIRE GUNS',
+        keys: ['SPACE'],
         prompt: 'TRAINING 5/6 - PRESS [SPACE] TO FIRE THE 20MM VULCAN. [1] GUN [2] AIM-9 [3] MK.82',
         isSatisfied: (p) => p.gunFired
     },
     {
         id: 'MASKING',
+        short: 'TERRAIN MASK',
+        keys: ['W', 'S'],
         prompt: 'TRAINING 6/6 - DESCEND BELOW THE RIDGE LINE UNTIL THE RWR GOES SILENT (TERRAIN MASKED)',
         isSatisfied: (p) => p.hasBeenMasked
     }
 ];
+
+export interface ChecklistItem {
+    label: string;
+    keys: string[];
+    state: 'DONE' | 'ACTIVE' | 'PENDING';
+}
 
 export class TrainingSequence {
     public progress: TrainingProgress = {
@@ -198,5 +220,19 @@ export class TrainingSequence {
     public skip() {
         this.isActive = false;
         this.stepIndex = TRAINING_STEPS.length;
+    }
+
+    /**
+     * Checklist view of the training sequence for the HUD. A new pilot could
+     * previously only ever see the single current prompt, with no idea how
+     * many steps there were or how far along they had got.
+     */
+    public checklist(): ChecklistItem[] {
+        if (!this.isActive || this.isComplete) return [];
+        return TRAINING_STEPS.map((step, i) => ({
+            label: step.short,
+            keys: step.keys,
+            state: i < this.stepIndex ? 'DONE' : i === this.stepIndex ? 'ACTIVE' : 'PENDING'
+        }));
     }
 }

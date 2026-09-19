@@ -53,9 +53,10 @@ impossible.
 
 The bloom pass runs at ¼ resolution over 2–3 composite passes. On weak
 integrated GPUs at large window sizes this can cost several milliseconds per
-frame. **Mitigation:** press `P` to cycle quality (HIGH → LOW → OFF).
-`PostProcess.nextQuality()` implements an adaptive ladder with hysteresis, but
-it is not yet wired to a live frame-time average — quality is currently manual.
+frame. **Mitigation:** press `P` to cycle the display mode; `CLEAN` disables
+the bloom pass entirely. `PostProcess.nextQuality()` implements an adaptive
+ladder with hysteresis, but it is not yet wired to a live frame-time average —
+quality follows the chosen display mode.
 
 ## 7. Canvas2D `filter` support
 
@@ -63,11 +64,17 @@ The bloom blur uses `ctx.filter = 'blur(2px)'`, unsupported on some older Safari
 versions. A 4-tap offset `drawImage` fallback is feature-detected at construction.
 **Consequence:** slightly softer bloom on those browsers.
 
-## 8. Device pixel ratio pinned at 1:1 **[By design]**
+## 8. Device pixel ratio is followed, capped at 2×
 
-The canvas backing store matches CSS pixels exactly, with
-`image-rendering: pixelated`. On HiDPI displays the result is deliberately
-chunky. This is the retro aesthetic and keeps the bloom pass cheap.
+The canvas backing store (and the offscreen world layer) is sized to
+`CSS pixels × devicePixelRatio`, with the 2D contexts pre-scaled so all layout
+code still works in CSS pixels. The ratio is **capped at 2×** so a 3×/4× phone
+display doesn't quadruple the bloom pass cost for no visible gain.
+
+This replaces the previous `image-rendering: pixelated` 1:1 backing store,
+which was deliberate retro chunkiness but made 10–12px HUD glyphs genuinely
+hard to read on every HiDPI screen. `RETRO CRT` display mode still provides
+the scanline/vignette/persistence look without sacrificing glyph sharpness.
 
 ## 9. Fixed timestep changes flight feel versus older builds
 
@@ -82,8 +89,10 @@ builds, and integration error is roughly halved. Behaviour is now identical on
 Recovery requires < 190 m range, 17–30 m altitude and < 95 m/s. Zero fuel on
 touchdown is a foam crash landing costing an airframe and 10% hull.
 **Mitigation:** the Fresnel meatball, AoA approach indexer and approach data
-block are displayed inside 3 km. It remains the hardest skill in the game — by
-design, since a graded 3-wire trap is worth real score.
+block appear automatically inside 3 km *while closing on the boat* (the closing
+check stops the whole panel popping up during the catapult stroke), and the
+flight objective switches to `TRAP ABOARD`. It remains the hardest skill in the
+game — by design, since a graded 3-wire trap is worth real score.
 
 ## 11. Terrain is analytic, not noise-based **[By design]**
 
@@ -107,7 +116,54 @@ The deck state machine tracks exactly one aircraft. Spare airframes are a
 counter, not a fleet — you cannot have several jets at different readiness
 states simultaneously. This limits the depth of the logistics loop.
 
-## 14. Adaptive quality not auto-engaged
+## 14. Adaptive quality ceiling is the player's choice
 
-`PostProcess.nextQuality()` exists and is unit-tested, but no rolling frame-time
-average currently drives it. Quality changes only via the `P` key.
+A rolling frame-time average (EMA) now drives `PostProcess.nextQuality()` every
+0.5 s, but the result is clamped to the ceiling the chosen display mode allows.
+
+**Consequence:** the game will back the bloom pass off on slow hardware, but it
+will never raise quality above what `P` selected — so a player who picked `CLEAN`
+on a fast machine stays on `CLEAN`. That is deliberate: an effect the player
+turned off must stay off.
+
+## 15. The deck screen sheds panels on short viewports
+
+`computeDeckLayout()` compresses row height first, but below roughly 700px of
+viewport height it starts **dropping** the least important panels (deck plan,
+then crew stamina, then the tactical log) rather than drawing them past the
+bottom edge. `ORDERS` and `AIRCRAFT TURNAROUND` are marked essential and are
+never dropped.
+
+**Consequence:** on a short window you cannot see crew stamina or the deck plan
+at all. Panel priorities live in the spec list at the top of
+`DeckView.draw()` if that ordering needs revisiting.
+
+## 16. Local storage is best-effort
+
+The display mode and the personal best are the only two things persisted, both to
+`localStorage` under `carrier-vector-1988.*`. Storage throws in Safari private
+mode and when third-party storage is blocked, so every access is wrapped and
+falls back silently — the display mode reverts to `MODERN` and the personal best
+reads as zero.
+
+**Consequence:** in those browsers the settings do not stick, with no warning.
+Surfacing that would cost more UI than it is worth.
+
+## 17. The cockpit sheds instruments on small viewports
+
+`solveHudLayout()` places the blocks from the real viewport, but there is a floor
+below which they cannot all coexist. Under 1150 px wide the flight checkout
+panel is dropped (the coach ticker still carries the current training prompt);
+under 560 px tall the systems panel becomes a single bottom strip and the RWR
+scope shrinks.
+
+**Consequence:** on a small window you lose the checklist panel and the detailed
+systems readout. The thresholds live in `HUD_METRICS` in
+`src/renderer/HudLayout.ts`.
+
+## 18. Mouse input is menu-only **[By design]**
+
+Clicking advances the briefing and the debrief and closes the help overlay.
+Flying, the deck and the payload are keyboard-only. **Consequence:** the game is
+not playable on a touch device. A pointer-driven flight model is a different
+game, not a port.

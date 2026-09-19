@@ -5,6 +5,7 @@
  */
 
 import type { Vector3 } from '../flight/AircraftPhysics';
+import { THEME, WORLD } from './Theme';
 
 export interface Vector2 {
     x: number;
@@ -27,12 +28,14 @@ export class VectorRenderer {
     public height: number;
     public fov: number; // focal length
     public readonly nearPlane: number = 2.0; // meters
+    /** Per-stroke glow radius. Driven by the display mode. */
+    public glowBlur: number = 4;
 
     // CRT Phosphor palette
-    public phosphorColor: string = '#00ff66';
-    public alertColor: string = '#ff3333';
-    public warningColor: string = '#ffaa00';
-    public dimColor: string = '#005522';
+    public phosphorColor: string = THEME.phosphor;
+    public alertColor: string = WORLD.hostile;
+    public warningColor: string = THEME.caution;
+    public dimColor: string = WORLD.sea;
 
     constructor(canvas: HTMLCanvasElement, fov: number = 380) {
         const ctx = canvas.getContext('2d');
@@ -62,8 +65,31 @@ export class VectorRenderer {
      * active - see decayClear().
      */
     public clear() {
-        this.ctx.fillStyle = '#051008';
+        this.ctx.save();
+        this.resetShadow();
+        this.ctx.globalAlpha = 1;
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.fillStyle = THEME.ground;
         this.ctx.fillRect(0, 0, this.width, this.height);
+        this.ctx.restore();
+    }
+
+    /**
+     * Clear the shadow state left behind by drawLine().
+     *
+     * BUG THIS FIXES: drawLine() set `shadowColor`/`shadowBlur` for its glow
+     * and never reset them. decayClear() then painted its translucent
+     * full-screen rectangle with that shadow still armed, so every frame
+     * composited a full-screen *shadow* in whatever colour the last vector
+     * happened to be - usually the red of a SAM launcher or a target box.
+     * Frame after frame that accumulated until the entire cockpit sat under
+     * a bright maroon wash (measured: a median background of rgb(107,24,21)
+     * instead of the intended rgb(3,10,4)), which is what made the flight
+     * screen so hard to read.
+     */
+    private resetShadow() {
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = 'transparent';
     }
 
     /**
@@ -84,40 +110,72 @@ export class VectorRenderer {
      * actually reaches the floor.
      */
     public decayClear(dt: number, tau: number = 0.06) {
+        if (tau <= 0) {
+            this.clear();
+            return;
+        }
         const alpha = Math.min(1, Math.max(0.02, 1 - Math.exp(-dt / tau)));
+        this.ctx.save();
+        this.resetShadow();
+        this.ctx.globalAlpha = 1;
         this.ctx.globalCompositeOperation = 'source-over';
-        this.ctx.fillStyle = `rgba(3, 10, 4, ${alpha})`;
+        this.ctx.fillStyle = `rgba(4, 8, 11, ${alpha})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
+        this.ctx.restore();
     }
 
+    /** Memoised camera basis: the angles are constant for a whole frame. */
+    private basisCache = {
+        pitch: Number.NaN,
+        yaw: Number.NaN,
+        roll: Number.NaN,
+        basis: VectorRenderer.basisVectors(0, 0, 0)
+    };
+
     /**
-     * Transform a world 3D point into camera space (Translation -> Yaw -> Pitch -> Roll)
+     * Transform a world 3D point into camera space by projecting it onto the
+     * camera's own right / up / forward axes.
+     *
+     * BUG THIS FIXES: the previous implementation composed three explicit
+     * rotation matrices and got the SIGN of the pitch and roll rotations
+     * backwards (it rotated by -pitch and -roll where the world->camera
+     * transform needs +pitch and +roll; only the yaw term was right). The
+     * result was a cockpit view mirrored about the horizon and about the
+     * vertical axis:
+     *
+     *   - pulling the nose UP made the terrain and horizon travel UP the
+     *     screen, as though you had pushed it down;
+     *   - rolling right rolled the world right instead of left;
+     *   - the pitch ladder, which IS derived with the correct sign, drew its
+     *     horizon rung exactly as far below screen centre as the real 3D
+     *     horizon was above it (2 x fov x tan(pitch) apart), and the flight
+     *     path marker sat on the wrong side of the horizon in level flight.
+     *
+     * Deriving the transform from the SAME basis vectors that
+     * AircraftPhysics uses for lift, thrust and drag makes the view agree
+     * with the flight model by construction, so this class of sign error
+     * cannot come back. (Verified against the basis directly in
+     * VectorRenderer.test.ts.)
      */
     public transformToCamera(p: Vector3, camPos: Vector3, camPitch: number, camYaw: number, camRoll: number): Vector3 {
-        // Translation
+        const cache = this.basisCache;
+        if (cache.pitch !== camPitch || cache.yaw !== camYaw || cache.roll !== camRoll) {
+            cache.pitch = camPitch;
+            cache.yaw = camYaw;
+            cache.roll = camRoll;
+            cache.basis = VectorRenderer.basisVectors(camPitch, camYaw, camRoll);
+        }
+        const { forward, up, right } = cache.basis;
+
         const dx = p.x - camPos.x;
         const dy = p.y - camPos.y;
         const dz = p.z - camPos.z;
 
-        // 1. Yaw (around Y)
-        const cy = Math.cos(-camYaw);
-        const sy = Math.sin(-camYaw);
-        const x1 = dx * cy + dz * sy;
-        const z1 = dz * cy - dx * sy;
-
-        // 2. Pitch (around X)
-        const cp = Math.cos(-camPitch);
-        const sp = Math.sin(-camPitch);
-        const y2 = dy * cp - z1 * sp;
-        const z2 = z1 * cp + dy * sp;
-
-        // 3. Roll (around Z)
-        const cr = Math.cos(-camRoll);
-        const sr = Math.sin(-camRoll);
-        const x3 = x1 * cr - y2 * sr;
-        const y3 = x1 * sr + y2 * cr;
-
-        return { x: x3, y: y3, z: z2 };
+        return {
+            x: dx * right.x + dy * right.y + dz * right.z,
+            y: dx * up.x + dy * up.y + dz * up.z,
+            z: dx * forward.x + dy * forward.y + dz * forward.z
+        };
     }
 
     /**
@@ -186,17 +244,21 @@ export class VectorRenderer {
         const zMid = (c1.z + c2.z) / 2;
         const fade = VectorRenderer.depthFade(zMid);
 
-        // Vector glow stroke
+        // Vector glow stroke. Every piece of state this touches is reset
+        // immediately afterwards so nothing can leak into a later fill (see
+        // resetShadow()). Deliberately NOT save()/restore() - this is the
+        // hottest path in the renderer, called twice per terrain segment.
         this.ctx.beginPath();
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = lineWidth * (0.6 + 0.4 * fade);
         this.ctx.shadowColor = color;
-        this.ctx.shadowBlur = 4;
+        this.ctx.shadowBlur = this.glowBlur;
         this.ctx.globalAlpha = fade;
         this.ctx.moveTo(s1.x, s1.y);
         this.ctx.lineTo(s2.x, s2.y);
         this.ctx.stroke();
         this.ctx.globalAlpha = 1.0;
+        this.resetShadow();
     }
 
     /** Pure depth->opacity falloff. Exposed static so it is unit-testable. */
@@ -256,7 +318,7 @@ export class VectorRenderer {
      * rightVector (duplicated here rather than imported, since the renderer
      * must stay independent of any one aircraft instance).
      */
-    private static basisVectors(pitch: number, yaw: number, roll: number) {
+    public static basisVectors(pitch: number, yaw: number, roll: number) {
         const cp = Math.cos(pitch), sp = Math.sin(pitch);
         const cy = Math.cos(yaw), sy = Math.sin(yaw);
         const cr = Math.cos(roll), sr = Math.sin(roll);

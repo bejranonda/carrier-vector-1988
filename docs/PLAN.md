@@ -98,12 +98,57 @@ progress from the deck's clock and reacts to the state-transition *edge*.
 ## 5. Verification
 
 - `npx tsc --noEmit` — zero errors under `strict: true`
-- `npm run test` — 112 tests across 11 suites
+- `npm run test` — 112 tests across 11 suites (at the time of this pass; see §7)
 - `npm run build` — clean production bundle (~80 kB, 25 kB gzipped)
 - `npm run dev` — verified serving; manual pass on boot → briefing → deck → catapult → sortie → trap
 
 ## 6. Deliberate Non-Goals
 
 - **Enemy cannon fire is hit-scan**, not a projectile subsystem. The alignment/range gate in `EnemyAI` establishes the solution; modelling enemy bullets as entities was judged not worth the complexity.
-- **Device pixel ratio is pinned at 1:1.** Chunky pixels are the intended aesthetic and keep the bloom pass cheap.
+- **Device pixel ratio is pinned at 1:1.** Chunky pixels are the intended aesthetic and keep the bloom pass cheap. *(Reversed in the readability pass — see §7.)*
 - **Euler angles retained** rather than quaternions; pitch is clamped to ±88° to avoid gimbal singularities.
+
+---
+
+## 7. Follow-up Pass — Readability & Comprehension
+
+**Status:** Complete
+**Trigger:** player feedback — "it's not easy to understand how to play", and
+"the screen is not easy to read because of textures"
+**Result:** 184 tests across 17 suites, `strict: true`, zero runtime dependencies retained
+
+### Root causes found
+
+Both complaints had concrete causes rather than being matters of taste.
+
+| Finding | Evidence |
+| --- | --- |
+| The cockpit was washed red | `drawLine()` armed `shadowColor`/`shadowBlur` for its glow and never cleared them, so `decayClear()`'s translucent full-screen fill painted a full-screen *shadow* in the last vector's colour — usually SAM red — accumulating every frame. Measured median background `rgb(107,24,21)` against an intended `rgb(3,10,4)`. |
+| The view fought the controls | `transformToCamera()` rotated by `-pitch` and `-roll` where world→camera needs `+pitch` and `+roll`. Pulling the nose up moved the terrain *up* the screen, rolling right rolled the world the wrong way, and the pitch ladder drew its horizon rung exactly as far below centre as the real horizon was above it. |
+| Texture was not optional | The scanline mask and a 92%-black vignette were an always-on CSS overlay with no control, on top of a 6.7 Hz global flicker animation. |
+| Nothing stated the objective | The deck screen's only call to action was 12px grey footer text under eight panels of inventory; the cockpit had twelve instruments and no goal. |
+| Safety warnings were suppressed | The training prompt outranked every coach rule, so a first-time pilot saw no stall, terrain or missile warnings for their whole first sortie. |
+| Layouts broke off the nominal size | At 900x620 the deck screen drew the crew list, payload rows and whole log panel past the bottom edge; at 1440x900 it left a ~220px dead band. In the cockpit, fixed `cx - 300` offsets drew the airspeed block underneath the training checklist at 900x700. |
+
+### Work completed
+
+| Area | Change |
+| --- | --- |
+| Renderer | Shadow-state reset (`resetShadow()`); camera transform rebuilt on the physics basis vectors; world palette moved to `Theme` |
+| Display | `DisplayMode.ts` — one `CLEAN` / `MODERN` / `RETRO` ladder covering persistence, bloom, per-stroke glow, scanlines and vignette; persisted to `localStorage`; `MODERN` default |
+| Theme | `Theme.ts` — colour tokens, type scale, and `panel` / `plate` / `keycap` / `bar` / `row` / `fitText` primitives |
+| Resolution | Device-pixel-accurate canvas (capped 2x) for the visible and offscreen layers |
+| Guidance | `Objectives.ts` — always-on objective for both loops, driving a deck orders panel and a HUD objective strip; coach priority corrected |
+| Onboarding | Briefing rebuilt as three phase cards with keycaps; training shown as a six-step checklist; click-to-continue on menu screens |
+| Layout | `DeckLayout` shrink → drop-by-priority → grow; new `HudLayout` solver for the cockpit |
+| Retention | `HighScore.ts` — personal best on the briefing and debrief |
+| Performance | Per-stroke glow confined to `RETRO`: 23.7 ms → 19.2 ms per frame at 1600x900; adaptive quality ladder finally driven by a rolling frame-time average |
+
+### Verification
+
+- `npx tsc --noEmit` — zero errors under `strict: true`
+- `npm run test` — 184 tests across 17 suites
+- `npm run build` — clean production bundle (~103 kB, ~34 kB gzipped)
+- Browser pass in Chromium at 800x620 through 2560x1440, at 1x and 2x device
+  pixel ratio, across all three display modes, with pixel sampling to confirm
+  the background wash is gone and frame-time sampling to confirm the cost

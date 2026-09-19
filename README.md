@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-112%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-184%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 112 headless Vitest tests
+npm run test     # 184 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -64,16 +64,50 @@ npm run preview  # serve the production build
 
 ## How to Play
 
-1. **Boot & Briefing** — The CRT warms up, then the mission briefing explains the situation. Press `ENTER` to man your aircraft (or `S` to skip straight to airborne).
-2. **On the deck** — Set your payload with `1`–`4`. More fuel means longer endurance; more ordnance means more kills but a heavier, draggier jet.
-3. **Launch** — When the turnaround reaches `CATAPULT_READY`, press `ENTER` for the cat shot. The camera rides the stroke into the cockpit.
-4. **Intercept** — Kill the inbound packages *before their ETA hits zero*. Bombers (Tu-22M) cost 35% hull integrity if they get through; fighters cost 15%.
-5. **Survive the SAMs** — When your RWR screams `LAUNCH`, **descend below the ridge line**. Breaking line of sight breaks the lock and kills the missile in flight.
-6. **Trap aboard** — Come home under 90 m/s, between 18–30 m altitude, within 190 m of the boat. Fly the meatball; a 3-wire is a perfect trap.
+The briefing screen lays this out in three cards; here it is in full.
 
-Hull integrity reaching zero ends the mission. Survive waves to raise your score and rank from **NUGGET** to **ADMIRAL**.
+1. **Boot & briefing** — The display warms up, then the briefing explains the
+   loop in three steps. Press `ENTER` (or click) to man your aircraft, or `S`
+   to skip straight to airborne.
+2. **On the deck** — The **CURRENT ORDERS** panel at the top of the deck screen
+   always names the one thing you should do next and the key that does it. Set
+   your payload with `1`–`4`: more fuel means longer endurance, more ordnance
+   means more kills but a heavier, draggier jet.
+3. **Launch** — When the turnaround reaches `CATAPULT READY`, press `ENTER` for
+   the cat shot. The camera rides the stroke into the cockpit.
+4. **Intercept** — Kill the inbound packages *before their ETA hits zero*. The
+   objective strip across the top of the HUD counts the live contacts and the
+   time you have left. Bombers (Tu-22M) cost 35% hull integrity if they get
+   through; fighters cost 15%.
+5. **Survive the SAMs** — When your RWR screams `LAUNCH`, **descend below the
+   ridge line**. Breaking line of sight breaks the lock and kills the missile
+   in flight.
+6. **Trap aboard** — Come home under 90 m/s, between 18–30 m altitude, within
+   190 m of the boat. The approach panel (meatball, AoA indexer, range and
+   speed) appears automatically once you are inside 3 km and closing.
 
-> **New player tip:** press `H` at any time for the full control reference. A contextual coach also calls out stalls, terrain, missile launches and approach guidance as they happen.
+Hull integrity reaching zero ends the mission. Survive waves to raise your
+score and rank from **NUGGET** to **ADMIRAL**.
+
+> **First sortie:** a six-step **FLIGHT CHECKOUT** checklist walks you through
+> pitch, roll, throttle, the weapons bay, guns and terrain masking, ticking
+> each one off as you demonstrate it. A contextual coach calls out stalls,
+> terrain, missile launches and approach guidance as they happen, and `H`
+> shows the full control reference at any time.
+
+### Finding the screen hard to read?
+
+Press `P` to cycle the display mode:
+
+| Mode | What it does |
+| --- | --- |
+| `CLEAN` | No vector trails, no bloom, no scanlines — maximum legibility, cheapest to draw |
+| `MODERN` | **Default.** Crisp symbology with a light bloom glow and a faint vignette |
+| `RETRO CRT` | The full 1988 phosphor tube: persistence trails, per-stroke glow, scanline mask, vignette |
+
+Your choice is remembered between sessions. On a weak machine the bloom pass also
+backs itself off automatically from a rolling frame-time average, without ever
+exceeding the mode you picked.
 
 ## Controls
 
@@ -108,7 +142,7 @@ Hull integrity reaching zero ends the mission. Survive waves to raise your score
 | `H` / `F1` | Control reference overlay |
 | `ESC` | Close overlay |
 | `M` | Mute / unmute |
-| `P` | Cycle CRT post-processing quality |
+| `P` | Cycle display mode — `CLEAN` / `MODERN` / `RETRO CRT` |
 
 > Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
 
@@ -135,11 +169,25 @@ Hull integrity reaching zero ends the mission. Survive waves to raise your score
 - **Procedurally escalating strike waves** from a seeded PRNG after the scripted opening act
 - Graded arrested recoveries (1–4 wire, or a bolter) feeding a score and rank ladder
 
-### Presentation
-- **Phosphor persistence** — vectors decay over ~60 ms leaving authentic CRT trails
+### Presentation & Readability
+- **Three display modes** (`CLEAN` / `MODERN` / `RETRO CRT`) behind one key, covering
+  vector persistence, bloom, per-stroke glow, the scanline mask and the vignette
+  together — and remembered between sessions
+- **Device-pixel-accurate canvas** — the backing store is scaled by `devicePixelRatio`
+  so symbology stays sharp on HiDPI displays
+- **Phosphor persistence** — vectors decay with a frame-rate-independent time constant
 - **Additive bloom pass** with a `multiply` pseudo-threshold, at ¼ resolution
 - Distance haze, horizon ring, and a scrolling sea lattice for depth and motion cues
-- Fully **responsive deck layout** that reflows from 3 columns to 1
+- **Always-on objective line** in both loops, derived from a pure `Objectives.ts` module
+- Every HUD cluster sits on a translucent backplate, so legibility never depends on
+  what part of the wireframe happens to be behind it
+- Fully **responsive deck layout** that reflows from 3 columns to 1, compresses under
+  vertical pressure, sheds its least important panels rather than clipping them, and
+  expands to fill the height it has
+- A matching **cockpit instrument solver** that places every block from the real
+  viewport instead of fixed offsets, scaling and clipping the pitch ladder into
+  whatever space is left — both solvers are pure and both are tested for overlap
+- **Personal best** carried across sessions, shown on the briefing and the debrief
 - Procedurally synthesized Web Audio: engine whine, afterburner roar, RWR tones, flak
 
 ## Architecture
@@ -150,7 +198,9 @@ src/
 │   ├── GameLoop.ts        # The bridge loop: fixed timestep, phases, view dispatch
 │   ├── Timestep.ts        # Fixed-timestep accumulator with spiral-of-death guard
 │   ├── Controls.ts        # Single source of truth for key bindings
-│   ├── Tutorial.ts        # Contextual coach + first-run training sequence
+│   ├── Tutorial.ts        # Contextual coach + first-run training checklist
+│   ├── Objectives.ts      # "What do I do right now?" for both loops (pure)
+│   ├── HighScore.ts       # Persisted personal best
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
@@ -163,7 +213,10 @@ src/
 ├── renderer/
 │   ├── VectorRenderer.ts  # 3D pipeline: camera transform, near-plane clip, projection
 │   ├── PostProcess.ts     # Phosphor persistence + bloom compositor
-│   ├── HUD.ts             # Pitch ladder, FPM, tapes, RWR, landing aids
+│   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
+│   ├── DisplayMode.ts     # CLEAN / MODERN / RETRO ladder (canvas + CSS effects)
+│   ├── HudLayout.ts       # Pure cockpit instrument placement solver
+│   ├── HUD.ts             # Objective strip, pitch ladder, FPM, tapes, RWR, landing aids
 │   ├── DeckLayout.ts      # Pure responsive panel solver
 │   ├── DeckView.ts        # Flight deck instruments
 │   └── BriefingScreen.ts  # Boot sequence, briefing, help, debrief
@@ -175,7 +228,7 @@ src/
 
 This project has **no runtime dependencies at all**. Every piece of 3D math is implemented from scratch:
 
-- Camera transforms are hand-written rotation matrices
+- The camera transform projects onto the aircraft's own right/up/forward basis
 - Near-plane clipping interpolates line segments against `z = 2.0 m`
 - Perspective projection is an explicit divide: `x' = x·f/z + x₀`, `y' = −y·f/z + y₀`
 - Terrain is an analytic heightfield with bilinear interpolation
@@ -183,7 +236,14 @@ This project has **no runtime dependencies at all**. Every piece of 3D math is i
 
 ## Simulation Models
 
-**Perspective projection** — world → camera (translate, then −yaw/−pitch/−roll) → near-plane clip → perspective divide.
+**Perspective projection** — world → camera → near-plane clip → perspective divide.
+The camera transform is the dot product of the translated point with the *same*
+right / up / forward basis vectors `AircraftPhysics` uses for lift, thrust and drag,
+so the view can never disagree in sign with the flight model:
+
+```
+x_cam = (p − eye) · right      y_cam = (p − eye) · up      z_cam = (p − eye) · forward
+```
 
 **Aerodynamics** — with air density `ρ = ρ₀·e^(−y/8500)` and dynamic pressure `q = ½ρv²`:
 
@@ -213,7 +273,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**112 headless tests** across 11 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, layout geometry, scoring, the tutorial rules engine, the timestep accumulator, projection math, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**184 headless tests** across 17 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `computeDeckLayout`, `gradeTrap`, `warmupEnvelope`) specifically so it can be verified without a browser.
 

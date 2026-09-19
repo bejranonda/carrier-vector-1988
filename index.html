@@ -10,7 +10,7 @@
     <meta name="description" content="Carrier Vector: 1988 is a browser-based retro vector flight simulator combining 6-DOF aerodynamics, terrain-masking radar evasion and aircraft carrier deck logistics. Pure TypeScript, zero 3D engines, 1980s CRT phosphor wireframe graphics." />
     <meta name="keywords" content="vector flight simulator, retro game, CRT phosphor, wireframe 3D, TypeScript game, HTML5 canvas game, carrier deck management, 6-DOF flight dynamics, radar terrain masking, browser game, 1980s arcade, no game engine, linear algebra 3D, air combat simulator" />
     <meta name="author" content="bejranonda" />
-    <meta name="theme-color" content="#00ff66" />
+    <meta name="theme-color" content="#070d11" />
     <link rel="canonical" href="https://github.com/bejranonda/carrier-vector-1988" />
 
     <!-- Open Graph / social sharing -->
@@ -41,8 +41,13 @@
     </script>
   </head>
   <body>
-    <div class="crt">
-      <canvas id="gameCanvas"></canvas>
+    <div class="screen">
+      <canvas
+        id="gameCanvas"
+        tabindex="0"
+        role="application"
+        aria-label="Carrier Vector 1988 — keyboard-driven vector flight simulator. Press H for the full control reference."
+      ></canvas>
     </div>
 
     <!-- Crawler/agent-readable summary. Hidden visually; the game itself is canvas-rendered. -->

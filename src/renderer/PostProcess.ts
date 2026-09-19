@@ -21,11 +21,13 @@
  * Zero dependencies: plain Canvas2D contexts only.
  */
 
+import { THEME } from './Theme';
+
 export type PostQuality = 'OFF' | 'LOW' | 'HIGH';
 
 export class PostProcess {
     public quality: PostQuality = 'HIGH';
-    public bloomStrength = 0.5;
+    public bloomStrength = 0.32;
 
     private worldCanvas: HTMLCanvasElement;
     private worldContext: CanvasRenderingContext2D;
@@ -33,29 +35,43 @@ export class PostProcess {
     private bloomContext: CanvasRenderingContext2D;
     private width: number;
     private height: number;
+    private dpr = 1;
 
     /** Feature-detected once: Canvas2D `filter` is unsupported on some older Safari. */
     private readonly supportsFilter: boolean;
 
-    constructor(width: number, height: number) {
+    constructor(width: number, height: number, dpr: number = 1) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
+        this.dpr = Math.max(1, dpr);
 
         this.worldCanvas = document.createElement('canvas');
-        this.worldCanvas.width = this.width;
-        this.worldCanvas.height = this.height;
         const wctx = this.worldCanvas.getContext('2d');
         if (!wctx) throw new Error('PostProcess: could not create world layer 2D context');
         this.worldContext = wctx;
 
         this.bloomCanvas = document.createElement('canvas');
-        this.bloomCanvas.width = Math.max(1, Math.floor(this.width / 4));
-        this.bloomCanvas.height = Math.max(1, Math.floor(this.height / 4));
         const bctx = this.bloomCanvas.getContext('2d');
         if (!bctx) throw new Error('PostProcess: could not create bloom layer 2D context');
         this.bloomContext = bctx;
 
         this.supportsFilter = 'filter' in this.bloomContext;
+        this.sizeBuffers();
+    }
+
+    /**
+     * Size the offscreen buffers to DEVICE pixels and pre-scale the world
+     * context, so the persistent vector layer renders at the same native
+     * resolution as the visible canvas while callers keep working in CSS
+     * pixels.
+     */
+    private sizeBuffers() {
+        this.worldCanvas.width = Math.round(this.width * this.dpr);
+        this.worldCanvas.height = Math.round(this.height * this.dpr);
+        this.worldContext.setTransform?.(this.dpr, 0, 0, this.dpr, 0, 0);
+
+        this.bloomCanvas.width = Math.max(1, Math.floor(this.worldCanvas.width / 4));
+        this.bloomCanvas.height = Math.max(1, Math.floor(this.worldCanvas.height / 4));
         this.hardClear();
     }
 
@@ -68,21 +84,20 @@ export class PostProcess {
         return this.worldContext;
     }
 
-    public resize(width: number, height: number) {
+    public resize(width: number, height: number, dpr: number = this.dpr) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
-        this.worldCanvas.width = this.width;
-        this.worldCanvas.height = this.height;
-        this.bloomCanvas.width = Math.max(1, Math.floor(this.width / 4));
-        this.bloomCanvas.height = Math.max(1, Math.floor(this.height / 4));
-        this.hardClear();
+        this.dpr = Math.max(1, dpr);
+        this.sizeBuffers();
     }
 
     /** Fully reset the world layer. Used on resize and on view/phase changes. */
     public hardClear() {
         this.worldContext.globalAlpha = 1;
         this.worldContext.globalCompositeOperation = 'source-over';
-        this.worldContext.fillStyle = '#051008';
+        this.worldContext.shadowBlur = 0;
+        this.worldContext.shadowColor = 'transparent';
+        this.worldContext.fillStyle = THEME.ground;
         this.worldContext.fillRect(0, 0, this.width, this.height);
     }
 
@@ -95,9 +110,9 @@ export class PostProcess {
         dest.save();
         dest.globalAlpha = 1;
         dest.globalCompositeOperation = 'source-over';
-        dest.drawImage(this.worldCanvas, 0, 0);
+        dest.drawImage(this.worldCanvas, 0, 0, this.width, this.height);
 
-        if (this.quality !== 'OFF') {
+        if (this.quality !== 'OFF' && this.bloomStrength > 0) {
             this.renderBloom();
             dest.globalCompositeOperation = 'lighter';
             dest.globalAlpha = this.bloomStrength;

@@ -47,32 +47,68 @@ Dev dependencies (TypeScript, Vite, Vitest) are fine. Runtime dependencies are n
   not clearing, which would smear HUD text into an illegible blur. The 3D world
   renders to an offscreen layer that carries the decay; the visible canvas is
   hard-cleared, composited, and the HUD drawn crisply on top.
-- Device pixel ratio is deliberately pinned at 1:1. Chunky pixels are the intended
-  aesthetic and keep the bloom pass cheap. Do not "fix" this.
+- **Always reset `shadowBlur` / `shadowColor` after a glow stroke.** Canvas shadow
+  state is sticky. `drawLine()` once left it armed, so `decayClear()`'s
+  translucent full-screen fill painted a full-screen *shadow* in whatever colour
+  the last vector was — usually SAM red — and it accumulated frame over frame
+  until the whole cockpit sat under a maroon wash (measured median background
+  `rgb(107,24,21)` instead of `rgb(3,10,4)`). Use `resetShadow()`, and note the
+  hot path deliberately avoids `save()`/`restore()` for cost reasons.
+- **The per-stroke glow is a RETRO-only luxury.** A Canvas2D shadow is applied per
+  `stroke()` and the terrain mesh issues thousands per frame: 23.7 ms/frame with
+  it at 1600x900 versus 16.7 ms without. `MODERN` gets its glow from the bloom
+  pass instead, which is 1/4 resolution and whole-layer. Do not reintroduce a
+  per-stroke shadow outside `DisplayMode.vectorGlow`.
+- **Device pixel ratio is followed, capped at 2x.** The backing store (visible and
+  offscreen) is `CSS px x dpr` with the 2D contexts pre-scaled, so all layout code
+  still works in CSS pixels. The old 1:1 `image-rendering: pixelated` canvas was
+  deliberate retro chunkiness but made 10-12px HUD glyphs unreadable on HiDPI;
+  `RETRO` display mode carries the look instead. The 2x cap keeps the bloom pass
+  affordable on 3x/4x phone displays.
+- **Screen texture belongs to the display mode, not to individual draw calls.**
+  Persistence, bloom, per-stroke glow, the scanline mask and the vignette are all
+  fields of a `DisplayModeSpec` (`CLEAN` / `MODERN` / `RETRO`), cycled with `P`
+  and persisted to `localStorage`. Do not hardcode an effect that a player
+  cannot turn off.
 
-## 4. CRT Phosphor Aesthetics
+## 4. Colour, Type & Legibility
 
-Palette — do not introduce colours outside this set:
+**All colour comes from `src/renderer/Theme.ts`.** Never write a hex literal into
+a drawing call — the old screens each carried their own `#00ff66` / `#00aa44` and
+the result was a display on which nothing read as more important than anything
+else.
 
-| Colour | Use |
+| Token | Use |
 | --- | --- |
-| `#00ff66` | Primary phosphor |
-| `#00aa44` | Dim / secondary |
-| `#33aa33` | Ridge lines |
-| `#1d8a2c` | Horizon, upper slopes |
-| `#00632a` | Sea, canyon floor |
-| `#004400` | Low terrain |
-| `#051008` | Background (hard clear) |
-| `#030a04` | Persistence decay floor |
-| `#ffaa00` | Warning |
-| `#ffff33` | Runway / ready |
-| `#ff3333` | Alert / hostile |
+| `THEME.ground` | Page and canvas ground |
+| `THEME.ink` | Headline values you must read at a glance |
+| `THEME.phosphor` | Primary instrument colour |
+| `THEME.muted` | Labels and secondary copy — deliberately NEUTRAL, not green |
+| `THEME.key` | Cyan, reserved exclusively for key names |
+| `THEME.caution` | Caution / ready |
+| `THEME.alert` | Lethal / hostile |
+| `WORLD.*` | 3D wireframe colours, kept separate from UI chrome |
 
-- `shadowBlur = 4` for standard glow strokes.
+Rules:
+
+- **Every UI colour must clear 4.5:1 contrast against `THEME.ground`**, checked at
+  the darkest point of the vignette. `Theme.test.ts` asserts this; add new tokens
+  there too.
+- **Labels are neutral, values carry the colour.** A desaturated green label turns
+  to mud under the vignette, which is exactly what happened before.
+- **Cyan means "this is a key you can press"** and nothing else. Draw keys with
+  `keycap()`, not as `[ENTER]` inside a sentence — players skim for something that
+  looks pressable.
+- **Body text is drawn with NO shadow glow**, on a translucent `plate()`. Glow
+  fattens 12px monospace strokes until they smear, and legibility must never
+  depend on what part of the wireframe happens to be behind the text.
+- **Clamp text you did not measure.** Canvas has no overflow handling; run any
+  variable-length string through `fitText()` or it paints straight through the
+  edge of its panel.
 - **The persistence decay target must remain strictly darker than the background.**
-  Decaying toward `#051008` does not converge under 8-bit rounding and leaves a
-  permanent burnt-in ghost. `#030a04` is strictly below every channel of the
-  background, making the decay iteration strictly decreasing.
+  Decaying toward the background colour does not converge under 8-bit rounding and
+  leaves a permanent burnt-in ghost. The decay floor is strictly below every
+  channel of the ground colour, making the iteration strictly decreasing.
 - Bloom strength stays ≤ 0.55; above that the screen turns into green fog.
 
 ## 5. TypeScript & Testing Discipline
@@ -102,5 +138,19 @@ Palette — do not introduce colours outside this set:
   `DeckManager.catapultTimer`; the renderer derives progress from it and reacts
   to the state-transition edge. Two parallel timers previously raced and the
   completion branch never fired.
-- **Layout comes from `computeDeckLayout()`**, never hardcoded pixel coordinates.
-  Absolute positioning is what broke the deck screen below 1250 px wide.
+- **Layout comes from a solver, never hardcoded pixel coordinates.**
+  `computeDeckLayout()` owns the deck screen and `solveHudLayout()` owns the
+  cockpit. Absolute positioning broke the deck screen below 1250px wide, and
+  fixed `cx - 300` offsets drew the cockpit's airspeed block underneath the
+  training checklist at 900x700. Both solvers are pure and both have tests
+  asserting that nothing overlaps and nothing leaves the viewport — extend those
+  matrices when adding a panel.
+- **The camera transform is derived from the aircraft's own basis vectors.**
+  `transformToCamera()` projects onto the same right / up / forward vectors
+  `AircraftPhysics` uses for lift and thrust. It previously composed rotation
+  matrices by hand and had the sign of pitch and roll backwards, so pulling the
+  nose up moved the terrain *up* the screen and the pitch ladder contradicted the
+  3D world. Never hand-roll that composition again.
+- **"What do I do now" comes from `src/core/Objectives.ts`**, which is pure and
+  covers every deck state. The deck orders panel and the cockpit objective strip
+  both read it, so the two loops can never disagree about the goal.

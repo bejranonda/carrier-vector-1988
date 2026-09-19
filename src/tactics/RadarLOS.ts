@@ -10,6 +10,7 @@
  */
 
 import type { AircraftPhysics, Vector3 } from '../flight/AircraftPhysics';
+import { WORLD } from '../renderer/Theme';
 import type { VectorRenderer } from '../renderer/VectorRenderer';
 
 export type RadarThreatState = 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
@@ -133,9 +134,10 @@ export class TacticalTerrain {
                 const p1: Vector3 = { x: wx, y: this.heights[x][z], z: wz1 };
                 const p2: Vector3 = { x: wx, y: this.heights[x][Math.min(this.depthCells, z + 2)], z: wz2 };
 
-                // Color depends on altitude: bright green for high ridges, dark amber/green for valleys
+                // Ridge lines are what you have to fly below to break a radar
+                // lock, so they are the brightest thing in the terrain mesh.
                 const isRidge = p1.y > 600 || p2.y > 600;
-                const color = isRidge ? '#33aa33' : '#004400';
+                const color = isRidge ? WORLD.terrain : WORLD.valley;
                 renderer.drawLine(p1, p2, camPos, camPitch, camYaw, camRoll, color);
             }
         }
@@ -153,7 +155,7 @@ export class TacticalTerrain {
                 const p2: Vector3 = { x: wx2, y: this.heights[Math.min(this.widthCells, x + 2)][z], z: wz };
 
                 const isRidge = p1.y > 600 || p2.y > 600;
-                const color = isRidge ? '#33aa33' : '#004400';
+                const color = isRidge ? WORLD.terrain : WORLD.valley;
                 renderer.drawLine(p1, p2, camPos, camPitch, camYaw, camRoll, color);
             }
         }
