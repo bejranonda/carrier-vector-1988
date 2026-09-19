@@ -42,6 +42,11 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['2'], display: '2', label: 'Select AIM-9 Sidewinder', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['3'], display: '3', label: 'Select Mk.82 iron bomb', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['b'], display: 'B', label: 'Toggle weapons bay (open = RCS x4.0)', context: 'FLIGHT', group: 'WEAPONS' },
+    { keys: ['t'], display: 'T', label: 'Designate next target (SHIFT+T steps back)', context: 'FLIGHT', group: 'WEAPONS' },
+    { keys: ['y'], display: 'Y', label: 'Release the designation', context: 'FLIGHT', group: 'WEAPONS' },
+
+    // --- Flight assistance ---
+    { keys: ['f'], display: 'F', label: 'Cycle flight assist (MANUAL / ASSIST / AUTOPILOT)', context: 'FLIGHT', group: 'FLIGHT' },
 
     // --- Deck operations ---
     { keys: ['enter'], display: 'ENTER', label: 'Launch from catapult', context: 'DECK', group: 'DECK OPS' },

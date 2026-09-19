@@ -25,6 +25,7 @@
 import type { AircraftLoadout } from '../flight/AircraftPhysics';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import type { StrikeTargetSpec } from '../tactics/StrikeTarget';
+import type { MapId } from '../tactics/TerrainProfiles';
 import type { ObjectiveStep } from './Objectives';
 import { formatEta } from './Objectives';
 
@@ -103,6 +104,8 @@ export interface ScenarioCard {
 
 export interface ScenarioSetup {
     threat: ThreatProfile;
+    /** Which map to fly. Defaults to the fjord. */
+    map?: MapId;
     /** Skip the deck and start over the canyon. */
     startAirborne?: boolean;
     /** Remove the SAM belt entirely (used by carrier qualification). */
@@ -249,7 +252,14 @@ const CARRIER_DEFENSE: ScenarioDef = {
     tagline: 'Endless waves. How long can you hold CV-68?',
     difficulty: 2,
     duration: 'Endless',
-    setup: { threat: { endlessWaves: true }, showTrainingChecklist: true },
+    setup: {
+        // The flight checkout's last step is "descend until the RWR goes
+        // silent", so the intro mode has to be on a map that can actually
+        // mask. Open water would have silently broken the lesson.
+        threat: { endlessWaves: true },
+        map: 'FJORD',
+        showTrainingChecklist: true
+    },
     cards: [
         {
             n: '1',
@@ -292,6 +302,7 @@ const CANYON_STRIKE: ScenarioDef = {
             inventory: { ironBombs: 6, sidewinders: 8 },
             plannedFuel: 4800
         },
+        map: 'FJORD',
         strikeTarget: HARDENED_PEN,
         timeLimitSeconds: 240,
         // The window is the raid window. Once the pen is down the clock has
@@ -377,7 +388,7 @@ const CANYON_STRIKE: ScenarioDef = {
 const IRON_HAND: ScenarioDef = {
     id: 'IRON_HAND',
     name: 'IRON HAND',
-    tagline: 'Roll back the SAM belt. Three sites, one jet.',
+    tagline: 'Roll back the SAM belt. Four sites behind four ridges.',
     difficulty: 3,
     duration: '~8 min',
     setup: {
@@ -387,6 +398,9 @@ const IRON_HAND: ScenarioDef = {
             inventory: { ironBombs: 12 },
             plannedFuel: 5000
         },
+        // Four launchers behind offset ridge gaps: each kill needs its own
+        // route in, which is the whole point of a SEAD mission.
+        map: 'SHATTERED_RIDGE',
         loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4 }
     },
     cards: [
@@ -399,13 +413,13 @@ const IRON_HAND: ScenarioDef = {
         {
             n: '2',
             title: 'WORK THE BELT',
-            body: 'Three sites up the fjord. Break each lock behind a ridge, then come over the top and bomb the launcher.',
+            body: 'Four launchers, each behind its own ridge with the gap offset from the last. Break the lock, pop over, bomb it.',
             keys: [['3', 'select bomb'], ['SPACE', 'release']]
         },
         {
             n: '3',
             title: 'RELOAD AND REPEAT',
-            body: 'Four bombs a sortie. Trap aboard, rearm and go back for the rest - the boat is your magazine.',
+            body: 'Four bombs a sortie, four launchers. Trap aboard, rearm and go back for the rest - the boat is your magazine.',
             keys: [['TAB', 'deck'], ['ENTER', 'relaunch']]
         }
     ],
@@ -443,6 +457,7 @@ const LAST_STAND: ScenarioDef = {
             inventory: { carrierHealth: 70, spareAirframes: 2, sidewinders: 12 },
             plannedFuel: 4200
         },
+        map: 'OPEN_SEA',
         loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0 }
     },
     cards: [
@@ -495,6 +510,7 @@ const CARRIER_QUALS: ScenarioDef = {
     duration: '~5 min',
     setup: {
         threat: { openingTimeline: [], endlessWaves: false, plannedFuel: 4000 },
+        map: 'OPEN_SEA',
         noSamSites: true,
         startAirborne: true,
         loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0 }

@@ -48,6 +48,17 @@ import {
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
 import { StrikeTarget } from '../tactics/StrikeTarget';
+import {
+    assistSpec,
+    loadAssistLevel,
+    nextAssistLevel,
+    resolveControls,
+    saveAssistLevel
+} from '../flight/FlightAssist';
+import type { AssistLevel, ControlDemand, FlightState, NavTarget } from '../flight/FlightAssist';
+import { TargetTracker, pursuitNav } from '../tactics/TargetDesignation';
+import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
+import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
 import type { ObjectiveStep } from './Objectives';
 
@@ -121,6 +132,22 @@ export class GameLoop {
      * the scanline mask and the vignette. Restored from the last session.
      */
     public displayMode: DisplayModeId = loadDisplayMode();
+
+    /**
+     * How much of the aeroplane the player wants to fly. Restored between
+     * sessions, cycled with one key, and applied by pure control laws in
+     * FlightAssist - see that module for why this exists at all.
+     */
+    public assistLevel: AssistLevel = loadAssistLevel();
+    /** Which protection, if any, is currently taking authority. For the HUD. */
+    public assistOverride: ControlDemand['override'] = 'NONE';
+
+    /**
+     * The pilot's chosen target. Everything downstream follows it: the HUD
+     * bracket, the weapon recommendation, which contact the Sidewinder guides
+     * on, and where the autopilot flies.
+     */
+    public tracker = new TargetTracker();
 
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
@@ -217,6 +244,14 @@ export class GameLoop {
      */
     private applyScenario(scenario: ScenarioDef) {
         const setup = scenario.setup;
+
+        // The map is part of the scenario, so the terrain is rebuilt with it.
+        // Everything that samples terrain - sensors, the bomb predictor, the
+        // renderer - is handed the new instance rather than caching heights.
+        const mapId = setup.map ?? DEFAULT_MAP;
+        if (this.terrain.profile.id !== mapId) {
+            this.terrain = new TacticalTerrain(mapId);
+        }
 
         this.deck = new DeckManager(setup.threat);
         this.sensors = new SensorTacticsManager(this.terrain);
@@ -534,38 +569,169 @@ export class GameLoop {
      * control authority is exactly time-consistent. Previously this lived in
      * a separate setInterval(16ms) with a hardcoded dt=0.016, which drifted
      * from real elapsed time and decoupled controls from the render loop.
+     *
+     * The keyboard no longer talks to the flight model directly: it produces a
+     * pilot demand, the assist laws in FlightAssist resolve it against the
+     * aircraft state, and only the result reaches the aerodynamics. At MANUAL
+     * that resolution is the identity function, so the raw flight model is
+     * exactly as it was.
      */
     private applyFlightInput(dt: number) {
         if (this.currentView !== 'MICRO_FLIGHT') return;
         if (this.deck.aircraftState !== 'AIRBORNE') return;
         const k = this.inputState;
 
-        let pitching = false;
-        let rolling = false;
+        const pilot = {
+            pitch: (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0),
+            roll: (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
+            throttle: (k['shift'] ? 1 : 0) + (k['control'] ? -1 : 0)
+        };
 
-        if (k['w'] || k['arrowup']) { this.physics.applyPitchInput(1.0, dt); pitching = true; }
-        if (k['s'] || k['arrowdown']) { this.physics.applyPitchInput(-1.0, dt); pitching = true; }
-        if (k['a'] || k['arrowleft']) { this.physics.applyRollInput(-1.0, dt); rolling = true; }
-        if (k['d'] || k['arrowright']) { this.physics.applyRollInput(1.0, dt); rolling = true; }
+        const demand = resolveControls(this.assistLevel, this.assistFlightState(), pilot, this.navTarget());
+        this.assistOverride = demand.override;
+
+        if (demand.pitch !== 0) this.physics.applyPitchInput(demand.pitch, dt);
+        if (demand.roll !== 0) this.physics.applyRollInput(demand.roll, dt);
+        // Autopilot rudder first, then the pilot's own - the rudder is how
+        // heading actually changes in this flight model, so the autopilot has
+        // to have it, and a pilot boot on the pedals still adds to it.
+        if (demand.yaw !== 0) this.physics.applyYawInput(demand.yaw, dt);
         if (k['q']) this.physics.applyYawInput(-1.0, dt);
         if (k['e']) this.physics.applyYawInput(1.0, dt);
 
-        if (k['shift']) {
-            this.physics.throttle = Math.min(1.5, this.physics.throttle + 0.5 * dt);
-            this.training.progress.throttleChanged = true;
-        }
-        if (k['control']) {
-            this.physics.throttle = Math.max(0.0, this.physics.throttle - 0.5 * dt);
-            this.training.progress.throttleChanged = true;
+        if (demand.throttle !== 0) {
+            this.physics.throttle = Math.min(1.5, Math.max(0,
+                this.physics.throttle + demand.throttle * 0.5 * dt));
         }
 
-        if (pitching) this.training.progress.pitchInputSeconds += dt;
-        if (rolling) this.training.progress.rollInputSeconds += dt;
+        // Training credit tracks what the PILOT did, not what the autopilot
+        // did for them - otherwise the checklist completes itself on AUTO and
+        // teaches nobody anything.
+        if (pilot.pitch !== 0) this.training.progress.pitchInputSeconds += dt;
+        if (pilot.roll !== 0) this.training.progress.rollInputSeconds += dt;
+        if (pilot.throttle !== 0) this.training.progress.throttleChanged = true;
 
         // Held-trigger cannon fire
         if (k[' '] && this.selectedWeapon === 'GUN') {
             this.weapons.fireGun(this.physics);
             this.training.progress.gunFired = true;
+        }
+    }
+
+    /** Everything the assist laws are allowed to know about the aircraft. */
+    private assistFlightState(): FlightState {
+        const ground = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        return {
+            pitch: this.physics.pitch,
+            roll: this.physics.roll,
+            yaw: this.physics.yaw,
+            alpha: this.physics.alpha,
+            airSpeed: this.physics.airSpeed,
+            throttle: this.physics.throttle,
+            altitudeAgl: Math.max(0, this.physics.position.y - ground),
+            verticalSpeed: this.physics.velocity.y,
+            isStalled: this.physics.isStalled,
+            onApproach: HUD.isOnApproach(this.physics)
+        };
+    }
+
+    /**
+     * Where the autopilot is flying. A designated target is prosecuted; with
+     * nothing designated it holds the present heading at a safe height rather
+     * than inventing an objective, so switching to AUTO is always a way to
+     * stabilise the jet and take stock.
+     */
+    private navTarget(): NavTarget | null {
+        const designated = this.tracker.designated();
+        if (designated) {
+            const p = designated.target.position;
+            return pursuitNav(designated, this.terrain.getElevation(p.x, p.z));
+        }
+
+        return {
+            bearing: this.physics.yaw,
+            altitudeAgl: 900,
+            airSpeed: 240,
+            maxBank: 0.6
+        };
+    }
+
+    /**
+     * Refresh the designation list. Candidates are live airborne contacts,
+     * surviving SAM sites and intact strike targets - exactly the things a
+     * weapon can be employed against, so the cycle key never stops on wreckage.
+     */
+    private refreshDesignation() {
+        const candidates: DesignatableTarget[] = [];
+
+        for (const t of this.airborneTargets) {
+            if (!t.isAlive) continue;
+            candidates.push({ id: t.id, kind: 'AIR', name: t.name, position: t.position });
+        }
+        for (const sam of this.sensors.samSites) {
+            candidates.push({ id: sam.id, kind: 'SAM', name: sam.name, position: sam.position });
+        }
+        for (const st of this.strikeTargets) {
+            if (st.destroyed) continue;
+            candidates.push({ id: st.id, kind: 'STRUCTURE', name: st.name, position: st.position });
+        }
+
+        this.tracker.refresh(
+            { position: this.physics.position, forward: this.physics.forwardVector },
+            candidates
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Player commands: assist level, designation, weapon release
+    // -----------------------------------------------------------------
+
+    /** Cycle MANUAL -> ASSIST -> AUTOPILOT, and say so in the log. */
+    public cycleAssistLevel() {
+        this.assistLevel = nextAssistLevel(this.assistLevel);
+        saveAssistLevel(this.assistLevel);
+        this.assistOverride = 'NONE';
+        const spec = assistSpec(this.assistLevel);
+        this.deck.log(`FLIGHT CONTROL: ${spec.label} - ${spec.blurb}.`);
+    }
+
+    /** Step the designation through the priority-ordered scope. */
+    public cycleDesignation(direction: number = 1): TargetSolution | null {
+        if (this.deck.aircraftState !== 'AIRBORNE') return null;
+        this.refreshDesignation();
+        const chosen = this.tracker.cycle(direction);
+        if (chosen) {
+            const range = (chosen.range / 1000).toFixed(1);
+            this.deck.log(`DESIGNATED ${chosen.target.name} - ${range} KM - ${chosen.recommendedWeapon}.`);
+        } else {
+            this.deck.log('NO TARGETS ON THE SCOPE.');
+        }
+        return chosen;
+    }
+
+    public releaseDesignation() {
+        if (!this.tracker.designatedId) return;
+        this.tracker.clear();
+        this.deck.log('DESIGNATION RELEASED.');
+    }
+
+    /**
+     * Single-shot weapon release. Lives here rather than in the input layer so
+     * the designated target can be handed to the seeker: the missile now goes
+     * after the contact the player chose instead of whichever one happened to
+     * be nearest the nose.
+     */
+    public fireSelectedWeapon() {
+        if (this.currentView !== 'MICRO_FLIGHT') return;
+        if (this.selectedWeapon === 'AIM9') {
+            const designated = this.tracker.designated();
+            this.weapons.fireSidewinder(
+                this.physics,
+                this.airborneTargets,
+                designated?.target.kind === 'AIR' ? designated.target.id : null
+            );
+        } else if (this.selectedWeapon === 'BOMB') {
+            this.weapons.dropBomb(this.physics);
         }
     }
 
@@ -627,6 +793,10 @@ export class GameLoop {
 
     private updateSortie(dt: number) {
         this.physics.update(dt);
+        // Recomputed every tick: the HUD bracket, the weapon recommendation
+        // and the autopilot all read this frame's geometry, and a lock on a
+        // contact that died this tick has to drop itself immediately.
+        this.refreshDesignation();
         soundFX.updateEngine(this.physics.throttle, true);
 
         // Sensors, RWR and SAM engagements
@@ -974,7 +1144,10 @@ export class GameLoop {
                 strikeTargets: this.strikeTargets,
                 bombImpactPoint: this.selectedWeapon === 'BOMB' && this.physics.loadout.ironBombs > 0
                     ? WeaponsSystem.predictBombImpact(this.physics, this.terrain)
-                    : null
+                    : null,
+                designated: this.tracker.designated(),
+                assistLabel: assistSpec(this.assistLevel).label,
+                assistOverride: this.assistOverride
             }
         );
     }

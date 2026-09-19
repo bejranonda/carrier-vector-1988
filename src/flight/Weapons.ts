@@ -97,28 +97,46 @@ export class WeaponsSystem {
         soundFX.playGunShot();
     }
 
-    public fireSidewinder(physics: AircraftPhysics, targets: AirborneTarget[]) {
+    /**
+     * Launch an AIM-9. `designatedId` is the contact the pilot picked with the
+     * designation key; the seeker takes it if it is alive, and only falls back
+     * to auto-acquisition when there is no designation. Before this the
+     * missile chose its own target from a 30-degree cone, so in a furball the
+     * player could not shoot at a specific aeroplane at all.
+     */
+    public fireSidewinder(
+        physics: AircraftPhysics,
+        targets: AirborneTarget[],
+        designatedId: string | null = null
+    ) {
         if (physics.loadout.sidewinders <= 0) return;
         physics.loadout.sidewinders--;
 
-        // Find closest target in front cone
-        let bestTargetId: string | null = null;
-        let bestDist = 8000;
         const fwd = physics.forwardVector;
 
-        for (const t of targets) {
-            if (!t.isAlive) continue;
-            const dx = t.position.x - physics.position.x;
-            const dy = t.position.y - physics.position.y;
-            const dz = t.position.z - physics.position.z;
-            const dist = Math.hypot(dx, dy, dz);
+        const designated = designatedId
+            ? targets.find(t => t.id === designatedId && t.isAlive)
+            : undefined;
 
-            if (dist < bestDist) {
-                // Check cone angle
-                const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
-                if (dot > 0.85) { // within ~30 degree cone
-                    bestDist = dist;
-                    bestTargetId = t.id;
+        let bestTargetId: string | null = null;
+        if (designated) {
+            bestTargetId = designated.id;
+        } else {
+            // No designation: closest live contact inside the seeker cone.
+            let bestDist = 8000;
+            for (const t of targets) {
+                if (!t.isAlive) continue;
+                const dx = t.position.x - physics.position.x;
+                const dy = t.position.y - physics.position.y;
+                const dz = t.position.z - physics.position.z;
+                const dist = Math.hypot(dx, dy, dz);
+
+                if (dist < bestDist) {
+                    const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
+                    if (dot > 0.85) { // within ~30 degree cone
+                        bestDist = dist;
+                        bestTargetId = t.id;
+                    }
                 }
             }
         }

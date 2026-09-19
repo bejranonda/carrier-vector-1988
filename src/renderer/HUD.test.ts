@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUD } from './HUD';
+import { HUD, assistCaption } from './HUD';
 import type { AircraftPhysics } from '../flight/AircraftPhysics';
 
 /** isOnApproach only reads position and velocity. */
@@ -38,5 +38,30 @@ describe('HUD.isOnApproach', () => {
     it('does not divide by zero directly overhead', () => {
         expect(() => HUD.isOnApproach(jet([0, 50, 0], [0, 0, 0]))).not.toThrow();
         expect(HUD.isOnApproach(jet([0, 50, 0], [0, 0, 0]))).toBe(false);
+    });
+});
+
+describe('assistCaption', () => {
+    it('shouts about the ground and only warns about alpha', () => {
+        expect(assistCaption('TERRAIN')!.tone).toBe('ALERT');
+        expect(assistCaption('STALL')!.tone).toBe('CAUTION');
+    });
+
+    it('tells a player on autopilot what to do next', () => {
+        const caption = assistCaption('AUTOPILOT');
+        expect(caption!.tone).toBe('INFO');
+        // The one moment a player is guaranteed to be reading the glass with
+        // nothing to do is the moment to teach them the designation key.
+        expect(caption!.text).toContain('T');
+    });
+
+    /**
+     * Auto-levelling happens on every frame the stick is centred. A caption
+     * for it would be permanently lit, and a permanently lit annunciator is
+     * one the pilot stops seeing - including when it says TERRAIN.
+     */
+    it('says nothing about routine auto-levelling or normal flight', () => {
+        expect(assistCaption('LEVEL')).toBeNull();
+        expect(assistCaption('NONE')).toBeNull();
     });
 });

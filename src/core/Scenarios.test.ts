@@ -7,6 +7,8 @@ import {
     scenarioById
 } from './Scenarios';
 import type { MissionSnapshot, ScenarioDef } from './Scenarios';
+import { MAPS } from '../tactics/TerrainProfiles';
+import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 
 /** A quiet world: nothing has happened yet, nothing is wrong. */
 function snapshot(over: Partial<MissionSnapshot> = {}): MissionSnapshot {
@@ -102,6 +104,36 @@ describe('scenario catalogue', () => {
             const wantsChecklist = s.setup.showTrainingChecklist === true;
             expect(wantsChecklist, s.id).toBe(s.id === 'CARRIER_DEFENSE');
         }
+    });
+
+    it('names a real map, and spreads the missions across them', () => {
+        const used = new Set<string>();
+        for (const s of SCENARIOS) {
+            const id = s.setup.map ?? 'FJORD';
+            expect(MAPS.some(m => m.id === id), `${s.id} -> ${id}`).toBe(true);
+            used.add(id);
+        }
+        // Three maps exist; if a change parks every mission on one of them the
+        // work of building the others has been quietly undone.
+        expect(used.size).toBeGreaterThanOrEqual(3);
+    });
+
+    // The flight checkout's last step is "descend until the RWR goes silent".
+    // On a map with no cover that step can never be satisfied, and a new
+    // player is stuck on it forever.
+    it('puts the flight checkout on a map that can actually mask', () => {
+        const intro = SCENARIOS.find(s => s.setup.showTrainingChecklist)!;
+        const terrain = new TacticalTerrain(intro.setup.map ?? 'FJORD');
+        const sensors = new SensorTacticsManager(terrain);
+        expect(sensors.samSites.length).toBeGreaterThan(0);
+
+        let canMask = false;
+        for (let z = 1000; z <= 10000 && !canMask; z += 250) {
+            const ground = terrain.getElevation(0, z);
+            const low = { x: 0, y: ground + 40, z };
+            canMask = sensors.samSites.some(site => !sensors.checkLOS(site.position, low));
+        }
+        expect(canMask, 'the intro map offers no terrain masking').toBe(true);
     });
 
     it('every phase produces prose for any world state', () => {

@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { angleDelta } from '../flight/FlightAssist';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -454,6 +455,200 @@ describe('GameLoop integration smoke test', () => {
         expect(game.scenario.id).toBe(first);
         game.selectScenario(-1);
         expect(game.scenario.id).toBe('CARRIER_QUALS');
+    });
+
+    // -----------------------------------------------------------------
+    // Flight assist / autopilot / target designation
+    // -----------------------------------------------------------------
+
+    function airborne(game: InstanceType<typeof GameLoop>) {
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+    }
+
+    it('starts with the assists on, and cycles through every level', () => {
+        const game = new GameLoop(makeCanvasStub());
+        expect(game.assistLevel).toBe('ASSIST');
+        airborne(game);
+
+        game.cycleAssistLevel();
+        expect(game.assistLevel).toBe('AUTO');
+        runFrames(game, 60);
+        game.cycleAssistLevel();
+        expect(game.assistLevel).toBe('MANUAL');
+        runFrames(game, 60);
+        game.cycleAssistLevel();
+        expect(game.assistLevel).toBe('ASSIST');
+        expect(game.phase).toBe('ACTIVE');
+    });
+
+    it('levels the wings for a pilot who lets go, at ASSIST', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'ASSIST';
+        game.physics.roll = 0.9;
+        runFrames(game, 90);
+        expect(Math.abs(game.physics.roll)).toBeLessThan(0.2);
+    });
+
+    it('holds a bank at MANUAL, bleeding it off only at the aerodynamic rate', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'MANUAL';
+        game.physics.roll = 0.9;
+        runFrames(game, 90);
+        // AircraftPhysics has its own gentle roll damping (0.2/s), so a bank
+        // decays a little on its own. What matters is that at MANUAL nothing
+        // else is touching the stick: 1.5 s of that damping alone is ~0.67 rad.
+        expect(game.physics.roll).toBeGreaterThan(0.6);
+    });
+
+    /**
+     * The whole justification for the assist existing: the same suicidal input
+     * that loses the airframe at MANUAL is survived at ASSIST. Flown well clear
+     * of the carrier so the approach exemption is not in play.
+     */
+    function diveAtTheGround(level: 'MANUAL' | 'ASSIST') {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = level;
+        game.physics.position = { x: 0, y: 500, z: 6000 };
+        game.physics.velocity = { x: 0, y: -60, z: 180 };
+        game.physics.pitch = -0.35;
+        game.inputState['s'] = true;
+        runFrames(game, 420);
+        game.inputState['s'] = false;
+        return game;
+    }
+
+    it('loses the airframe when the pilot flies it into the ground at MANUAL', () => {
+        const game = diveAtTheGround('MANUAL');
+        expect(game.score.breakdown.airframesLost).toBeGreaterThan(0);
+    });
+
+    it('pulls out of that same dive at ASSIST', () => {
+        const game = diveAtTheGround('ASSIST');
+        expect(game.score.breakdown.airframesLost).toBe(0);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+        const ground = game.terrain.getElevation(game.physics.position.x, game.physics.position.z);
+        expect(game.physics.position.y - ground).toBeGreaterThan(20);
+    });
+
+    it('does not credit the training checklist for the autopilot flying', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        const before = game.training.progress.rollInputSeconds;
+        game.physics.yaw = 2.5; // give the autopilot a turn to fly
+        runFrames(game, 120);
+        expect(game.training.progress.rollInputSeconds).toBe(before);
+    });
+
+    it('designates a contact, holds it across frames and reports it to the HUD', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+
+        const chosen = game.cycleDesignation();
+        expect(chosen).not.toBeNull();
+        expect(game.tracker.designatedId).toBe(chosen!.target.id);
+
+        runFrames(game, 60);
+        expect(game.tracker.designatedId).toBe(chosen!.target.id);
+        expect(game.tracker.designated()).not.toBeNull();
+    });
+
+    it('drops the designation when the designated contact dies', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+
+        const chosen = game.cycleDesignation();
+        expect(chosen).not.toBeNull();
+        const contact = game.airborneTargets.find(t => t.id === chosen!.target.id);
+        if (contact) {
+            contact.isAlive = false;
+        } else {
+            // A SAM site or structure came out top of the scope instead.
+            game.sensors.samSites = game.sensors.samSites.filter(s => s.id !== chosen!.target.id);
+            for (const st of game.strikeTargets) if (st.id === chosen!.target.id) st.destroyed = true;
+        }
+        runFrames(game, 5);
+        expect(game.tracker.designatedId).toBeNull();
+    });
+
+    it('sends the Sidewinder after the designated contact, not the nearest one', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+
+        // Two contacts ahead: one close, one far. Designate the far one.
+        game.airborneTargets = [
+            {
+                id: 'NEAR', name: 'MiG-23 FLOGGER', isAlive: true,
+                position: { x: 0, y: 750, z: game.physics.position.z + 1200 },
+                velocity: { x: 0, y: 0, z: -200 }
+            },
+            {
+                id: 'FAR', name: 'Tu-22M BACKFIRE', isAlive: true,
+                position: { x: 0, y: 750, z: game.physics.position.z + 4000 },
+                velocity: { x: 0, y: 0, z: -200 }
+            }
+        ];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        runFrames(game, 2);
+
+        game.tracker.designateById('FAR');
+        game.selectedWeapon = 'AIM9';
+        game.physics.loadout.sidewinders = 2;
+        game.fireSelectedWeapon();
+
+        expect(game.weapons.missiles).toHaveLength(1);
+        expect(game.weapons.missiles[0].targetId).toBe('FAR');
+    });
+
+    it('still auto-acquires with nothing designated', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.airborneTargets = [{
+            id: 'NEAR', name: 'MiG-23 FLOGGER', isAlive: true,
+            position: { x: 0, y: 750, z: game.physics.position.z + 1200 },
+            velocity: { x: 0, y: 0, z: -200 }
+        }];
+        game.tracker.clear();
+        game.selectedWeapon = 'AIM9';
+        game.physics.loadout.sidewinders = 2;
+        game.fireSelectedWeapon();
+        expect(game.weapons.missiles[0].targetId).toBe('NEAR');
+    });
+
+    it('flies an intercept on the designated contact under autopilot', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+
+        // A contact well off to the right: the autopilot has to turn for it.
+        game.airborneTargets = [{
+            id: 'BANDIT', name: 'MiG-23 FLOGGER', isAlive: true,
+            position: { x: 9000, y: 900, z: game.physics.position.z + 2000 },
+            velocity: { x: 0, y: 0, z: 0 }
+        }];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        runFrames(game, 2);
+        game.tracker.designateById('BANDIT');
+
+        const error = () => {
+            const s = game.tracker.designated();
+            return s === null ? Infinity : Math.abs(angleDelta(game.physics.yaw, s.bearing));
+        };
+        const before = error();
+        expect(before).toBeGreaterThan(1);
+        runFrames(game, 600);
+        expect(error()).toBeLessThan(before / 2);
+        // And it is still flying: the autopilot has not stalled or dug in.
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+        expect(game.physics.airSpeed).toBeGreaterThan(80);
     });
 
     it('cycles the display mode without throwing', () => {
