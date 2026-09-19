@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-184%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-233%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,19 +56,47 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 184 headless Vitest tests
+npm run test     # 233 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
 **Requirements:** Node 18+ and any modern browser. No GPU, no WebGL, no build-time asset pipeline.
 
+## Missions
+
+Pick a mission on the briefing screen with `←` / `→` or the number keys, then
+press `ENTER`. Each one sets the world up differently, writes its own briefing
+cards, and tracks its own ordered objectives.
+
+| # | Mission | Difficulty | What it asks of you |
+| --- | --- | --- | --- |
+| 1 | **CARRIER DEFENSE** | ●●○○○ | The endless mode. Hold CV-68 against escalating waves for as long as you can. This is the one that teaches the game. |
+| 2 | **CANYON STRIKE** | ●●●●● | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
+| 3 | **IRON HAND** | ●●●○○ | Roll back the SAM belt. Three launchers, four bombs a sortie — trap aboard and rearm as many times as it takes. |
+| 4 | **LAST STAND** | ●●●●● | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
+| 5 | **CARRIER QUALS** | ●○○○○ | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
+
+**CANYON STRIKE** is the set-piece. The canyon, the radar line-of-sight model and
+the iron bombs were all already in the simulation; this mission is what finally
+asks you to use all three in one run:
+
+- **Ingress low.** Above the ridge line the SAM belt has line of sight and will
+  kill you in the transit. Keep the RWR quiet.
+- **Aim it in.** The pen is hardened — a near miss does nothing. Only a bomb
+  inside 55 m counts, so the HUD draws a **CCIP** impact cross that turns amber
+  and reads `RELEASE` the moment the predicted impact point is on the target.
+- **Get out.** The pen going up is the signal for the belt to go weapons-free.
+- **Lose a jet and you can go again** — the boat has spares and the deck will
+  rearm you. What it will not do is stop the clock.
+
 ## How to Play
 
 The briefing screen lays this out in three cards; here it is in full.
 
-1. **Boot & briefing** — The display warms up, then the briefing explains the
-   loop in three steps. Press `ENTER` (or click) to man your aircraft, or `S`
-   to skip straight to airborne.
+1. **Boot & mission select** — The display warms up, then the briefing screen
+   offers five missions. `←` / `→` or `1`-`5` picks one; the three cards under
+   the selector explain *that* mission. Press `ENTER` (or click) to fly it, or
+   `S` to skip straight to airborne.
 2. **On the deck** — The **CURRENT ORDERS** panel at the top of the deck screen
    always names the one thing you should do next and the key that does it. Set
    your payload with `1`–`4`: more fuel means longer endurance, more ordnance
@@ -134,6 +162,15 @@ exceeding the mode you picked.
 | `1` / `2` | Decrease / increase planned fuel (±500 L) |
 | `3` / `4` | Cycle AIM-9 / Mk.82 loadout |
 
+### Mission Select (briefing screen)
+
+| Key | Action |
+| --- | --- |
+| `←` / `→` | Change selected mission |
+| `1`–`5` | Pick a mission directly |
+| `ENTER` | Fly the selected mission |
+| `S` | Skip the deck and start airborne |
+
 ### System
 
 | Key | Action |
@@ -147,6 +184,15 @@ exceeding the mode you picked.
 > Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
 
 ## Features
+
+### Missions
+- **Five selectable scenarios** with their own world setup, briefing cards, ordered
+  objectives, win conditions and loss conditions — all defined as data in one pure module
+- **Hardened ground targets** with a tight hit radius, so an iron bomb is an aimed
+  delivery rather than a lob
+- **CCIP bombing cue** computed from the same ballistic integration the live bomb uses
+- **Mission clock** with a scenario-defined window, shown on both the cockpit HUD and
+  the flight deck, that stops mattering the moment its objective is met
 
 ### Flight & Combat
 - **Fixed-timestep 6-DOF flight dynamics** at 120 Hz — lift, drag, thrust, gravity, and dynamic angle of attack
@@ -200,6 +246,7 @@ src/
 │   ├── Controls.ts        # Single source of truth for key bindings
 │   ├── Tutorial.ts        # Contextual coach + first-run training checklist
 │   ├── Objectives.ts      # "What do I do right now?" for both loops (pure)
+│   ├── Scenarios.ts       # Selectable missions + the phase director (pure)
 │   ├── HighScore.ts       # Persisted personal best
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
@@ -207,6 +254,7 @@ src/
 │   └── Weapons.ts         # Ballistics, homing, explosions
 ├── tactics/
 │   ├── RadarLOS.ts        # Terrain, SAM sites, LOS raycasting, RCS, RWR
+│   ├── StrikeTarget.ts    # Hardened ground targets and their hit geometry
 │   └── EnemyAI.ts         # INGRESS / ENGAGE / RTB behaviour
 ├── carrier/
 │   └── DeckManager.ts     # Inventory, crews, state machine, threat director
@@ -273,7 +321,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**184 headless tests** across 17 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**233 headless tests** across 19 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, hardened-target hit geometry, CCIP prediction against the real bomb path, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `computeDeckLayout`, `gradeTrap`, `warmupEnvelope`) specifically so it can be verified without a browser.
 

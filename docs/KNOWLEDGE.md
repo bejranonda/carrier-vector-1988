@@ -306,6 +306,52 @@ bomberChance = min(0.5, 0.15 + 0.03n)
 migCount     = 1 + ⌊rng × min(3, 1 + ⌊n/2⌋)⌋
 ```
 
+## 7b. Scenarios
+
+Five selectable missions, each a `ScenarioDef` in `core/Scenarios.ts`.
+
+| Mission | Setup | Ends when |
+| --- | --- | --- |
+| `CARRIER_DEFENSE` | Endless escalating waves; the flight checkout runs | Hull reaches 0% (no scripted phases — score chase) |
+| `CANYON_STRIKE` | Quiet sky, 2x Mk.82, hardened pen at `z = 10 400`, 240s window | Pen destroyed **and** trapped aboard; fails on the window, the hull, or running the boat out of jets |
+| `IRON_HAND` | 12 bombs in stock, one late CAP package | All three launchers dead **and** trapped aboard |
+| `LAST_STAND` | Five packages at once, hull at 70%, 2 spares, wave 6 escalation | Every package resolved **and** trapped aboard |
+| `CARRIER_QUALS` | Starts airborne, no SAMs, no contacts, clean jet | 3 traps including at least one 3-wire |
+
+### The director
+
+```
+each tick:
+  while phases[i].isComplete(snapshot): i++          (monotonic; several may pass at once)
+  if i >= phases.length          -> SUCCESS
+  else if failure(snapshot)      -> FAILED
+```
+
+Victory is tested **before** failure: both can become true on the same tick
+(landing the last sortie on the last airframe), and a completed mission cannot
+retroactively fail.
+
+A phase without `onDeck` returns no objective while the jet is on deck, so the
+deck's own director speaks there; the mission clock is carried across either
+way via `MissionDirector.clock()`.
+
+### Hardened targets
+
+```
+hit  <=>  hypot(impact.x - target.x, impact.z - target.z) <= hitRadius
+```
+
+The pen's radius is **55 m** against a SAM site's 180 m blast radius. That gap
+is the entire difficulty of the strike mission: a lob from altitude cannot do
+it, so the delivery has to be low, fast and aimed.
+
+### CCIP
+
+`WeaponsSystem.predictBombImpact()` runs the same semi-implicit integration the
+live bomb uses, from the same release state (`y - 1.5`, `vel.y - 5`), stepping
+at 1/30 s until it crosses the terrain. Tested against a real dropped bomb:
+agreement within 25 m, comfortably inside the 55 m hit radius.
+
 ## 8. Scoring
 
 | Event | Points |

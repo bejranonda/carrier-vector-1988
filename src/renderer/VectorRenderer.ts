@@ -522,6 +522,57 @@ export class WireframeModels {
     /**
      * SAM Site Launcher wireframe model
      */
+    /**
+     * Hardened submarine pen cut into a rock face: a wide portal with blast
+     * doors, a slab roof receding into the cliff, and a jetty at the mouth.
+     * Read at range as a single bright rectangle against the canyon wall, so
+     * a pilot running the fjord can pick it out before they are on top of it.
+     */
+    public static createHardenedPen(): WireframeMesh {
+        const lines: WireframeLine[] = [];
+        const face = '#ffcc4d';
+        const rock = '#8aa79f';
+        const W = 46;   // half-width of the rock cut
+        const H = 42;   // height of the face
+        const D = 60;   // depth into the cliff
+
+        // Rock-face cut (the visible rectangle)
+        const facePts: Vector3[] = [
+            { x: -W, y: 0, z: 0 }, { x: -W, y: H, z: 0 },
+            { x: W, y: H, z: 0 }, { x: W, y: 0, z: 0 }
+        ];
+        for (let i = 0; i < facePts.length - 1; i++) {
+            lines.push({ p1: facePts[i], p2: facePts[i + 1], color: rock });
+        }
+
+        // Blast-door portal, brighter so it reads as the aim point
+        const pW = 20;
+        const pH = 24;
+        lines.push({ p1: { x: -pW, y: 0, z: 2 }, p2: { x: -pW, y: pH, z: 2 }, color: face });
+        lines.push({ p1: { x: -pW, y: pH, z: 2 }, p2: { x: pW, y: pH, z: 2 }, color: face });
+        lines.push({ p1: { x: pW, y: pH, z: 2 }, p2: { x: pW, y: 0, z: 2 }, color: face });
+        lines.push({ p1: { x: 0, y: 0, z: 2 }, p2: { x: 0, y: pH, z: 2 }, color: face });
+
+        // Roof slab receding into the cliff
+        for (const x of [-W, 0, W]) {
+            lines.push({ p1: { x, y: H, z: 0 }, p2: { x, y: H + 6, z: -D }, color: rock });
+        }
+        lines.push({ p1: { x: -W, y: H + 6, z: -D }, p2: { x: W, y: H + 6, z: -D }, color: rock });
+
+        // Jetty at the mouth
+        for (const x of [-30, 30]) {
+            lines.push({ p1: { x, y: 2, z: 6 }, p2: { x, y: 2, z: 54 }, color: rock });
+        }
+        lines.push({ p1: { x: -30, y: 2, z: 54 }, p2: { x: 30, y: 2, z: 54 }, color: rock });
+
+        // Vent stacks on the roof - the visual "this is a structure, not rock"
+        for (const x of [-16, 16]) {
+            lines.push({ p1: { x, y: H + 2, z: -20 }, p2: { x, y: H + 14, z: -20 }, color: face });
+        }
+
+        return { lines };
+    }
+
     public static createSAMLauncher(): WireframeMesh {
         const lines: WireframeLine[] = [];
         const c = '#ff5522';

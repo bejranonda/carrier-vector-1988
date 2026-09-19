@@ -103,6 +103,27 @@ The upside is that it is fully deterministic, trivially testable, and the canyon
 corridor is guaranteed navigable — important because terrain masking is a core
 mechanic that a random heightfield could break.
 
+## 11b. Every mission shares one map **[By design]**
+
+All five scenarios run on the same deterministic canyon and the same carrier at
+the origin. The strike target sits at the head of the fjord past all three SAM
+sites; there is no second map.
+
+**Consequence:** mission variety comes from objectives, threat profiles and
+time pressure rather than from terrain. Given the map is analytic (see §11) and
+the canyon corridor is guaranteed navigable, a second map would mean a second
+guarantee to maintain.
+
+## 11c. Scenario progress is not saved
+
+Only the display mode and the personal best persist. There is no record of
+which missions you have completed, no per-mission best score, and no unlock
+progression — every mission is available from the first run.
+
+**Consequence:** the debrief cannot say "your best CANYON STRIKE" and the
+selector cannot mark a mission as cleared. `core/HighScore.ts` is deliberately
+one number; per-scenario records would want a different shape.
+
 ## 12. Enemy contacts spawn within the canyon corridor
 
 Package `bearingDeg` drives lateral offset and radar plotting, but contacts

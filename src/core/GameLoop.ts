@@ -39,6 +39,15 @@ import {
 } from '../renderer/DisplayMode';
 import type { DisplayModeId } from '../renderer/DisplayMode';
 import { deckObjective, flightObjective } from './Objectives';
+import {
+    DEFAULT_SCENARIO,
+    MissionDirector,
+    SCENARIOS,
+    scenarioAt,
+    scenarioById
+} from './Scenarios';
+import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
+import { StrikeTarget } from '../tactics/StrikeTarget';
 import { loadBestScore, recordBestScore } from './HighScore';
 import type { ObjectiveStep } from './Objectives';
 
@@ -69,6 +78,7 @@ export class GameLoop {
     private mig23Mesh = WireframeModels.createMiG23();
     private bomberMesh = WireframeModels.createBomber();
     private samMesh = WireframeModels.createSAMLauncher();
+    private penMesh = WireframeModels.createHardenedPen();
 
     // View & phase state
     public currentView: 'MICRO_FLIGHT' | 'MACRO_DECK' = 'MACRO_DECK';
@@ -81,6 +91,26 @@ export class GameLoop {
 
     // Combat Entities
     public airborneTargets: AirborneTarget[] = [];
+    /** Hardened ground targets the active scenario wants destroyed. */
+    public strikeTargets: StrikeTarget[] = [];
+
+    // Scenario / mission
+    public scenario: ScenarioDef = scenarioById(DEFAULT_SCENARIO);
+    /** Index into SCENARIOS, driven by the briefing screen selector. */
+    public scenarioIndex = SCENARIOS.findIndex(sc => sc.id === DEFAULT_SCENARIO);
+    public mission!: MissionDirector;
+    public missionOutcome: 'ACTIVE' | 'SUCCESS' | 'FAILED' = 'ACTIVE';
+    public missionReason: string | null = null;
+    public missionStatus: MissionStatus = {
+        outcome: 'ACTIVE', phaseIndex: 0, phase: null,
+        reason: null, secondsRemaining: null, callouts: []
+    };
+    /** Seconds of simulated time since the scenario started. */
+    private missionSeconds = 0;
+    /** SAM count the scenario began with, so "3 of 3" stays honest. */
+    private samSitesAtStart = 0;
+    /** Latched so the phase list can ask "have we launched yet" after landing. */
+    private hasLaunched = false;
 
     // Catapult animation (progress derived from DeckManager's single clock)
     public isCatapultLaunching = false;
@@ -154,7 +184,135 @@ export class GameLoop {
         this.briefing = new BriefingScreen();
 
         this.applyDisplayMode();
-        this.spawnEnemyThreats();
+        this.applyScenario(this.scenario);
+    }
+
+    // -----------------------------------------------------------------
+    // Scenario lifecycle
+    // -----------------------------------------------------------------
+
+    /** Step the briefing screen's scenario selector, wrapping at both ends. */
+    public selectScenario(delta: number) {
+        this.scenario = scenarioAt(this.scenarioIndex + delta);
+        // Normalise rather than letting the index drift off into the negatives
+        // over a long browse; scenarioAt() wraps the value, not the field.
+        this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === this.scenario.id);
+    }
+
+    public selectScenarioById(id: ScenarioId) {
+        this.selectScenarioByIndex(SCENARIOS.findIndex(sc => sc.id === id));
+    }
+
+    /** Direct pick from the number shown on a selector pill. */
+    public selectScenarioByIndex(index: number) {
+        if (index < 0 || index >= SCENARIOS.length) return;
+        this.scenarioIndex = index;
+        this.scenario = SCENARIOS[index];
+    }
+
+    /**
+     * Rebuild the world for a scenario. Every subsystem that carries run
+     * state is replaced rather than reset in place, so a scenario can never
+     * inherit a stale SAM lock, a half-finished deck task or a live bomb.
+     */
+    private applyScenario(scenario: ScenarioDef) {
+        const setup = scenario.setup;
+
+        this.deck = new DeckManager(setup.threat);
+        this.sensors = new SensorTacticsManager(this.terrain);
+        if (setup.noSamSites) this.sensors.samSites.length = 0;
+        this.weapons = new WeaponsSystem();
+        this.physics = new AircraftPhysics();
+        this.score = new ScoreKeeper();
+        this.training = new TrainingSequence();
+        // The flight checkout is the intro mode's teaching tool; on a scripted
+        // mission it is six lines of noise over the top of real orders.
+        if (!setup.showTrainingChecklist) this.training.skip();
+
+        if (setup.loadout) {
+            this.deck.plannedLoadout = { ...setup.loadout };
+        }
+
+        this.strikeTargets = setup.strikeTarget
+            ? [new StrikeTarget(
+                setup.strikeTarget,
+                this.terrain.getElevation(setup.strikeTarget.x, setup.strikeTarget.z)
+            )]
+            : [];
+
+        this.samSitesAtStart = this.sensors.samSites.length;
+        this.mission = new MissionDirector(scenario);
+        this.missionSeconds = 0;
+        this.hasLaunched = false;
+        this.isNewBest = false;
+        this.missionStatus = {
+            outcome: 'ACTIVE', phaseIndex: 0, phase: null,
+            reason: null, secondsRemaining: null, callouts: []
+        };
+
+        this.lastSpawnedWave = this.deck.waveNumber;
+        this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
+
+        this.deck.log(`SCENARIO: ${scenario.name.toUpperCase()} - ${scenario.tagline}`);
+
+        if (setup.startAirborne) {
+            this.hotStartAirborne();
+            this.hasLaunched = true;
+        } else {
+            this.currentView = 'MACRO_DECK';
+        }
+    }
+
+    /** Snapshot of everything the mission director is allowed to look at. */
+    private missionSnapshot(): MissionSnapshot {
+        const target = this.strikeTargets[0] ?? null;
+        const live = this.deck.strikeTimeline.filter(p => !p.isIntercepted && !p.hasAttacked);
+        const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        const isAirborne = this.deck.aircraftState === 'AIRBORNE';
+
+        return {
+            missionSeconds: this.missionSeconds,
+            isAirborne,
+            hasLaunched: this.hasLaunched,
+            isRecovered: this.hasLaunched && !isAirborne && this.score.breakdown.traps > 0,
+
+            altitudeMsl: this.physics.position.y,
+            altitudeAgl: Math.max(0, this.physics.position.y - groundElevation),
+            airSpeed: this.physics.airSpeed,
+            fuel: this.physics.fuel,
+            damage: this.physics.damage,
+
+            distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
+            distanceToStrikeTarget: target ? target.horizontalDistanceTo(this.physics.position) : null,
+            strikeTargetDestroyed: target ? target.destroyed : false,
+            strikeTargetHits: target ? target.hits : 0,
+
+            samSitesAlive: this.sensors.samSites.length,
+            samSitesTotal: this.samSitesAtStart,
+            contactsAlive: this.airborneTargets.filter(t => t.isAlive).length,
+            liveInboundPackages: live.length,
+            soonestEtaSeconds: live.length ? Math.min(...live.map(p => p.etaSeconds)) : null,
+            packagesLeaked: this.deck.strikeTimeline.filter(p => p.hasAttacked).length,
+
+            carrierHealth: this.deck.inventory.carrierHealth,
+            airframesLost: this.score.breakdown.airframesLost,
+            spareAirframes: this.deck.inventory.spareAirframes,
+            traps: this.score.breakdown.traps,
+            perfectTraps: this.score.breakdown.perfectTraps,
+            bombsRemaining: this.physics.loadout.ironBombs,
+            rwrState: this.sensors.masterRwrState
+        };
+    }
+
+    /** A bomb went into (or through) a hardened structure. */
+    private onStrikeTargetHit(target: StrikeTarget, destroyed: boolean) {
+        if (destroyed) {
+            this.score.recordKill('STRUCTURE');
+            this.deck.log(`DIRECT HIT: ${target.name} DESTROYED.`);
+            soundFX.playExplosion();
+        } else {
+            this.deck.log(`HIT ON ${target.name} - ${target.hits}/${target.hitsRequired} REQUIRED.`);
+        }
     }
 
     /** Push the current display mode into the renderer, post chain and CSS. */
@@ -452,22 +610,16 @@ export class GameLoop {
             this.spawnEnemyThreats();
         }
 
-        if (this.deck.missionState === 'FAILED') {
-            if (this.phase !== 'DEBRIEF') {
-                const result = recordBestScore(this.score.totalScore, this.bestScore);
-                this.bestScore = result.best;
-                this.isNewBest = result.isNewBest;
-            }
-            this.phase = 'DEBRIEF';
-            return;
-        }
-
         if (this.deck.aircraftState === 'AIRBORNE') {
+            this.hasLaunched = true;
             this.updateSortie(dt);
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
         }
+
+        this.updateMission(dt);
+        if (this.phase === 'DEBRIEF') return;
 
         this.training.update();
         this.currentHint = this.buildHint();
@@ -504,17 +656,18 @@ export class GameLoop {
         });
 
         // Player weapons
-        this.weapons.update(
-            dt,
-            this.terrain,
-            this.airborneTargets,
-            this.sensors.samSites,
-            (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
-            (destroyedSAM) => {
+        this.weapons.update(dt, {
+            terrain: this.terrain,
+            targets: this.airborneTargets,
+            samSites: this.sensors.samSites,
+            strikeTargets: this.strikeTargets,
+            onTargetDestroyed: (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
+            onSAMDestroyed: (destroyedSAM) => {
                 this.score.recordKill('SAM');
                 this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
-            }
-        );
+            },
+            onStrikeTargetHit: (target, destroyed) => this.onStrikeTargetHit(target, destroyed)
+        });
 
         // Aircraft destroyed by accumulated battle damage
         if (this.physics.damage >= 100) {
@@ -564,6 +717,37 @@ export class GameLoop {
         }
     }
 
+    /**
+     * Advance the scenario clock and the mission director, and end the run
+     * when the scenario says so. The deck's own FAILED state still counts as
+     * a loss for every scenario, since a sunk carrier ends any of them.
+     */
+    private updateMission(dt: number) {
+        this.missionSeconds += dt;
+        const snapshot = this.missionSnapshot();
+        this.missionStatus = this.mission.update(snapshot);
+
+        for (const callout of this.missionStatus.callouts) {
+            this.deck.log(callout);
+        }
+
+        const deckFailed = this.deck.missionState === 'FAILED';
+        const outcome = deckFailed ? 'FAILED' : this.missionStatus.outcome;
+        if (outcome === 'ACTIVE' || this.phase === 'DEBRIEF') return;
+
+        this.missionOutcome = outcome;
+        this.missionReason = deckFailed
+            ? 'CV-68 was knocked out of the fight.'
+            : this.missionStatus.reason;
+        if (outcome === 'SUCCESS') this.score.recordMissionComplete();
+
+        const result = recordBestScore(this.score.totalScore, this.bestScore);
+        this.bestScore = result.best;
+        this.isNewBest = result.isNewBest;
+        this.deck.log(outcome === 'SUCCESS' ? 'MISSION COMPLETE.' : 'MISSION FAILED.');
+        this.phase = 'DEBRIEF';
+    }
+
     /** Phosphor decay constant for the active display mode. */
     private get persistenceTau(): number {
         return displayModeSpec(this.displayMode).persistenceTau;
@@ -574,11 +758,21 @@ export class GameLoop {
      * loop the player is currently in.
      */
     public currentObjective(): ObjectiveStep {
+        // A scenario with scripted phases owns the objective line; the generic
+        // deck/flight director is the fallback for the open-ended mode, and
+        // for the deck states a flight phase has nothing useful to say about.
+        const snapshot = this.missionSnapshot();
+        const missionObjective = this.mission.objective(snapshot);
+        if (missionObjective) return missionObjective;
+
+        // The mission clock follows the player onto the deck even when the
+        // deck director is doing the talking.
+        const countdownSeconds = this.mission.clock(snapshot) ?? undefined;
         const live = this.deck.strikeTimeline.filter(p => !p.isIntercepted && !p.hasAttacked);
         const soonest = live.length ? Math.min(...live.map(p => p.etaSeconds)) : null;
 
         if (this.currentView === 'MICRO_FLIGHT' && this.deck.aircraftState === 'AIRBORNE') {
-            return flightObjective({
+            return { ...flightObjective({
                 liveInboundCount: live.length,
                 soonestEtaSeconds: soonest,
                 airborneContacts: this.airborneTargets.filter(t => t.isAlive).length,
@@ -586,17 +780,17 @@ export class GameLoop {
                 damage: this.physics.damage,
                 distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
                 rwrState: this.sensors.masterRwrState
-            });
+            }), countdownSeconds };
         }
 
-        return deckObjective({
+        return { ...deckObjective({
             aircraftState: this.deck.aircraftState,
             taskProgressPct: this.deck.currentTaskProgress,
             scrambleAlert: this.deck.scrambleAlert,
             soonestEtaSeconds: soonest,
             liveInboundCount: live.length,
             spareAirframes: this.deck.inventory.spareAirframes
-        });
+        }), countdownSeconds };
     }
 
     private buildHint(): Hint | null {
@@ -656,16 +850,22 @@ export class GameLoop {
             // Wireframe backdrop into the offscreen world layer (with a gentle
             // phosphor trail), composite it, then the crisp text overlay.
             this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau * 1.8);
-            this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds);
+            this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds, h);
             this.post.composite(this.ctx);
-            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds, this.bestScore);
+            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore);
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
         }
 
         if (this.phase === 'DEBRIEF') {
             this.briefing.drawDebrief(
-                this.ctx, w, h, this.score, this.deck.waveNumber, this.bestScore, this.isNewBest
+                this.ctx, w, h, this.score, this.deck.waveNumber, this.bestScore, this.isNewBest,
+                {
+                    outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+                    scenarioName: this.scenario.name,
+                    reason: this.missionReason,
+                    title: this.scenario.victoryTitle
+                }
             );
             return;
         }
@@ -713,6 +913,18 @@ export class GameLoop {
         this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll, WORLD.carrier);
         this.terrain.render(this.renderer, camPos, camPitch, camYaw, camRoll);
 
+        // Hardened structures. A destroyed pen stays on the map as wreckage -
+        // the player should be able to fly back past what they hit.
+        for (const target of this.strikeTargets) {
+            this.renderer.renderMesh(
+                this.penMesh,
+                target.position,
+                Math.PI,
+                camPos, camPitch, camYaw, camRoll,
+                target.destroyed ? WORLD.valley : undefined
+            );
+        }
+
         for (const sam of this.sensors.samSites) {
             this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, WORLD.hostile);
 
@@ -758,7 +970,11 @@ export class GameLoop {
                 score: this.score,
                 objective: this.currentObjective(),
                 checklist: this.training.checklist(),
-                displayModeLabel: this.displayModeLabel
+                displayModeLabel: this.displayModeLabel,
+                strikeTargets: this.strikeTargets,
+                bombImpactPoint: this.selectedWeapon === 'BOMB' && this.physics.loadout.ironBombs > 0
+                    ? WeaponsSystem.predictBombImpact(this.physics, this.terrain)
+                    : null
             }
         );
     }
@@ -804,23 +1020,19 @@ export class GameLoop {
     // -----------------------------------------------------------------
 
     public confirmBriefing() {
-        if (this.phase === 'BRIEFING') {
-            this.phase = 'ACTIVE';
-            this.currentView = 'MACRO_DECK';
-            this.post.hardClear();
-        }
+        if (this.phase !== 'BRIEFING') return;
+        // Build the world fresh from whatever the selector landed on.
+        this.applyScenario(this.scenario);
+        this.missionOutcome = 'ACTIVE';
+        this.missionReason = null;
+        this.phase = 'ACTIVE';
+        this.post.hardClear();
     }
 
     public restartFromDebrief() {
         this.isNewBest = false;
-        this.deck = new DeckManager();
-        this.sensors = new SensorTacticsManager(this.terrain);
-        this.weapons = new WeaponsSystem();
-        this.physics = new AircraftPhysics();
-        this.score = new ScoreKeeper();
-        this.training = new TrainingSequence();
-        this.lastSpawnedWave = 0;
-        this.spawnEnemyThreats();
+        this.missionOutcome = 'ACTIVE';
+        this.missionReason = null;
         this.phase = 'BRIEFING';
         this.currentView = 'MACRO_DECK';
         this.post.hardClear();

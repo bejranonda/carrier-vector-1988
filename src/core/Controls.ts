@@ -12,8 +12,8 @@
  * impossible.
  */
 
-export type ControlContext = 'GLOBAL' | 'FLIGHT' | 'DECK';
-export type ControlGroup = 'FLIGHT' | 'WEAPONS' | 'DECK OPS' | 'SYSTEM';
+export type ControlContext = 'GLOBAL' | 'FLIGHT' | 'DECK' | 'BRIEFING';
+export type ControlGroup = 'FLIGHT' | 'WEAPONS' | 'DECK OPS' | 'MISSION SELECT' | 'SYSTEM';
 
 export interface Binding {
     /** Normalized (lowercased) key names as reported by KeyboardEvent.key. */
@@ -49,6 +49,12 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['2'], display: '2', label: 'Increase planned fuel (+500 L)', context: 'DECK', group: 'DECK OPS' },
     { keys: ['3'], display: '3', label: 'Cycle AIM-9 Sidewinder loadout', context: 'DECK', group: 'DECK OPS' },
     { keys: ['4'], display: '4', label: 'Cycle Mk.82 bomb loadout', context: 'DECK', group: 'DECK OPS' },
+
+    // --- Mission select (briefing screen) ---
+    { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['1', '2', '3', '4', '5'], display: '1-5', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
 
     // --- System (available everywhere) ---
     { keys: ['h', 'f1'], display: 'H / F1', label: 'Show control reference', context: 'GLOBAL', group: 'SYSTEM' },

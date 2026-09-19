@@ -111,7 +111,7 @@ Rules:
   channel of the ground colour, making the iteration strictly decreasing.
 - Bloom strength stays ≤ 0.55; above that the screen turns into green fog.
 
-## 5. TypeScript & Testing Discipline
+## 8. TypeScript & Testing Discipline
 
 - **`strict: true` is mandatory.** Maintain zero errors under `npx tsc --noEmit`.
   Do **not** add `noUncheckedIndexedAccess` — it produces 55+ errors in the
@@ -128,7 +128,7 @@ Rules:
 - Canvas-dependent code can still be integration-tested with a stubbed 2D context
   — see `src/core/GameLoop.smoke.test.ts`.
 
-## 6. Single Sources of Truth
+## 9. Single Sources of Truth
 
 - **Key bindings live in `src/core/Controls.ts`** and nowhere else. The input
   handler, help overlay, briefing and README control table all derive from it.
@@ -154,3 +154,30 @@ Rules:
 - **"What do I do now" comes from `src/core/Objectives.ts`**, which is pure and
   covers every deck state. The deck orders panel and the cockpit objective strip
   both read it, so the two loops can never disagree about the goal.
+- **A mission is data, not code.** `src/core/Scenarios.ts` holds the world setup,
+  the ordered phases, the failure predicate and every line of prose for each
+  selectable mission. It imports no subsystem and touches no canvas, so mission
+  logic and mission copy are both unit-testable. Adding a mission means adding a
+  `ScenarioDef` — if you find yourself branching on a `ScenarioId` inside
+  `GameLoop`, the thing you need belongs in `ScenarioSetup` instead.
+
+## 7. Mission Rules
+
+- **A mission you have completed cannot fail.** The director checks victory
+  before failure, because both can become true on the same tick — landing the
+  final sortie on the last airframe is a win, not a loss.
+- **Phase progress is monotonic.** A completed phase never un-completes when the
+  world moves back; that is why the director is a small stateful object rather
+  than a reducer over a snapshot.
+- **One mistake must not end a run that has a clock.** `CANYON_STRIKE` used to
+  fail outright on a lost airframe, which made the four-minute window
+  decorative. Losing a jet now costs the ~30s hangar-and-rearm cycle, and the
+  clock does the punishing.
+- **An air phase hands the objective line back to the deck.** A phase without
+  `onDeck` returns `null` from `objective()` while the jet is on deck, so a
+  pilot in the hangar is told what the hangar is doing — not "RUN THE FJORD,
+  8.1 km to the pen". The mission clock follows them across either way.
+- **A hardened target is not killed by a near miss.** That single number
+  (`hitRadius`) is what makes a bombing run a skill, so any cue that helps aim
+  it — the CCIP cross, the designator diamond — must be computed from the same
+  integration the live weapon uses, never an approximation of it.

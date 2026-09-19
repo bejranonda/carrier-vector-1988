@@ -195,9 +195,28 @@ export class DeckView {
         ctx.fillText(fitText(ctx, title, inner.x + inner.w - textX), textX, inner.y + 12);
         noGlow(ctx);
 
+        // Mission clock, if the scenario runs one.
+        let detailWidth = inner.w;
+        if (objective.countdownSeconds !== undefined) {
+            const clock = formatEta(objective.countdownSeconds);
+            const urgent = objective.countdownSeconds < 60;
+            ctx.font = font(24, 700);
+            const clockW = ctx.measureText(clock).width;
+            ctx.fillStyle = urgent ? THEME.alert
+                : objective.countdownSeconds < 120 ? THEME.caution
+                    : THEME.ink;
+            ctx.textAlign = 'right';
+            ctx.fillText(clock, inner.x + inner.w, inner.y + 10);
+            ctx.font = font(9, 600);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText('WINDOW', inner.x + inner.w, inner.y + 26);
+            ctx.textAlign = 'left';
+            detailWidth = inner.w - clockW - 24;
+        }
+
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
-        ctx.fillText(fitText(ctx, objective.detail, inner.w), inner.x, inner.y + 34);
+        ctx.fillText(fitText(ctx, objective.detail, detailWidth), inner.x, inner.y + 34);
 
         if (objective.waiting) {
             // A moving indeterminate strip: makes "the crews are working, you
