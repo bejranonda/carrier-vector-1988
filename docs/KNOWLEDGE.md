@@ -29,16 +29,36 @@ Carrier deck surface sits at `y = 20 m`, centred on the world origin.
 
 ### Camera transform (world → camera)
 
-Translate by `−camPos`, then apply **−yaw, −pitch, −roll** in that order:
+Translate by `−camPos`, then project onto the camera's own orthonormal basis —
+the **same** right / up / forward vectors `AircraftPhysics` uses for lift, thrust
+and drag:
 
 ```
-x₁ = dx·cos(−ψ) + dz·sin(−ψ)
-z₁ = dz·cos(−ψ) − dx·sin(−ψ)
-y₂ = dy·cos(−θ) − z₁·sin(−θ)
-z₂ = z₁·cos(−θ) + dy·sin(−θ)
-x₃ = x₁·cos(−φ) − y₂·sin(−φ)
-y₃ = x₁·sin(−φ) + y₂·cos(−φ)
+d      = p − camPos
+
+forward = ( cosθ·sinψ,                  sinθ,        cosθ·cosψ )
+up      = ( −sinφ·cosψ − sinθ·sinψ·cosφ, cosθ·cosφ,  sinφ·sinψ − sinθ·cosψ·cosφ )
+right   = ( cosφ·cosψ − sinθ·sinψ·sinφ, −cosθ·sinφ, −cosφ·sinψ − sinθ·cosψ·sinφ )
+
+x_cam = d · right      y_cam = d · up      z_cam = d · forward
 ```
+
+**Why not three composed rotation matrices?** Because that is what it used to be,
+and the composition had the sign of pitch and roll backwards — it rotated by
+`−θ` and `−φ` where world→camera needs `+θ` and `+φ` (only the yaw term was
+right). The consequences were severe and long-lived:
+
+- pulling the nose **up** moved the terrain and horizon **up** the screen;
+- rolling right rolled the world right instead of left;
+- the pitch ladder — which is derived correctly from `fov·tan(Δ)` — drew its
+  horizon rung exactly as far *below* screen centre as the real 3D horizon was
+  *above* it, i.e. `2·fov·tan(θ)` apart;
+- the flight path marker sat on the wrong side of the horizon in level flight.
+
+Deriving the transform from the physics basis makes the view agree with the
+flight model by construction. `VectorRenderer.test.ts` asserts the equality
+directly, so the class of error cannot return. The basis is memoised per frame
+(the angles are constant across a frame's thousands of `drawLine` calls).
 
 ### Near-plane clipping
 
@@ -190,8 +210,44 @@ World-referenced symbols derive their scale from the renderer's focal length:
 screenOffset = fov · tan(Δangle)
 ```
 
-The flight path marker projects a probe point 5,000 m along `v̂` through the
-actual camera pipeline, guaranteeing it sits on the true flight path.
+Nose-up is positive pitch, so the horizon rung lands **below** screen centre — and
+because the camera transform is now derived from the same orientation basis, it
+lands exactly on the real 3D horizon. The flight path marker projects a probe
+point 5,000 m along `v̂` through the actual camera pipeline, so it sits on the
+true flight path (and therefore on the horizon rung in level flight).
+
+### Instrument placement
+
+`solveHudLayout()` (pure, in `renderer/HudLayout.ts`) places the cockpit blocks
+left-to-right from the actual viewport rather than at fixed offsets from screen
+centre, and gives the pitch ladder whatever half-width is left in the middle:
+
+```
+railRight = edge + (checklist shown ? 196 : 0)
+speedX    = cx − symHalf − gap − speedW        (clamped right of the rail)
+symHalf   = clamp( cx − speedX − speedW − gap, 86, 205 )
+altX      = min( width − edge − altW, cx + symHalf + gap )
+ladder geometry scales by symHalf / 205
+```
+
+The checklist is dropped below 1150 px wide and the systems panel becomes a
+one-line bottom strip below 560 px tall, since neither fits alongside the centre
+instruments. Tests assert no two centre-line instruments overlap and none leaves
+the viewport, across a 10 × 7 × 2 matrix of sizes.
+
+### Guidance
+
+| Channel | Question it answers | Module |
+| --- | --- | --- |
+| Objective strip / orders panel | What is this phase asking of me, and which key does it? | `core/Objectives.ts` |
+| Coach ticker | What is about to kill me? | `core/Tutorial.ts` |
+| Flight checkout | Which controls have I proved I can use? | `TrainingSequence.checklist()` |
+
+Contextual coach rules outrank the training prompt. The reverse ordering — which
+shipped — suppressed stall, terrain and missile warnings for a first-time
+pilot's entire first sortie. The HUD also suppresses the ticker when the warning
+banner already covers the same cause, so one condition never produces three
+simultaneous messages.
 
 ### Carrier approach
 
@@ -268,24 +324,64 @@ LT COMMANDER (2,200) · COMMANDER (3,500) · CAPTAIN (5,500) · ADMIRAL (8,000).
 
 ## 9. Rendering & Post-Processing
 
+### Display modes
+
+Every screen effect is a field of one `DisplayModeSpec`, cycled with `P` and
+persisted to `localStorage`:
+
+| Mode | bloom | vectorGlow | τ (persistence) | scanlines | vignette |
+| --- | --- | --- | --- | --- | --- |
+| `CLEAN` | 0 | 0 | 0 (hard clear) | 0 | 0 |
+| `MODERN` (default) | 0.42 | 0 | 0.035 s | 0 | 0.28 |
+| `RETRO CRT` | 0.55 | 4 px | 0.075 s | 0.5 | 0.7 |
+
+`vectorGlow` is the per-stroke Canvas2D shadow radius and is the single most
+expensive thing the renderer does — a shadow is applied per `stroke()` and the
+terrain mesh alone issues thousands per frame. Measured at 1600×900 on a software
+rasteriser: **23.7 ms/frame with it, 16.7 ms without**. The bloom pass already
+produces a vector glow at ¼ resolution over the whole layer, so only `RETRO` pays
+for both.
+
 ### Phosphor persistence
 
 ```
-α = clamp( 1 − e^(−Δt/τ), 0.02, 1 )        τ = 0.06 s
+α = clamp( 1 − e^(−Δt/τ), 0.02, 1 )
 ```
 
 Frame-rate independent — a constant α gives 2.4× longer trails at 144 Hz than 60 Hz.
+`τ = 0` means a hard clear (no trails), which is what `CLEAN` selects.
 
-**Decay target is `rgb(3,10,4)` (`#030a04`), NOT the background `#051008`.** Decaying
-toward a colour equal to the background does not converge under 8-bit rounding
-(a channel at 6 → `round(0.757·6 + 0.243·5)` = 6 forever), leaving permanent ghosting.
+**The decay target must be strictly darker than the background.** Decaying toward a
+colour equal to the background does not converge under 8-bit rounding (a channel at
+6 → `round(0.757·6 + 0.243·5)` = 6 forever), leaving permanent ghosting.
+
+**Shadow state must be cleared before the decay fill.** Canvas shadow state is
+sticky: `drawLine()` armed `shadowColor`/`shadowBlur` for its glow and never reset
+them, so `decayClear()`'s translucent full-screen rectangle painted a full-screen
+*shadow* in whatever colour the last vector happened to be — usually SAM red. It
+accumulated frame over frame to a measured median background of `rgb(107,24,21)`
+against an intended `rgb(3,10,4)`, which is what made the flight screen unreadable.
 
 ### Bloom
 
 ¼-resolution downscale (bilinear filtering is the first blur), then a `multiply`
 self-composite as a pseudo-threshold (squares every channel, `v → v²/255`, collapsing
 the dark background while saturated phosphor survives), then a blur, then an additive
-`lighter` composite at strength 0.5.
+`lighter` composite at the mode's bloom strength.
+
+### Resolution
+
+Both the visible canvas and the offscreen world layer are sized to
+`CSS px × devicePixelRatio` with their 2D contexts pre-scaled, so all layout code
+works in CSS pixels while text and vectors render at native resolution. The ratio
+is capped at **2×** so a 3×/4× display does not quadruple the bloom cost.
+
+### Adaptive quality
+
+A rolling frame-time average (EMA, α = 0.05) drives `PostProcess.nextQuality()`
+every 0.5 s, and the result is clamped to the ceiling the chosen display mode
+allows — so the game can back the bloom pass off on weak hardware but never
+exceed what the player asked for.
 
 ### Fixed timestep
 
@@ -312,16 +408,36 @@ a spiral-of-death guard.
 
 ## 11. Colour Palette
 
-| Colour | Use |
-| --- | --- |
-| `#00ff66` | Primary phosphor |
-| `#00aa44` | Dim / secondary text |
-| `#33aa33` | Ridge lines (> 900 m) |
-| `#1d8a2c` | Horizon ring, upper slopes |
-| `#00632a` | Sea lattice, canyon floor |
-| `#004400` | Low terrain |
-| `#051008` | Background (hard clear) |
-| `#030a04` | Persistence decay floor |
-| `#ffaa00` | Warning / caution |
-| `#ffff33` | Runway markings, catapult ready |
-| `#ff3333` | Alert / hostile |
+All colour lives in `src/renderer/Theme.ts`. UI chrome and the 3D world are
+deliberately separate sets.
+
+### UI (`THEME`)
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `ground` | `#070d11` | Page and canvas ground |
+| `ink` | `#eafff5` | Headline values read at a glance |
+| `phosphor` | `#57e39b` | Primary instrument colour |
+| `muted` | `#93a9a4` | Labels and secondary copy — neutral, **not** green |
+| `key` | `#5fd8ff` | Reserved exclusively for key names |
+| `caution` | `#ffc94d` | Caution / ready |
+| `alert` | `#ff6363` | Lethal / hostile |
+
+### World (`WORLD`)
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `carrier` | `#7df0b4` | CV-68 wireframe |
+| `terrain` | `#3fb97a` | Ridge lines (the thing you must fly below) |
+| `valley` | `#0f4a2c` | Low terrain |
+| `horizon` | `#2f9e63` | Horizon ring |
+| `sea` | `#14603a` | Sea lattice |
+| `hostile` | `#ff5b4a` | Enemy aircraft, SAM launchers |
+| `missile` | `#ff2d2d` | SAM missile trails |
+
+**Every UI token clears 4.5:1 contrast against `ground`**, verified in
+`Theme.test.ts` and measured at the darkest point of the vignette. The previous
+palette paired a saturated `#00ff66` with a desaturated `#00aa44` under a
+92%-black vignette and a scanline mask, which put the most important readouts
+below 3:1. The rule that replaced it: labels are neutral, values carry colour,
+and cyan means "this is a key you can press".

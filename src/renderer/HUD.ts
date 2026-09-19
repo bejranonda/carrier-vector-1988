@@ -29,8 +29,11 @@ import type { VectorRenderer } from './VectorRenderer';
 import type { Hint, ChecklistItem } from '../core/Tutorial';
 import type { ScoreKeeper } from '../core/ScoreKeeper';
 import type { ObjectiveStep } from '../core/Objectives';
+import { HUD_METRICS, solveHudLayout } from './HudLayout';
+import type { HudLayout } from './HudLayout';
 import {
     THEME,
+    fitText,
     font,
     glow,
     keycap,
@@ -100,8 +103,7 @@ export class HUD {
         renderer: VectorRenderer,
         context: HudContext
     ) {
-        const cx = this.width / 2;
-        const cy = this.height / 2;
+        const layout = this.solveLayout(physics, context.checklist.length > 0);
 
         ctx.save();
         ctx.lineWidth = 1.5;
@@ -109,20 +111,20 @@ export class HUD {
         noGlow(ctx);
 
         // --- Flight symbology (centre of the screen, drawn in the beam colour) ---
-        this.drawPitchLadder(ctx, physics, renderer, cx, cy);
+        this.drawPitchLadder(ctx, physics, renderer, layout);
         this.drawFlightPathMarker(ctx, physics, renderer);
-        this.drawWaterline(ctx, cx, cy);
+        this.drawWaterline(ctx, layout.cx, layout.cy);
         this.drawCombatReticles(ctx, physics, targets, renderer);
 
         // --- Instruments (all on backplates, all outside the centre box) ---
-        this.drawObjectiveStrip(ctx, context.objective, cx);
-        this.drawCompassTape(ctx, physics, cx);
-        this.drawSpeedBlock(ctx, physics, cx, cy);
-        this.drawAltitudeBlock(ctx, physics, sensors, cx, cy);
-        this.drawSystemsBlock(ctx, physics, selectedWeapon);
-        this.drawRWR(ctx, sensors);
-        this.drawLandingAids(ctx, physics, cx, cy);
-        const shown = this.drawWarnings(ctx, physics, sensors, cx, cy);
+        this.drawObjectiveStrip(ctx, context.objective, layout.cx);
+        this.drawCompassTape(ctx, physics, layout.cx);
+        this.drawSpeedBlock(ctx, physics, layout);
+        this.drawAltitudeBlock(ctx, physics, sensors, layout);
+        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout);
+        this.drawRWR(ctx, sensors, layout);
+        if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
+        const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
 
         // One message per condition. The banner, the ticker and the objective
         // strip all used to shout "missile inbound" simultaneously.
@@ -130,12 +132,37 @@ export class HUD {
             (shown.rwr && /MISSILE|RADAR LOCK/.test(context.hint.text)) ||
             (shown.stall && /STALL/.test(context.hint.text))
         );
-        if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, cx);
-        if (context.checklist.length) this.drawChecklist(ctx, context.checklist);
+        if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, layout.cx);
+        if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
         this.drawScoreChip(ctx, context.score);
         this.drawKeyBar(ctx, context.displayModeLabel);
 
         ctx.restore();
+    }
+
+    /**
+     * Is the pilot on an approach? Only then are the landing aids useful -
+     * without the closing-rate test the whole panel appeared during the
+     * catapult stroke, when the jet is 300 m from the boat and accelerating
+     * away from it. Exported shape kept tiny so it is cheap to call twice.
+     */
+    public static isOnApproach(physics: AircraftPhysics): boolean {
+        const range = Math.hypot(physics.position.x, physics.position.z);
+        if (range > 3000 || physics.position.y > 400) return false;
+        const closingRate = -(
+            physics.velocity.x * physics.position.x + physics.velocity.z * physics.position.z
+        ) / Math.max(1, range);
+        return closingRate >= 5;
+    }
+
+    /** Solve instrument placement for the current viewport. */
+    private solveLayout(physics: AircraftPhysics, hasChecklist: boolean): HudLayout {
+        return solveHudLayout({
+            width: this.width,
+            height: this.height,
+            showApproach: HUD.isOnApproach(physics),
+            hasChecklist
+        });
     }
 
     // -----------------------------------------------------------------
@@ -160,7 +187,7 @@ export class HUD {
         const detailW = ctx.measureText(objective.detail).width;
 
         const keyW = objective.key ? 58 : 0;
-        const w = Math.min(this.width - 48, Math.max(titleW + keyW, detailW) + 36);
+        const w = Math.min(this.width - 2 * HUD_METRICS.edge, Math.max(titleW + keyW, detailW) + 36);
         const h = 54;
         const x = cx - w / 2;
         const y = BAND.objective;
@@ -180,11 +207,11 @@ export class HUD {
         ctx.textAlign = 'left';
         ctx.font = font(17, 700);
         ctx.fillStyle = objective.urgency === 'NORMAL' ? THEME.ink : accent;
-        ctx.fillText(objective.title, textX, y + 25);
+        ctx.fillText(fitText(ctx, objective.title, x + w - 14 - textX), textX, y + 25);
 
         ctx.font = font(11);
         ctx.fillStyle = THEME.muted;
-        ctx.fillText(objective.detail, x + 16, y + 43);
+        ctx.fillText(fitText(ctx, objective.detail, w - 32), x + 16, y + 43);
         ctx.restore();
     }
 
@@ -200,15 +227,15 @@ export class HUD {
         ctx.save();
         noGlow(ctx);
         ctx.font = font(13, 600);
-        const textW = ctx.measureText(hint.text).width;
-        const w = textW + 26;
+        const text = fitText(ctx, hint.text, this.width - 80);
+        const w = ctx.measureText(text).width + 26;
         const x = cx - w / 2;
 
         plate(ctx, { x, y: BAND.coach, w, h: 26 }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(hint.text, cx, BAND.coach + 14);
+        ctx.fillText(text, cx, BAND.coach + 14);
         ctx.restore();
     }
 
@@ -218,10 +245,10 @@ export class HUD {
      * turn "the game is nagging me" into "I am making progress".
      */
     private drawChecklist(ctx: CanvasRenderingContext2D, items: ChecklistItem[]) {
-        const w = 196;
+        const w = HUD_METRICS.checklistW;
         const rowH = 21;
         const h = 30 + items.length * rowH;
-        const x = 24;
+        const x = HUD_METRICS.edge;
         const y = Math.max(BAND.coach + 40, this.height / 2 - h / 2 - 90);
 
         plate(ctx, { x, y, w, h }, { border: THEME.edgeSoft, radius: 5 });
@@ -279,17 +306,12 @@ export class HUD {
     // Primary flight instruments
     // -----------------------------------------------------------------
 
-    private drawSpeedBlock(
-        ctx: CanvasRenderingContext2D,
-        physics: AircraftPhysics,
-        cx: number,
-        cy: number
-    ) {
+    private drawSpeedBlock(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, layout: HudLayout) {
         const knots = Math.floor(physics.airSpeed * 1.94384);
         const mach = physics.airSpeed / 340;
-        const w = 96;
-        const x = Math.max(16, cx - 300);
-        const y = cy - 34;
+        const w = HUD_METRICS.speedW;
+        const x = layout.speedX;
+        const y = layout.cy - 34;
 
         plate(ctx, { x, y, w, h: 68 }, { border: THEME.edgeSoft });
 
@@ -314,8 +336,7 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         sensors: SensorTacticsManager,
-        cx: number,
-        cy: number
+        layout: HudLayout
     ) {
         const altMsl = Math.floor(physics.position.y * 3.28084);
         const terrainAlt = sensors.terrain.getElevation(physics.position.x, physics.position.z);
@@ -323,9 +344,9 @@ export class HUD {
         const aglFt = Math.floor(aglM * 3.28084);
         const lowAgl = aglM < 150;
 
-        const w = 110;
-        const x = Math.min(this.width - w - 16, cx + 300 - w / 2 + 40);
-        const y = cy - 34;
+        const w = HUD_METRICS.altW;
+        const x = layout.altX;
+        const y = layout.cy - 34;
 
         plate(ctx, { x, y, w, h: 68 }, { border: THEME.edgeSoft });
 
@@ -349,11 +370,17 @@ export class HUD {
     private drawSystemsBlock(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB'
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        layout: HudLayout
     ) {
-        const w = 236;
+        if (layout.compactSystems) {
+            this.drawSystemsStrip(ctx, physics, selectedWeapon);
+            return;
+        }
+
+        const w = HUD_METRICS.systemsW;
         const h = 150;
-        const x = 24;
+        const x = HUD_METRICS.edge;
         const y = this.height - h - 54;
 
         plate(ctx, { x, y, w, h }, { border: THEME.edgeSoft });
@@ -426,6 +453,55 @@ export class HUD {
         ctx.restore();
     }
 
+    /**
+     * Short-window fallback for the systems readout: one line along the
+     * bottom. The 150px panel would otherwise eat a third of the screen and
+     * climb into the centre instrument band.
+     */
+    private drawSystemsStrip(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB'
+    ) {
+        const h = 26;
+        const y = this.height - 54;
+        const x = HUD_METRICS.edge;
+        const w = this.width - HUD_METRICS.edge * 2;
+        plate(ctx, { x, y: y - h / 2, w, h }, { border: THEME.edgeSoft, radius: 4 });
+
+        const ab = physics.throttle > 1.0;
+        const hull = Math.max(0, Math.round(100 - physics.damage));
+        const wpn = selectedWeapon === 'GUN' ? `GUN ${physics.loadout.vulcanAmmo}`
+            : selectedWeapon === 'AIM9' ? `AIM9 ${physics.loadout.sidewinders}`
+                : `MK82 ${physics.loadout.ironBombs}`;
+        const cells: [string, string, string][] = [
+            ['THR', `${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}`, ab ? THEME.caution : THEME.ink],
+            ['FUEL', `${Math.floor(physics.fuel)}L`, physics.fuel < 800 ? THEME.alert : THEME.ink],
+            ['G', physics.gLoad.toFixed(1), THEME.ink],
+            ['HULL', `${hull}%`, hull > 60 ? THEME.ink : hull > 30 ? THEME.caution : THEME.alert],
+            ['BAY', physics.bayOpen ? 'OPEN' : 'SHUT', physics.bayOpen ? THEME.caution : THEME.muted],
+            ['WPN', wpn, THEME.ink]
+        ];
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        let cursor = x + 12;
+        for (const [label, value, color] of cells) {
+            ctx.font = font(9, 600);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(label, cursor, y);
+            cursor += ctx.measureText(label).width + 5;
+            ctx.font = font(11, 600);
+            ctx.fillStyle = color;
+            ctx.fillText(value, cursor, y);
+            cursor += ctx.measureText(value).width + 16;
+            if (cursor > x + w - 40) break;
+        }
+        ctx.restore();
+    }
+
     /** Bottom key bar so the flight controls are never more than a glance away. */
     private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string) {
         ctx.save();
@@ -460,7 +536,7 @@ export class HUD {
         const w = ctx.measureText(text).width + 22;
         const x = this.width - w - 20;
         plate(ctx, { x, y: 18, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
-        ctx.fillStyle = THEME.phosphor;
+        ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, x + w / 2, 31);
@@ -477,27 +553,18 @@ export class HUD {
      * left of the screen; it previously floated loose over the pitch ladder
      * with an approach data line drawn straight through it.
      */
-    private drawLandingAids(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, cx: number, cy: number) {
+    private drawLandingAids(ctx: CanvasRenderingContext2D, physics: AircraftPhysics, layout: HudLayout) {
         const rangeToShip = Math.hypot(physics.position.x, physics.position.z);
-        if (rangeToShip > 3000 || physics.position.y > 400) return;
-
-        // Only on an APPROACH. Without this the whole landing panel popped up
-        // during the catapult stroke, when the jet is 300 m from the boat and
-        // accelerating away from it.
-        const closingRate = -(
-            physics.velocity.x * physics.position.x + physics.velocity.z * physics.position.z
-        ) / Math.max(1, rangeToShip);
-        if (closingRate < 5) return;
 
         const DECK_Y = 20;
         const GLIDESLOPE_RAD = 3.5 * (Math.PI / 180);
         const desiredAlt = DECK_Y + Math.tan(GLIDESLOPE_RAD) * rangeToShip;
         const error = physics.position.y - desiredAlt;
 
-        const w = 150;
+        const w = HUD_METRICS.approachW;
         const h = 178;
-        const x = Math.max(16, cx - 300 - w - 14);
-        const y = cy - h / 2;
+        const x = layout.approachX;
+        const y = layout.cy - h / 2;
 
         plate(ctx, { x, y, w, h }, { border: THEME.edgeSoft });
 
@@ -643,10 +710,10 @@ export class HUD {
         return { rwr: rwrBanner, stall: true };
     }
 
-    private drawRWR(ctx: CanvasRenderingContext2D, sensors: SensorTacticsManager) {
-        const size = 132;
-        const x = this.width - size - 20;
-        const y = this.height - size - 54;
+    private drawRWR(ctx: CanvasRenderingContext2D, sensors: SensorTacticsManager, layout: HudLayout) {
+        const size = layout.rwrSize;
+        const x = this.width - size - HUD_METRICS.edge;
+        const y = this.height - size - (layout.compactSystems ? 76 : 54);
         const rwrX = x + size / 2;
         const rwrY = y + size / 2 + 6;
         const rwrRadius = size / 2 - 16;
@@ -852,10 +919,22 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         renderer: VectorRenderer,
-        cx: number,
-        cy: number
+        layout: HudLayout
     ) {
+        const { cx, cy, symScale } = layout;
+
         ctx.save();
+        // Clip to the space between the side instruments so the ladder can
+        // never be drawn underneath the airspeed or altitude blocks.
+        ctx.beginPath();
+        ctx.rect(
+            layout.speedX + HUD_METRICS.speedW + 6,
+            BAND.coach + 30,
+            Math.max(40, layout.altX - 6 - (layout.speedX + HUD_METRICS.speedW + 6)),
+            Math.max(60, this.height - 130 - (BAND.coach + 30))
+        );
+        ctx.clip();
+
         ctx.translate(cx, cy);
         ctx.rotate(-physics.roll);
         noGlow(ctx);
@@ -886,40 +965,43 @@ export class HUD {
             ctx.globalAlpha = deg === 0 ? 0.95 : major ? 0.6 : 0.34;
 
             if (deg === 0) {
+                const far = 170 * symScale;
+                const near = 46 * symScale;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(-170, yOffset); ctx.lineTo(-46, yOffset);
-                ctx.moveTo(46, yOffset); ctx.lineTo(170, yOffset);
+                ctx.moveTo(-far, yOffset); ctx.lineTo(-near, yOffset);
+                ctx.moveTo(near, yOffset); ctx.lineTo(far, yOffset);
                 ctx.stroke();
                 ctx.textAlign = 'right';
-                ctx.fillText('00', -178, yOffset);
+                ctx.fillText('00', -far - 8, yOffset);
                 ctx.textAlign = 'left';
-                ctx.fillText('00', 178, yOffset);
+                ctx.fillText('00', far + 8, yOffset);
                 continue;
             }
 
-            const halfW = major ? 48 : 30;
+            const halfW = (major ? 48 : 30) * symScale;
+            const gap = 30 * symScale;
             ctx.lineWidth = 1.3;
             ctx.save();
             if (deg < 0) ctx.setLineDash([6, 5]);
             ctx.beginPath();
-            ctx.moveTo(-halfW - 30, yOffset); ctx.lineTo(-30, yOffset);
-            ctx.moveTo(halfW + 30, yOffset); ctx.lineTo(30, yOffset);
+            ctx.moveTo(-halfW - gap, yOffset); ctx.lineTo(-gap, yOffset);
+            ctx.moveTo(halfW + gap, yOffset); ctx.lineTo(gap, yOffset);
             ctx.stroke();
             ctx.restore();
 
             const tick = deg > 0 ? 8 : -8;
             ctx.beginPath();
-            ctx.moveTo(-30, yOffset); ctx.lineTo(-30, yOffset + tick);
-            ctx.moveTo(30, yOffset); ctx.lineTo(30, yOffset + tick);
+            ctx.moveTo(-gap, yOffset); ctx.lineTo(-gap, yOffset + tick);
+            ctx.moveTo(gap, yOffset); ctx.lineTo(gap, yOffset + tick);
             ctx.stroke();
 
             if (major) {
                 const text = Math.abs(deg).toString().padStart(2, '0');
                 ctx.textAlign = 'right';
-                ctx.fillText(text, -halfW - 36, yOffset);
+                ctx.fillText(text, -halfW - gap - 6, yOffset);
                 ctx.textAlign = 'left';
-                ctx.fillText(text, halfW + 36, yOffset);
+                ctx.fillText(text, halfW + gap + 6, yOffset);
             }
         }
 

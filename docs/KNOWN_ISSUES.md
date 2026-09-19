@@ -116,10 +116,15 @@ The deck state machine tracks exactly one aircraft. Spare airframes are a
 counter, not a fleet — you cannot have several jets at different readiness
 states simultaneously. This limits the depth of the logistics loop.
 
-## 14. Adaptive quality not auto-engaged
+## 14. Adaptive quality ceiling is the player's choice
 
-`PostProcess.nextQuality()` exists and is unit-tested, but no rolling frame-time
-average currently drives it. Quality follows the display mode, changed with `P`.
+A rolling frame-time average (EMA) now drives `PostProcess.nextQuality()` every
+0.5 s, but the result is clamped to the ceiling the chosen display mode allows.
+
+**Consequence:** the game will back the bloom pass off on slow hardware, but it
+will never raise quality above what `P` selected — so a player who picked `CLEAN`
+on a fast machine stays on `CLEAN`. That is deliberate: an effect the player
+turned off must stay off.
 
 ## 15. The deck screen sheds panels on short viewports
 
@@ -133,8 +138,32 @@ never dropped.
 at all. Panel priorities live in the spec list at the top of
 `DeckView.draw()` if that ordering needs revisiting.
 
-## 16. Display mode is not persisted
+## 16. Local storage is best-effort
 
-The `CLEAN` / `MODERN` / `RETRO CRT` choice resets to `MODERN` on reload — there
-is no `localStorage` write. Deliberate for now (the game stores nothing at all),
-but it means a player who prefers `CLEAN` re-presses `P` every session.
+The display mode and the personal best are the only two things persisted, both to
+`localStorage` under `carrier-vector-1988.*`. Storage throws in Safari private
+mode and when third-party storage is blocked, so every access is wrapped and
+falls back silently — the display mode reverts to `MODERN` and the personal best
+reads as zero.
+
+**Consequence:** in those browsers the settings do not stick, with no warning.
+Surfacing that would cost more UI than it is worth.
+
+## 17. The cockpit sheds instruments on small viewports
+
+`solveHudLayout()` places the blocks from the real viewport, but there is a floor
+below which they cannot all coexist. Under 1150 px wide the flight checkout
+panel is dropped (the coach ticker still carries the current training prompt);
+under 560 px tall the systems panel becomes a single bottom strip and the RWR
+scope shrinks.
+
+**Consequence:** on a small window you lose the checklist panel and the detailed
+systems readout. The thresholds live in `HUD_METRICS` in
+`src/renderer/HudLayout.ts`.
+
+## 18. Mouse input is menu-only **[By design]**
+
+Clicking advances the briefing and the debrief and closes the help overlay.
+Flying, the deck and the payload are keyboard-only. **Consequence:** the game is
+not playable on a touch device. A pointer-driven flight model is a different
+game, not a port.

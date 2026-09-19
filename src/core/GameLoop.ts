@@ -26,17 +26,20 @@ import { getContextualHint, TrainingSequence } from './Tutorial';
 import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
+import type { PostQuality } from '../renderer/PostProcess';
 import { DeckView } from '../renderer/DeckView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
 import { THEME, WORLD } from '../renderer/Theme';
 import {
-    DEFAULT_DISPLAY_MODE,
     applyDisplayModeToDocument,
     displayModeSpec,
-    nextDisplayMode
+    loadDisplayMode,
+    nextDisplayMode,
+    saveDisplayMode
 } from '../renderer/DisplayMode';
 import type { DisplayModeId } from '../renderer/DisplayMode';
 import { deckObjective, flightObjective } from './Objectives';
+import { loadBestScore, recordBestScore } from './HighScore';
 import type { ObjectiveStep } from './Objectives';
 
 export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
@@ -83,8 +86,25 @@ export class GameLoop {
     public isCatapultLaunching = false;
     public catapultProgress = 0;
 
-    /** Display mode: one switch for persistence, bloom, scanlines, vignette. */
-    public displayMode: DisplayModeId = DEFAULT_DISPLAY_MODE;
+    /**
+     * Display mode: one switch for vector persistence, bloom, per-stroke glow,
+     * the scanline mask and the vignette. Restored from the last session.
+     */
+    public displayMode: DisplayModeId = loadDisplayMode();
+
+    /** Personal best across sessions, shown on the briefing and the debrief. */
+    public bestScore = loadBestScore();
+    private isNewBest = false;
+
+    /**
+     * Rolling average frame time, used to back the bloom pass off on hardware
+     * that cannot afford it. `PostProcess.nextQuality()` has always existed and
+     * been unit-tested, but nothing drove it - quality was manual only.
+     */
+    private avgFrameMs = 16.7;
+    private qualityCheckTimer = 0;
+    /** The best bloom quality the chosen display mode allows. */
+    private qualityCeiling: PostQuality = 'LOW';
 
     /**
      * Logical (CSS pixel) viewport. The canvas backing store is this times
@@ -141,9 +161,29 @@ export class GameLoop {
     private applyDisplayMode() {
         const spec = displayModeSpec(this.displayMode);
         this.post.bloomStrength = spec.bloom;
-        this.post.quality = spec.bloom === 0 ? 'OFF' : spec.bloom > 0.45 ? 'HIGH' : 'LOW';
-        this.renderer.glowBlur = spec.bloom === 0 ? 0 : 4;
+        this.qualityCeiling = spec.bloom === 0 ? 'OFF' : spec.bloom > 0.45 ? 'HIGH' : 'LOW';
+        this.post.quality = this.qualityCeiling;
+        this.renderer.glowBlur = spec.vectorGlow;
         applyDisplayModeToDocument(spec);
+    }
+
+    /**
+     * Back the bloom pass off when frames get expensive, without ever
+     * exceeding what the player's chosen display mode asked for.
+     */
+    private updateAdaptiveQuality(frameDt: number) {
+        const ms = Math.min(100, Math.max(1, frameDt * 1000));
+        this.avgFrameMs += (ms - this.avgFrameMs) * 0.05;
+
+        this.qualityCheckTimer += frameDt;
+        if (this.qualityCheckTimer < 0.5) return;
+        this.qualityCheckTimer = 0;
+
+        const proposed = PostProcess.nextQuality(this.post.quality, this.avgFrameMs);
+        const rank: Record<PostQuality, number> = { OFF: 0, LOW: 1, HIGH: 2 };
+        this.post.quality = rank[proposed] > rank[this.qualityCeiling]
+            ? this.qualityCeiling
+            : proposed;
     }
 
     public get displayModeLabel(): string {
@@ -326,6 +366,7 @@ export class GameLoop {
             }
         }
 
+        this.updateAdaptiveQuality(elapsed);
         this.draw(elapsed);
         requestAnimationFrame(this.step.bind(this));
     }
@@ -412,6 +453,11 @@ export class GameLoop {
         }
 
         if (this.deck.missionState === 'FAILED') {
+            if (this.phase !== 'DEBRIEF') {
+                const result = recordBestScore(this.score.totalScore, this.bestScore);
+                this.bestScore = result.best;
+                this.isNewBest = result.isNewBest;
+            }
             this.phase = 'DEBRIEF';
             return;
         }
@@ -612,13 +658,15 @@ export class GameLoop {
             this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau * 1.8);
             this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds);
             this.post.composite(this.ctx);
-            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds);
+            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds, this.bestScore);
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
         }
 
         if (this.phase === 'DEBRIEF') {
-            this.briefing.drawDebrief(this.ctx, w, h, this.score, this.deck.waveNumber);
+            this.briefing.drawDebrief(
+                this.ctx, w, h, this.score, this.deck.waveNumber, this.bestScore, this.isNewBest
+            );
             return;
         }
 
@@ -633,8 +681,7 @@ export class GameLoop {
                 {
                     objective: this.currentObjective(),
                     hint: this.currentHint,
-                    displayModeLabel: this.displayModeLabel,
-                    trainingLine: this.training.currentStep?.prompt ?? null
+                    displayModeLabel: this.displayModeLabel
                 },
                 w, h, this.elapsedSeconds
             );
@@ -765,6 +812,7 @@ export class GameLoop {
     }
 
     public restartFromDebrief() {
+        this.isNewBest = false;
         this.deck = new DeckManager();
         this.sensors = new SensorTacticsManager(this.terrain);
         this.weapons = new WeaponsSystem();
@@ -789,6 +837,7 @@ export class GameLoop {
         this.applyDisplayMode();
         this.post.hardClear();
         const spec = displayModeSpec(this.displayMode);
+        saveDisplayMode(this.displayMode);
         this.deck.log(`DISPLAY: ${spec.label} - ${spec.description}`);
     }
 }

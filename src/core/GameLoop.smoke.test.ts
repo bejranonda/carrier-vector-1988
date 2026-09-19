@@ -218,9 +218,14 @@ describe('GameLoop integration smoke test', () => {
         runFrames(game, 150);
         game.confirmBriefing();
 
+        game.score.recordKill('BOMBER');
         game.deck.inventory.carrierHealth = 0;
         runFrames(game, 20);
         expect(game.phase).toBe('DEBRIEF');
+
+        // The run's score is banked as the personal best, so a second sortie
+        // has something to beat.
+        expect(game.bestScore).toBe(game.score.totalScore);
 
         // And the debrief screen must render.
         runFrames(game, 10);

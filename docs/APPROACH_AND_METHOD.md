@@ -149,11 +149,32 @@ two panels overlap**, verified across 28 viewport size combinations.
 
 ### Progressive disclosure
 
-1. **CRT warm-up** — establishes the aesthetic before any demand on the player
-2. **Mission briefing** — situation, objective and controls over an orbiting carrier
+1. **Display warm-up** — establishes the aesthetic before any demand on the player
+2. **Briefing** — three numbered phase cards (deck → intercept → recover), each
+   carrying its own keycaps, plus one unmistakable call to action
 3. **Guided cold start** — begins on the deck, so the dual-loop structure is learned by doing
-4. **Training sequence** — six steps, each advancing only once demonstrated
+4. **Flight checkout** — a six-step checklist that ticks off as each control is demonstrated
 5. **Contextual coach** — thereafter, only speaks when something needs attention
+
+### Two channels, never confused
+
+The game answers two different questions, and conflating them was the original
+comprehension failure.
+
+| Channel | Question | Source |
+| --- | --- | --- |
+| Objective (orders panel / HUD strip) | *What is this phase of the game asking of me, and which key does it?* | `core/Objectives.ts` |
+| Coach (ticker) | *What is about to kill me?* | `core/Tutorial.ts` |
+
+The objective is **always** present. Before, neither screen ever stated one: the
+deck showed eight panels of inventory with `[ENTER]` as 12px grey footer text,
+and the cockpit showed twelve instruments and no goal. Both channels are pure
+modules, so their phrasing is unit-tested rather than eyeballed.
+
+A third rule keeps them honest: **one message per condition.** A missile launch
+used to be announced simultaneously by the warning banner, the coach ticker and
+the objective strip; the HUD now suppresses the ticker when the banner already
+covers the same cause.
 
 ### The coach is a priority-ranked rule list
 
@@ -166,6 +187,35 @@ assertions rather than emergent behaviour discovered in flight. That caught a
 real bug: an early rule nagged "LOW AIRSPEED — ADVANCE THROTTLE" during landing
 approaches, where flying slow is precisely correct.
 
+It also caught a worse one. The *training prompt* was returned first and
+unconditionally, outranking every safety rule — so a first-time pilot, exactly
+the player who needs them most, had stall, terrain and missile-launch warnings
+suppressed for the whole of their first sortie. Contextual hints now win, and
+the training prompt takes the channel only when nothing else needs it.
+
+## 6b. Readability as an Engineering Property
+
+Legibility was treated as measurable, not as taste.
+
+- **Contrast is asserted.** Every UI token must clear 4.5:1 against the ground
+  colour; `Theme.test.ts` computes the ratios. The old palette put desaturated
+  green labels under a 92%-black vignette and a scanline mask, which put the
+  readouts that mattered most well under 3:1.
+- **Backgrounds are measured.** The cockpit's median background pixel is sampled
+  in a real browser. That is how a shadow-state leak was found: `drawLine()` left
+  `shadowColor` armed, so the persistence fill painted a full-screen *shadow* in
+  the last vector's colour every frame, accumulating to `rgb(107,24,21)` where
+  `rgb(3,10,4)` was intended.
+- **Geometry is solved, then asserted.** Both screens have a pure layout solver
+  with tests that nothing overlaps and nothing leaves the viewport, across a
+  matrix of viewport sizes.
+- **Effects are a player choice.** Persistence, bloom, per-stroke glow, scanlines
+  and vignette are fields of one `DisplayModeSpec`, cycled with `P` and
+  remembered across sessions. An effect a player cannot turn off is a defect.
+- **Cost is profiled.** The per-stroke Canvas2D shadow measured 23.7 ms/frame at
+  1600x900 against 16.7 ms without it, so only `RETRO` pays for it; `MODERN`
+  buys its glow from the ¼-resolution bloom pass instead.
+
 ## 7. Testing Method
 
 Canvas rendering cannot be asserted in a node environment, so the method is to
@@ -173,13 +223,27 @@ Canvas rendering cannot be asserted in a node environment, so the method is to
 
 | Extracted pure function | What it makes testable |
 | --- | --- |
-| `computeDeckLayout` | Clipping and overlap, at any viewport size |
+| `computeDeckLayout` | Deck panel clipping, overlap and drop order, at any viewport size |
+| `solveHudLayout` | Cockpit instrument overlap and clipping, at any viewport size |
+| `VectorRenderer.transformToCamera` | Agreement with the aircraft's own orientation basis |
 | `VectorRenderer.depthFade` | Monotonic depth falloff |
 | `PostProcess.decayAlpha` | Frame-rate independence of persistence |
 | `ScoreKeeper.gradeTrap` | Wire grading boundaries |
 | `BriefingScreen.warmupEnvelope` | Boot animation phases |
 | `getContextualHint` | Coach priority policy |
+| `deckObjective` / `flightObjective` | Objective phrasing and precedence, for every state |
+| `fitText` | Text never overflows the panel it is drawn in |
+| `DISPLAY_MODES` / `loadDisplayMode` | Effect ladder ordering and storage failure modes |
+| `recordBestScore` | Personal-best comparison and corrupt-storage handling |
 | `generateWave` / `mulberry32` | Determinism and escalation monotonicity |
+
+The camera entry deserves a note: asserting a transform against the *physics*
+basis, rather than against remembered numbers, is what makes a whole class of
+sign error impossible. The transform had pitch and roll inverted — the cockpit
+view was mirrored about the horizon and the vertical axis — and no amount of
+projection unit-testing in isolation would have caught it, because the
+projection was internally consistent. It was only wrong relative to the flight
+model.
 
 What remains — the wiring between subsystems — is covered by an integration
 smoke test that stands up the real `GameLoop` against a stubbed Canvas2D context

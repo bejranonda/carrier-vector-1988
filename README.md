@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-145%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-184%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 145 headless Vitest tests
+npm run test     # 184 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -101,9 +101,13 @@ Press `P` to cycle the display mode:
 
 | Mode | What it does |
 | --- | --- |
-| `CLEAN` | No vector trails, no bloom, no scanlines — maximum legibility |
-| `MODERN` | **Default.** Crisp symbology with a light vector glow and a faint vignette |
-| `RETRO CRT` | The full 1988 phosphor tube: persistence trails, scanline mask, vignette |
+| `CLEAN` | No vector trails, no bloom, no scanlines — maximum legibility, cheapest to draw |
+| `MODERN` | **Default.** Crisp symbology with a light bloom glow and a faint vignette |
+| `RETRO CRT` | The full 1988 phosphor tube: persistence trails, per-stroke glow, scanline mask, vignette |
+
+Your choice is remembered between sessions. On a weak machine the bloom pass also
+backs itself off automatically from a rolling frame-time average, without ever
+exceeding the mode you picked.
 
 ## Controls
 
@@ -167,7 +171,8 @@ Press `P` to cycle the display mode:
 
 ### Presentation & Readability
 - **Three display modes** (`CLEAN` / `MODERN` / `RETRO CRT`) behind one key, covering
-  vector persistence, bloom, the scanline mask and the vignette together
+  vector persistence, bloom, per-stroke glow, the scanline mask and the vignette
+  together — and remembered between sessions
 - **Device-pixel-accurate canvas** — the backing store is scaled by `devicePixelRatio`
   so symbology stays sharp on HiDPI displays
 - **Phosphor persistence** — vectors decay with a frame-rate-independent time constant
@@ -179,6 +184,10 @@ Press `P` to cycle the display mode:
 - Fully **responsive deck layout** that reflows from 3 columns to 1, compresses under
   vertical pressure, sheds its least important panels rather than clipping them, and
   expands to fill the height it has
+- A matching **cockpit instrument solver** that places every block from the real
+  viewport instead of fixed offsets, scaling and clipping the pitch ladder into
+  whatever space is left — both solvers are pure and both are tested for overlap
+- **Personal best** carried across sessions, shown on the briefing and the debrief
 - Procedurally synthesized Web Audio: engine whine, afterburner roar, RWR tones, flak
 
 ## Architecture
@@ -191,6 +200,7 @@ src/
 │   ├── Controls.ts        # Single source of truth for key bindings
 │   ├── Tutorial.ts        # Contextual coach + first-run training checklist
 │   ├── Objectives.ts      # "What do I do right now?" for both loops (pure)
+│   ├── HighScore.ts       # Persisted personal best
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
@@ -205,6 +215,7 @@ src/
 │   ├── PostProcess.ts     # Phosphor persistence + bloom compositor
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
 │   ├── DisplayMode.ts     # CLEAN / MODERN / RETRO ladder (canvas + CSS effects)
+│   ├── HudLayout.ts       # Pure cockpit instrument placement solver
 │   ├── HUD.ts             # Objective strip, pitch ladder, FPM, tapes, RWR, landing aids
 │   ├── DeckLayout.ts      # Pure responsive panel solver
 │   ├── DeckView.ts        # Flight deck instruments
@@ -262,7 +273,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**145 headless tests** across 13 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, layout geometry, scoring, the tutorial rules engine, the objective director, the display-mode ladder, the timestep accumulator, projection math, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**184 headless tests** across 17 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `computeDeckLayout`, `gradeTrap`, `warmupEnvelope`) specifically so it can be verified without a browser.
 

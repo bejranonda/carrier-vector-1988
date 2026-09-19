@@ -131,7 +131,13 @@ export class BriefingScreen {
         );
     }
 
-    public drawBriefing(ctx: CanvasRenderingContext2D, w: number, h: number, timeSec: number) {
+    public drawBriefing(
+        ctx: CanvasRenderingContext2D,
+        w: number,
+        h: number,
+        timeSec: number,
+        bestScore = 0
+    ) {
         ctx.save();
         noGlow(ctx);
 
@@ -161,6 +167,13 @@ export class BriefingScreen {
             cx,
             compact ? 84 : 110
         );
+
+        // A target to beat, so a second sortie has a point.
+        if (bestScore > 0) {
+            ctx.font = font(11, 600);
+            ctx.fillStyle = THEME.caution;
+            ctx.fillText(`PERSONAL BEST  ${bestScore} PTS`, cx, compact ? 100 : 130);
+        }
 
         // --- Three phase cards ---
         const cards: PhaseCard[] = [
@@ -398,7 +411,15 @@ export class BriefingScreen {
     }
 
     /** End-of-mission debrief with final score and rank. */
-    public drawDebrief(ctx: CanvasRenderingContext2D, w: number, h: number, score: ScoreKeeper, wave: number) {
+    public drawDebrief(
+        ctx: CanvasRenderingContext2D,
+        w: number,
+        h: number,
+        score: ScoreKeeper,
+        wave: number,
+        best = 0,
+        isNewBest = false
+    ) {
         ctx.save();
         noGlow(ctx);
         ctx.fillStyle = 'rgba(7,13,17,0.96)';
@@ -406,16 +427,6 @@ export class BriefingScreen {
 
         const cx = w / 2;
         ctx.textAlign = 'center';
-
-        ctx.fillStyle = THEME.alert;
-        ctx.font = font(38, 700);
-        glow(ctx, THEME.alert, 12);
-        ctx.fillText('MISSION FAILED', cx, 104);
-        noGlow(ctx);
-
-        ctx.fillStyle = THEME.muted;
-        ctx.font = font(13);
-        ctx.fillText('CV-68 NIMITZ IS COMBAT INEFFECTIVE', cx, 130);
 
         const b = score.breakdown;
         const rows: [string, string][] = [
@@ -430,10 +441,26 @@ export class BriefingScreen {
             ['HULL DAMAGE TAKEN', `${Math.round(b.hullDamageTaken)}%`]
         ];
 
+        // Lay the whole card out from a measured height and centre it. The
+        // fixed y = 104 / 162 / ... offsets left a 300px void under the rank
+        // on a 900px-tall window, with the prompt stranded at the bottom.
         const boxW = Math.min(460, w - 80);
         const boxH = rows.length * 22 + 36;
+        const blockH = 96 + boxH + 118;
+        const top = Math.max(28, (h - blockH) / 2 - 20);
+
+        ctx.fillStyle = THEME.alert;
+        ctx.font = font(Math.min(38, Math.max(26, w / 38)), 700);
+        glow(ctx, THEME.alert, 12);
+        ctx.fillText('MISSION FAILED', cx, top + 40);
+        noGlow(ctx);
+
+        ctx.fillStyle = THEME.muted;
+        ctx.font = font(13);
+        ctx.fillText('CV-68 NIMITZ IS COMBAT INEFFECTIVE', cx, top + 66);
+
         const boxX = cx - boxW / 2;
-        const boxY = 162;
+        const boxY = top + 96;
         plate(ctx, { x: boxX, y: boxY, w: boxW, h: boxH }, { border: THEME.edgeSoft, radius: 5 });
 
         ctx.font = font(12);
@@ -448,20 +475,32 @@ export class BriefingScreen {
             ctx.fillText(value, boxX + boxW - 18, y);
         });
 
-        const scoreY = boxY + boxH + 46;
+        const scoreY = boxY + boxH + 44;
         ctx.textAlign = 'center';
         ctx.fillStyle = THEME.caution;
         ctx.font = font(30, 700);
         ctx.fillText(`${score.totalScore} PTS`, cx, scoreY);
         ctx.font = font(17, 700);
         ctx.fillStyle = THEME.ink;
-        ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 32);
+        ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 30);
 
-        const capW = keycap(ctx, cx - 70, h - 46, 'ENTER', { size: 13 });
+        ctx.font = font(12, 600);
+        if (isNewBest) {
+            ctx.fillStyle = THEME.phosphor;
+            glow(ctx, THEME.phosphor, 8);
+            ctx.fillText('NEW PERSONAL BEST', cx, scoreY + 54);
+            noGlow(ctx);
+        } else if (best > 0) {
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(`PERSONAL BEST  ${best} PTS`, cx, scoreY + 54);
+        }
+
+        const promptY = Math.min(h - 40, scoreY + 92);
+        const capW = keycap(ctx, cx - 70, promptY, 'ENTER', { size: 13 });
         ctx.font = font(13, 600);
         ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'left';
-        ctx.fillText('fly again', cx - 70 + capW + 12, h - 46);
+        ctx.fillText('fly again', cx - 70 + capW + 12, promptY);
         ctx.restore();
     }
 }

@@ -30,6 +30,7 @@ import {
     THEME,
     bar,
     drawSegments,
+    fitText,
     font,
     glow,
     keycap,
@@ -45,7 +46,6 @@ export interface DeckViewContext {
     objective: ObjectiveStep;
     hint: Hint | null;
     displayModeLabel: string;
-    trainingLine: string | null;
 }
 
 export class DeckView {
@@ -133,7 +133,7 @@ export class DeckView {
         // Right-hand scoreboard chips
         const chips: [string, string, string][] = [
             ['WAVE', `${deck.waveNumber}`, THEME.ink],
-            ['SCORE', `${score.totalScore}`, THEME.phosphor],
+            ['SCORE', `${score.totalScore}`, score.totalScore < 0 ? THEME.alert : THEME.phosphor],
             ['RANK', score.rank, THEME.caution]
         ];
         let x = r.x + r.w;
@@ -192,12 +192,12 @@ export class DeckView {
         ctx.font = font(18, 700);
         ctx.fillStyle = objective.urgency === 'NORMAL' ? THEME.ink : accent;
         if (objective.urgency === 'URGENT') glow(ctx, accent, 10);
-        ctx.fillText(title, textX, inner.y + 12);
+        ctx.fillText(fitText(ctx, title, inner.x + inner.w - textX), textX, inner.y + 12);
         noGlow(ctx);
 
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
-        ctx.fillText(objective.detail, inner.x, inner.y + 34);
+        ctx.fillText(fitText(ctx, objective.detail, inner.w), inner.x, inner.y + 34);
 
         if (objective.waiting) {
             // A moving indeterminate strip: makes "the crews are working, you
@@ -600,7 +600,7 @@ export class DeckView {
             ctx.fillStyle = color;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(context.hint.text, r.x, r.y + 10);
+            ctx.fillText(fitText(ctx, context.hint.text, r.w), r.x, r.y + 10);
         }
 
         const segs: Segment[] = [

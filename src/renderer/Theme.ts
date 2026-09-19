@@ -265,25 +265,28 @@ export function keycap(
 
 export type Segment = { key: string } | { text: string; color?: string; weight?: 400 | 600 };
 
-/** Measure a mixed keycap/text sentence without drawing it. */
-export function measureSegments(
-    ctx: CanvasRenderingContext2D,
-    segs: readonly Segment[],
-    size = 12
-): number {
-    ctx.save();
-    let w = 0;
-    for (const s of segs) {
-        if ('key' in s) {
-            ctx.font = font(size, 600);
-            w += Math.ceil(ctx.measureText(s.key).width) + 14 + 6;
-        } else {
-            ctx.font = font(size, s.weight ?? 400);
-            w += ctx.measureText(s.text).width + 6;
-        }
+/**
+ * Truncate `text` with an ellipsis so it fits `maxWidth` at the CURRENT font.
+ * Canvas has no overflow handling of its own, so without this a long objective
+ * line simply paints straight through the edge of its panel.
+ */
+export function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+    if (maxWidth <= 0) return '';
+    if (ctx.measureText(text).width <= maxWidth) return text;
+
+    const ellipsis = '…';
+    const ellipsisW = ctx.measureText(ellipsis).width;
+    if (ellipsisW > maxWidth) return '';
+
+    // Binary search the longest prefix that still fits with the ellipsis.
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (ctx.measureText(text.slice(0, mid)).width + ellipsisW <= maxWidth) lo = mid;
+        else hi = mid - 1;
     }
-    ctx.restore();
-    return Math.max(0, w - 6);
+    return text.slice(0, lo).trimEnd() + ellipsis;
 }
 
 /** Draw a mixed keycap/text sentence left-aligned from (x, y-middle). */

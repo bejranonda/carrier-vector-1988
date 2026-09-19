@@ -244,9 +244,10 @@ export class VectorRenderer {
         const zMid = (c1.z + c2.z) / 2;
         const fade = VectorRenderer.depthFade(zMid);
 
-        // Vector glow stroke. The shadow state is restored immediately so it
-        // can never leak into a later fill (see resetShadow()).
-        this.ctx.save();
+        // Vector glow stroke. Every piece of state this touches is reset
+        // immediately afterwards so nothing can leak into a later fill (see
+        // resetShadow()). Deliberately NOT save()/restore() - this is the
+        // hottest path in the renderer, called twice per terrain segment.
         this.ctx.beginPath();
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = lineWidth * (0.6 + 0.4 * fade);
@@ -256,7 +257,6 @@ export class VectorRenderer {
         this.ctx.moveTo(s1.x, s1.y);
         this.ctx.lineTo(s2.x, s2.y);
         this.ctx.stroke();
-        this.ctx.restore();
         this.ctx.globalAlpha = 1.0;
         this.resetShadow();
     }
