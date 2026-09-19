@@ -43,6 +43,7 @@ import {
     DEFAULT_SCENARIO,
     MissionDirector,
     SCENARIOS,
+    recommendScenario,
     scenarioAt,
     scenarioById
 } from './Scenarios';
@@ -60,6 +61,13 @@ import { TargetTracker, pursuitNav } from '../tactics/TargetDesignation';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
 import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
+import {
+    loadMissionRecords,
+    mergeMissionResult,
+    recordFor,
+    saveMissionRecords
+} from './MissionRecords';
+import type { MissionRecords } from './MissionRecords';
 import type { ObjectiveStep } from './Objectives';
 
 export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
@@ -152,6 +160,14 @@ export class GameLoop {
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
     private isNewBest = false;
+
+    /**
+     * Per-scenario bests and completions. The global best cannot say whether
+     * you have ever beaten the canyon strike, because a long carrier defence
+     * out-scores it by an order of magnitude.
+     */
+    public missionRecords: MissionRecords = loadMissionRecords();
+    private isMissionBest = false;
 
     /**
      * Rolling average frame time, used to back the bloom pass off on hardware
@@ -914,8 +930,26 @@ export class GameLoop {
         const result = recordBestScore(this.score.totalScore, this.bestScore);
         this.bestScore = result.best;
         this.isNewBest = result.isNewBest;
+
+        const merged = mergeMissionResult(
+            this.missionRecords, this.scenario.id, this.score.totalScore, outcome === 'SUCCESS'
+        );
+        this.missionRecords = merged.records;
+        this.isMissionBest = merged.isNewBest;
+        saveMissionRecords(this.missionRecords);
         this.deck.log(outcome === 'SUCCESS' ? 'MISSION COMPLETE.' : 'MISSION FAILED.');
         this.phase = 'DEBRIEF';
+    }
+
+    /**
+     * The mission the debrief points at. Deliberately silent when it would
+     * just repeat the mission that has only this second ended - "fly the thing
+     * you are looking at" is not guidance.
+     */
+    private nextUpLabel(): string | null {
+        const next = recommendScenario(this.missionRecords);
+        if (next.id === this.scenario.id) return null;
+        return `${next.name} — ${next.tagline}`;
     }
 
     /** Phosphor decay constant for the active display mode. */
@@ -1022,7 +1056,9 @@ export class GameLoop {
             this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau * 1.8);
             this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds, h);
             this.post.composite(this.ctx);
-            this.briefing.drawBriefing(this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore);
+            this.briefing.drawBriefing(
+                this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords
+            );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
         }
@@ -1034,7 +1070,10 @@ export class GameLoop {
                     outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
                     scenarioName: this.scenario.name,
                     reason: this.missionReason,
-                    title: this.scenario.victoryTitle
+                    title: this.scenario.victoryTitle,
+                    missionBest: recordFor(this.missionRecords, this.scenario.id).best,
+                    isMissionBest: this.isMissionBest,
+                    nextUp: this.nextUpLabel() ?? undefined
                 }
             );
             return;
@@ -1204,6 +1243,7 @@ export class GameLoop {
 
     public restartFromDebrief() {
         this.isNewBest = false;
+        this.isMissionBest = false;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'BRIEFING';

@@ -27,6 +27,8 @@ import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager
 import type { StrikeTargetSpec } from '../tactics/StrikeTarget';
 import type { MapId } from '../tactics/TerrainProfiles';
 import type { ObjectiveStep } from './Objectives';
+import { isCleared, recordFor } from './MissionRecords';
+import type { MissionRecords } from './MissionRecords';
 import { formatEta } from './Objectives';
 
 export type ScenarioId =
@@ -569,6 +571,47 @@ export function scenarioById(id: ScenarioId): ScenarioDef {
 export function scenarioAt(index: number): ScenarioDef {
     const n = SCENARIOS.length;
     return SCENARIOS[((index % n) + n) % n];
+}
+
+/**
+ * What to fly next, given what has been flown already.
+ *
+ * Five missions all available at once, with nothing marking which you have
+ * beaten, is a menu rather than a campaign: a new player picks by name and
+ * lands in the canyon strike, which is a five-pip mission with a four-minute
+ * clock, and concludes the game is impossible. This is the recommendation the
+ * briefing and the debrief make instead, and it is deliberately a suggestion
+ * and not a lock - everything stays selectable from the first run.
+ *
+ * Easiest uncleared first, preferring one already attempted (you were in the
+ * middle of it), and once everything is cleared, the hardest one - which is
+ * where the replay value actually is.
+ */
+export function recommendScenario(records: MissionRecords): ScenarioDef {
+    // A player who has flown nothing at all goes to the mission that runs the
+    // six-step flight checkout, whatever its difficulty pips say. Sending a
+    // first-time pilot to the gentlest mission instead would send them to
+    // carrier qualification - which has no tutorial and consists entirely of
+    // the hardest skill in the game.
+    const neverFlown = SCENARIOS.every(s => recordFor(records, s.id).attempts === 0);
+    const checkout = SCENARIOS.find(s => s.setup.showTrainingChecklist);
+    if (neverFlown && checkout) return checkout;
+
+    const uncleared = SCENARIOS.filter(s => !isCleared(records, s.id));
+    if (uncleared.length === 0) {
+        return [...SCENARIOS].sort((a, b) => b.difficulty - a.difficulty)[0];
+    }
+
+    return [...uncleared].sort((a, b) =>
+        a.difficulty - b.difficulty
+        || recordFor(records, b.id).attempts - recordFor(records, a.id).attempts
+        || SCENARIOS.indexOf(a) - SCENARIOS.indexOf(b)
+    )[0];
+}
+
+/** How many of the scenarios have been cleared at least once. */
+export function clearedCount(records: MissionRecords): number {
+    return SCENARIOS.filter(s => isCleared(records, s.id)).length;
 }
 
 // ---------------------------------------------------------------------

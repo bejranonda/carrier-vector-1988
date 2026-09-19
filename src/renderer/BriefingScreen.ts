@@ -16,8 +16,11 @@ import { CONTROL_SCHEMA, bindingsFor } from '../core/Controls';
 import type { ControlContext } from '../core/Controls';
 import { THEME, WORLD, fitText, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
 import type { Rect } from './Theme';
-import { SCENARIOS } from '../core/Scenarios';
+import { SCENARIOS, clearedCount, recommendScenario } from '../core/Scenarios';
 import type { ScenarioCard, ScenarioDef } from '../core/Scenarios';
+import { DEFAULT_MAP, mapById } from '../tactics/TerrainProfiles';
+import { isCleared, recordFor } from '../core/MissionRecords';
+import type { MissionRecords } from '../core/MissionRecords';
 
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
@@ -141,7 +144,8 @@ export class BriefingScreen {
         h: number,
         timeSec: number,
         scenario: ScenarioDef,
-        bestScore = 0
+        bestScore = 0,
+        records: MissionRecords = {}
     ) {
         ctx.save();
         noGlow(ctx);
@@ -169,12 +173,15 @@ export class BriefingScreen {
         ctx.font = font(11);
         ctx.fillStyle = THEME.muted;
         let sub = 'Run the flight deck. Fly the sortie. Bring the jet home.';
+        const cleared = clearedCount(records);
+        if (cleared > 0) sub += `   ·   ${cleared} / ${SCENARIOS.length} MISSIONS CLEARED`;
         if (bestScore > 0) sub += `   ·   PERSONAL BEST ${bestScore} PTS`;
-        ctx.fillText(sub, cx, compact ? 66 : 90);
+        ctx.fillText(fitText(ctx, sub, w - 60), cx, compact ? 66 : 90);
 
         // --- Scenario selector ---
         const selectorY = compact ? 82 : 112;
-        this.scenarioSelector(ctx, cx, selectorY, w, scenario);
+        const recommended = recommendScenario(records);
+        this.scenarioSelector(ctx, cx, selectorY, w, scenario, records, recommended.id);
 
         // --- Selected scenario headline ---
         const headY = selectorY + (compact ? 66 : 76);
@@ -183,17 +190,35 @@ export class BriefingScreen {
         ctx.fillStyle = THEME.caution;
         ctx.fillText(scenario.name, cx, headY);
 
+        const map = mapById(scenario.setup.map ?? DEFAULT_MAP);
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
         ctx.fillText(
-            `${scenario.tagline}   ·   ${scenario.duration}`,
+            fitText(ctx, `${scenario.tagline}   ·   ${scenario.duration}   ·   ${map.name}: ${map.blurb}`, w - 80),
             cx,
             headY + 19
         );
 
+        // Per-mission record. A single global best told a player nothing about
+        // whether they had ever beaten THIS mission, which is the only
+        // question the selector is really being asked.
+        const record = recordFor(records, scenario.id);
+        ctx.font = font(11, 600);
+        if (record.attempts === 0) {
+            ctx.fillStyle = THEME.key;
+            ctx.fillText('NOT YET FLOWN', cx, headY + 36);
+        } else {
+            const parts = [`BEST ${record.best} PTS`];
+            parts.push(record.completions > 0
+                ? `CLEARED ${record.completions}×`
+                : `${record.attempts} ATTEMPT${record.attempts === 1 ? '' : 'S'}, NOT YET CLEARED`);
+            ctx.fillStyle = record.completions > 0 ? THEME.phosphor : THEME.caution;
+            ctx.fillText(parts.join('   ·   '), cx, headY + 36);
+        }
+
         // --- Three phase cards, supplied by the scenario ---
         const gutter = 16;
-        const cardsY = headY + (compact ? 32 : 40);
+        const cardsY = headY + (compact ? 48 : 56);
         const cardW = Math.min(320, (w - 88 - gutter * 2) / 3);
         const cardH = compact ? 144 : 168;
         const totalW = cardW * 3 + gutter * 2;
@@ -279,7 +304,9 @@ export class BriefingScreen {
         cx: number,
         y: number,
         viewportW: number,
-        selected: ScenarioDef
+        selected: ScenarioDef,
+        records: MissionRecords,
+        recommendedId: string
     ) {
         const gap = 8;
         const totalW = Math.min(viewportW - 72, 1000);
@@ -293,7 +320,10 @@ export class BriefingScreen {
 
         SCENARIOS.forEach((s, i) => {
             const isSelected = s.id === selected.id;
-            const accent = isSelected ? THEME.key : THEME.edgeSoft;
+            const isRecommended = s.id === recommendedId && !isCleared(records, s.id);
+            const accent = isSelected ? THEME.key
+                : isRecommended ? THEME.phosphor
+                    : THEME.edgeSoft;
 
             roundRect(ctx, x, y, pillW, pillH, 5);
             ctx.fillStyle = isSelected ? 'rgba(95,216,255,0.14)' : 'rgba(9,19,25,0.7)';
@@ -307,10 +337,24 @@ export class BriefingScreen {
             ctx.textAlign = 'left';
             ctx.fillText(`${i + 1}`, x + 9, y + 15);
 
+            // A tick for a mission already beaten - the one thing a returning
+            // player wants to see at a glance is what is left.
+            if (isCleared(records, s.id)) {
+                ctx.strokeStyle = THEME.phosphor;
+                ctx.lineWidth = 1.8;
+                const tx = x + pillW - 16;
+                const ty = y + 15;
+                ctx.beginPath();
+                ctx.moveTo(tx - 5, ty);
+                ctx.lineTo(tx - 2, ty + 4);
+                ctx.lineTo(tx + 5, ty - 5);
+                ctx.stroke();
+            }
+
             ctx.font = font(11, isSelected ? 700 : 400);
             ctx.fillStyle = isSelected ? THEME.ink : THEME.muted;
             ctx.textAlign = 'center';
-            ctx.fillText(fitText(ctx, s.name, pillW - 24), x + pillW / 2, y + 15);
+            ctx.fillText(fitText(ctx, s.name, pillW - 46), x + pillW / 2, y + 15);
 
             // Difficulty: filled pips out of five.
             const pipR = 2.6;
@@ -331,6 +375,19 @@ export class BriefingScreen {
                     ctx.stroke();
                 }
                 px += pipGap;
+            }
+
+            // A single suggested next mission, so the menu reads as a path
+            // rather than five equally plausible doors.
+            if (isRecommended) {
+                ctx.font = font(8, 700);
+                ctx.fillStyle = THEME.phosphor;
+                ctx.textAlign = 'center';
+                ctx.fillText(
+                    recordFor(records, s.id).attempts > 0 ? 'FLY THIS NEXT' : 'START HERE',
+                    x + pillW / 2,
+                    y + pillH + 10
+                );
             }
 
             x += pillW + gap;
@@ -575,7 +632,27 @@ export class BriefingScreen {
             ctx.fillText(`PERSONAL BEST  ${best} PTS`, cx, scoreY + 54);
         }
 
-        const promptY = Math.min(h - 40, scoreY + 92);
+        // ...and how this run compares on THIS mission, which for anything
+        // other than the endless defence is the number that means something.
+        if (result.missionBest !== undefined && result.missionBest > 0) {
+            ctx.font = font(11, 600);
+            ctx.fillStyle = result.isMissionBest ? THEME.phosphor : THEME.muted;
+            ctx.fillText(
+                result.isMissionBest
+                    ? `BEST RUN YET ON ${result.scenarioName}`
+                    : `BEST ON THIS MISSION  ${result.missionBest} PTS`,
+                cx,
+                scoreY + 74
+            );
+        }
+
+        if (result.nextUp) {
+            ctx.font = font(11, 600);
+            ctx.fillStyle = THEME.key;
+            ctx.fillText(fitText(ctx, `NEXT UP: ${result.nextUp}`, w - 80), cx, scoreY + 94);
+        }
+
+        const promptY = Math.min(h - 40, scoreY + 112);
         const capW = keycap(ctx, cx - 90, promptY, 'ENTER', { size: 13 });
         ctx.font = font(13, 600);
         ctx.fillStyle = THEME.muted;
@@ -592,6 +669,12 @@ export interface DebriefResult {
     reason: string | null;
     /** Scenario-supplied headline for a win. */
     title?: string;
+    /** Best score ever recorded on this scenario, including this run. */
+    missionBest?: number;
+    /** Whether this run set that scenario best. */
+    isMissionBest?: boolean;
+    /** The mission the debrief suggests flying next, if any. */
+    nextUp?: string;
 }
 
 /** Greedy word wrap against a measured pixel width. */

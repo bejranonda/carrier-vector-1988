@@ -47,12 +47,18 @@ describe('assistCaption', () => {
         expect(assistCaption('STALL')!.tone).toBe('CAUTION');
     });
 
-    it('tells a player on autopilot what to do next', () => {
-        const caption = assistCaption('AUTOPILOT');
+    it('tells a player on autopilot with an empty scope what to do next', () => {
+        const caption = assistCaption('AUTOPILOT', false);
         expect(caption!.tone).toBe('INFO');
         // The one moment a player is guaranteed to be reading the glass with
         // nothing to do is the moment to teach them the designation key.
-        expect(caption!.text).toContain('T');
+        expect(caption!.text).toContain('PRESS T');
+    });
+
+    it('stops telling them to press T once they have', () => {
+        const caption = assistCaption('AUTOPILOT', true);
+        expect(caption!.text).not.toContain('PRESS T');
+        expect(caption!.text).toContain('AUTOPILOT');
     });
 
     /**

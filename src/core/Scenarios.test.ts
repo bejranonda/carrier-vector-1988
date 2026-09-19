@@ -3,9 +3,12 @@ import {
     DEFAULT_SCENARIO,
     MissionDirector,
     SCENARIOS,
+    clearedCount,
+    recommendScenario,
     scenarioAt,
     scenarioById
 } from './Scenarios';
+import type { MissionRecords } from './MissionRecords';
 import type { MissionSnapshot, ScenarioDef } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
@@ -420,5 +423,67 @@ describe('MissionDirector', () => {
         // The hull cannot un-sink.
         const later = director.update(snapshot({ carrierHealth: 100 }));
         expect(later.outcome).toBe('FAILED');
+    });
+});
+
+describe('progression guidance', () => {
+    it('sends a brand-new player to the mission that teaches them to fly', () => {
+        const first = recommendScenario({});
+        expect(first.setup.showTrainingChecklist).toBe(true);
+    });
+
+    it('falls back to the gentlest uncleared mission once anything has been flown', () => {
+        const records: MissionRecords = {
+            CARRIER_DEFENSE: { best: 300, completions: 0, attempts: 1 }
+        };
+        const next = recommendScenario(records);
+        expect(next.id).toBe('CARRIER_QUALS');
+        expect(next.difficulty).toBe(Math.min(...SCENARIOS.map(s => s.difficulty)));
+    });
+
+    it('does not recommend a mission already cleared', () => {
+        const records: MissionRecords = { CARRIER_QUALS: { best: 900, completions: 1, attempts: 1 } };
+        expect(recommendScenario(records).id).not.toBe('CARRIER_QUALS');
+    });
+
+    it('prefers a mission already in progress among equally hard ones', () => {
+        const records: MissionRecords = {
+            CARRIER_QUALS: { best: 900, completions: 1, attempts: 1 },
+            // Both five-pip missions; one has been attempted three times.
+            LAST_STAND: { best: 400, completions: 0, attempts: 3 }
+        };
+        const withHarderOnly: MissionRecords = {
+            ...records,
+            CARRIER_DEFENSE: { best: 10, completions: 1, attempts: 1 },
+            CANYON_STRIKE: { best: 10, completions: 1, attempts: 1 },
+            IRON_HAND: { best: 10, completions: 1, attempts: 1 }
+        };
+        expect(recommendScenario(withHarderOnly).id).toBe('LAST_STAND');
+    });
+
+    it('points at the hardest mission once everything is cleared', () => {
+        const records: MissionRecords = {};
+        for (const s of SCENARIOS) records[s.id] = { best: 100, completions: 1, attempts: 1 };
+        const hardest = Math.max(...SCENARIOS.map(s => s.difficulty));
+        expect(recommendScenario(records).difficulty).toBe(hardest);
+    });
+
+    it('counts cleared missions and ignores attempts that never won', () => {
+        expect(clearedCount({})).toBe(0);
+        expect(clearedCount({
+            CANYON_STRIKE: { best: 50, completions: 0, attempts: 9 },
+            IRON_HAND: { best: 50, completions: 2, attempts: 4 }
+        })).toBe(1);
+    });
+
+    it('always recommends a real scenario, for any record set', () => {
+        const sets: MissionRecords[] = [
+            {},
+            { NOT_A_MISSION: { best: 5, completions: 5, attempts: 5 } },
+            { CARRIER_QUALS: { best: 0, completions: 0, attempts: 0 } }
+        ];
+        for (const records of sets) {
+            expect(SCENARIOS).toContain(recommendScenario(records));
+        }
     });
 });

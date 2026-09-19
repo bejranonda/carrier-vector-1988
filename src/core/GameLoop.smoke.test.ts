@@ -404,6 +404,18 @@ describe('GameLoop integration smoke test', () => {
         expect(game.phase).toBe('DEBRIEF');
         expect(game.missionOutcome).toBe('SUCCESS');
         expect(game.score.breakdown.missionsCompleted).toBe(1);
+
+        // ...and the run is written into this scenario's own record, so the
+        // selector can mark it cleared and the debrief can compare like with
+        // like instead of against a global score from a different mission.
+        const record = game.missionRecords['CANYON_STRIKE'];
+        expect(record.completions).toBe(1);
+        expect(record.attempts).toBe(1);
+        expect(record.best).toBe(game.score.totalScore);
+        runFrames(game, 5); // draw the debrief with the record present
+        game.restartFromDebrief();
+        runFrames(game, 5); // and the briefing, with a cleared tick on a pill
+        expect(game.phase).toBe('BRIEFING');
     });
 
     it('runs the canyon strike raid window down while the pen stands', () => {

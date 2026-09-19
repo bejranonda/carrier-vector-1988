@@ -98,7 +98,8 @@ export interface HudContext {
  * matters when the jet really is about to hit something.
  */
 export function assistCaption(
-    override: ControlDemand['override']
+    override: ControlDemand['override'],
+    hasDesignation = false
 ): { text: string; tone: 'ALERT' | 'CAUTION' | 'INFO' } | null {
     switch (override) {
         case 'TERRAIN':
@@ -106,11 +107,19 @@ export function assistCaption(
         case 'STALL':
             return { text: 'ALPHA LIMIT', tone: 'CAUTION' };
         case 'AUTOPILOT':
-            return { text: 'AUTOPILOT FLYING — PRESS T TO PICK A TARGET', tone: 'INFO' };
+            return hasDesignation
+                ? { text: 'AUTOPILOT — FLYING THE INTERCEPT', tone: 'INFO' }
+                : { text: 'AUTOPILOT FLYING — PRESS T TO PICK A TARGET', tone: 'INFO' };
         default:
             return null;
     }
 }
+
+/**
+ * Width kept clear on each side of the objective strip for the score chip
+ * (right) and symmetry (left).
+ */
+const OBJECTIVE_SIDE_RESERVE = 150;
 
 /** Vertical anchors, so no two overlays can be given the same band. */
 const BAND = {
@@ -180,7 +189,9 @@ export class HUD {
         if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, layout.cx);
         if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
         this.drawScoreChip(ctx, context.score);
-        this.drawAssistAnnunciator(ctx, context.assistOverride ?? 'NONE', layout.cx);
+        this.drawAssistAnnunciator(
+            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
+        );
         this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
         ctx.restore();
@@ -244,8 +255,11 @@ export class HUD {
         const clockW = showClock ? ctx.measureText(clockText).width + 22 : 0;
 
         const keyW = objective.key ? 58 : 0;
+        // The strip is centred, so its half-width has to clear the score chip
+        // in the same band on the right. Without this reserve the plate ran
+        // under the chip on anything narrower than about 1000px.
         const w = Math.min(
-            this.width - 2 * HUD_METRICS.edge,
+            this.width - 2 * (HUD_METRICS.edge + OBJECTIVE_SIDE_RESERVE),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
         const h = 54;
@@ -627,9 +641,10 @@ export class HUD {
     private drawAssistAnnunciator(
         ctx: CanvasRenderingContext2D,
         override: ControlDemand['override'],
+        hasDesignation: boolean,
         cx: number
     ) {
-        const caption = assistCaption(override);
+        const caption = assistCaption(override, hasDesignation);
         if (!caption) return;
 
         const color = caption.tone === 'ALERT' ? THEME.alert
