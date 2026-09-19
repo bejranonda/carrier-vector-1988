@@ -11,6 +11,7 @@
 import type { AircraftPhysics, Vector3 } from './AircraftPhysics';
 import type { VectorRenderer } from '../renderer/VectorRenderer';
 import type { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
+import type { StrikeTarget } from '../tactics/StrikeTarget';
 import type { AirborneTarget } from '../renderer/HUD';
 import { soundFX } from '../audio/SoundFX';
 
@@ -40,6 +41,23 @@ export interface ExplosionParticle {
     life: number;
     maxLife: number;
     color: string;
+}
+
+/**
+ * Everything the weapons tick needs to resolve against, plus the callbacks it
+ * reports through. Bundled because the parameter list had already reached six
+ * and adding hardened ground targets would have taken it to eight.
+ */
+export interface WeaponsWorld {
+    terrain: TacticalTerrain;
+    targets: AirborneTarget[];
+    samSites: SAMSite[];
+    /** Hardened structures a scenario wants destroyed. */
+    strikeTargets?: StrikeTarget[];
+    onTargetDestroyed?: (target: AirborneTarget) => void;
+    onSAMDestroyed?: (sam: SAMSite) => void;
+    /** Fired for every bomb inside the hit radius, hit or kill. */
+    onStrikeTargetHit?: (target: StrikeTarget, destroyed: boolean) => void;
 }
 
 export class WeaponsSystem {
@@ -120,6 +138,49 @@ export class WeaponsSystem {
         soundFX.playMissileLaunch();
     }
 
+    /**
+     * Continuously computed impact point for the currently loaded Mk.82.
+     *
+     * The strike scenario asks for a bomb inside a 55 m radius, which is not
+     * something a player can eyeball from a wireframe canyon at 250 m/s. This
+     * runs the same ballistic integration the live bomb uses, from the same
+     * release state, and returns where it would land - so the HUD can draw a
+     * CCIP cross and bombing becomes a skill rather than a guess.
+     *
+     * Pure apart from reading terrain heights; unit-tested against the real
+     * bomb path.
+     */
+    public static predictBombImpact(
+        physics: AircraftPhysics,
+        terrain: TacticalTerrain,
+        maxSeconds = 20,
+        step = 1 / 30
+    ): Vector3 | null {
+        const pos: Vector3 = {
+            x: physics.position.x,
+            y: physics.position.y - 1.5,
+            z: physics.position.z
+        };
+        const vel: Vector3 = {
+            x: physics.velocity.x,
+            y: physics.velocity.y - 5,
+            z: physics.velocity.z
+        };
+
+        for (let t = 0; t < maxSeconds; t += step) {
+            vel.y -= 9.81 * step;
+            pos.x += vel.x * step;
+            pos.y += vel.y * step;
+            pos.z += vel.z * step;
+
+            const ground = terrain.getElevation(pos.x, pos.z);
+            if (pos.y <= ground) {
+                return { x: pos.x, y: ground, z: pos.z };
+            }
+        }
+        return null;
+    }
+
     public dropBomb(physics: AircraftPhysics) {
         if (physics.loadout.ironBombs <= 0) return;
         physics.loadout.ironBombs--;
@@ -165,14 +226,8 @@ export class WeaponsSystem {
         }
     }
 
-    public update(
-        dt: number,
-        terrain: TacticalTerrain,
-        targets: AirborneTarget[],
-        samSites: SAMSite[],
-        onTargetDestroyed?: (target: AirborneTarget) => void,
-        onSAMDestroyed?: (sam: SAMSite) => void
-    ) {
+    public update(dt: number, world: WeaponsWorld) {
+        const { terrain, targets, samSites, onTargetDestroyed, onSAMDestroyed } = world;
         if (this.gunFireTimer > 0) this.gunFireTimer -= dt;
 
         // 1. Bullets
@@ -296,17 +351,37 @@ export class WeaponsSystem {
 
             const terrY = terrain.getElevation(bomb.pos.x, bomb.pos.z);
             if (bomb.pos.y <= terrY) {
-                // Ground impact explosion
-                this.spawnExplosion({ x: bomb.pos.x, y: terrY + 2, z: bomb.pos.z }, 28, '#ff5500');
+                const impact = { x: bomb.pos.x, y: terrY + 2, z: bomb.pos.z };
+                this.spawnExplosion(impact, 28, '#ff5500');
+
+                // Hardened structures first: their hit radius is far tighter
+                // than a SAM site's, so a hit here is the precise one.
+                let struckHardTarget = false;
+                for (const target of world.strikeTargets ?? []) {
+                    if (target.registerImpact(impact)) {
+                        struckHardTarget = true;
+                        // A secondary detonation inside the structure reads as
+                        // "that went in", not "that landed nearby".
+                        this.spawnExplosion(
+                            { x: target.position.x, y: target.position.y + 12, z: target.position.z },
+                            40,
+                            target.destroyed ? '#ffdd33' : '#ff8800'
+                        );
+                        if (world.onStrikeTargetHit) world.onStrikeTargetHit(target, target.destroyed);
+                        break;
+                    }
+                }
 
                 // Check splash radius on SAM sites
-                for (let s = 0; s < samSites.length; s++) {
-                    const sam = samSites[s];
-                    const dist = Math.hypot(bomb.pos.x - sam.position.x, bomb.pos.z - sam.position.z);
-                    if (dist < 180) { // 180m blast radius
-                        if (onSAMDestroyed) onSAMDestroyed(sam);
-                        samSites.splice(s, 1);
-                        break;
+                if (!struckHardTarget) {
+                    for (let s = 0; s < samSites.length; s++) {
+                        const sam = samSites[s];
+                        const dist = Math.hypot(bomb.pos.x - sam.position.x, bomb.pos.z - sam.position.z);
+                        if (dist < 180) { // 180m blast radius
+                            if (onSAMDestroyed) onSAMDestroyed(sam);
+                            samSites.splice(s, 1);
+                            break;
+                        }
                     }
                 }
 

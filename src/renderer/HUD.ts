@@ -29,6 +29,8 @@ import type { VectorRenderer } from './VectorRenderer';
 import type { Hint, ChecklistItem } from '../core/Tutorial';
 import type { ScoreKeeper } from '../core/ScoreKeeper';
 import type { ObjectiveStep } from '../core/Objectives';
+import { formatEta } from '../core/Objectives';
+import type { StrikeTarget } from '../tactics/StrikeTarget';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
 import type { HudLayout } from './HudLayout';
 import {
@@ -70,6 +72,10 @@ export interface HudContext {
     objective: ObjectiveStep;
     checklist: ChecklistItem[];
     displayModeLabel: string;
+    /** Hardened ground targets the active scenario wants destroyed. */
+    strikeTargets?: StrikeTarget[];
+    /** Where the currently selected Mk.82 would land, if one is selected. */
+    bombImpactPoint?: Vector3 | null;
 }
 
 /** Vertical anchors, so no two overlays can be given the same band. */
@@ -115,6 +121,10 @@ export class HUD {
         this.drawFlightPathMarker(ctx, physics, renderer);
         this.drawWaterline(ctx, layout.cx, layout.cy);
         this.drawCombatReticles(ctx, physics, targets, renderer);
+        this.drawStrikeTargets(ctx, physics, context.strikeTargets ?? [], renderer);
+        if (context.bombImpactPoint) {
+            this.drawBombImpactPoint(ctx, physics, context.bombImpactPoint, context.strikeTargets ?? [], renderer);
+        }
 
         // --- Instruments (all on backplates, all outside the centre box) ---
         this.drawObjectiveStrip(ctx, context.objective, layout.cx);
@@ -179,15 +189,29 @@ export class HUD {
             : objective.urgency === 'ACTION' ? THEME.caution
                 : THEME.phosphor;
 
+        const countdown = objective.countdownSeconds;
+        const showClock = countdown !== undefined;
+        const clockText = showClock ? formatEta(countdown) : '';
+        // The clock turns red inside a minute: a deadline is only useful if
+        // the player can feel it closing.
+        const clockColor = showClock && countdown < 60 ? THEME.alert
+            : showClock && countdown < 120 ? THEME.caution
+                : THEME.ink;
+
         ctx.save();
         noGlow(ctx);
         ctx.font = font(17, 700);
         const titleW = ctx.measureText(objective.title).width;
         ctx.font = font(11);
         const detailW = ctx.measureText(objective.detail).width;
+        ctx.font = font(22, 700);
+        const clockW = showClock ? ctx.measureText(clockText).width + 22 : 0;
 
         const keyW = objective.key ? 58 : 0;
-        const w = Math.min(this.width - 2 * HUD_METRICS.edge, Math.max(titleW + keyW, detailW) + 36);
+        const w = Math.min(
+            this.width - 2 * HUD_METRICS.edge,
+            Math.max(titleW + keyW, detailW) + 36 + clockW
+        );
         const h = 54;
         const x = cx - w / 2;
         const y = BAND.objective;
@@ -204,14 +228,29 @@ export class HUD {
             textX += keycap(ctx, textX, y + 20, objective.key, { size: 12 }) + 10;
         }
 
+        const textLimit = x + w - 14 - clockW;
+
         ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
         ctx.font = font(17, 700);
         ctx.fillStyle = objective.urgency === 'NORMAL' ? THEME.ink : accent;
-        ctx.fillText(fitText(ctx, objective.title, x + w - 14 - textX), textX, y + 25);
+        ctx.fillText(fitText(ctx, objective.title, textLimit - textX), textX, y + 25);
 
         ctx.font = font(11);
         ctx.fillStyle = THEME.muted;
-        ctx.fillText(fitText(ctx, objective.detail, w - 32), x + 16, y + 43);
+        ctx.fillText(fitText(ctx, objective.detail, textLimit - (x + 16)), x + 16, y + 43);
+
+        if (showClock) {
+            ctx.textAlign = 'right';
+            ctx.font = font(22, 700);
+            ctx.fillStyle = clockColor;
+            if (countdown < 60 && Math.floor(Date.now() / 500) % 2 === 0) glow(ctx, clockColor, 8);
+            ctx.fillText(clockText, x + w - 14, y + 28);
+            noGlow(ctx);
+            ctx.font = font(9, 600);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText('WINDOW', x + w - 14, y + 44);
+        }
         ctx.restore();
     }
 
@@ -765,6 +804,114 @@ export class HUD {
                 ctx.arc(tx, ty, 8, 0, Math.PI * 2);
                 ctx.stroke();
             }
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Ground-target designator. A hardened structure is a small, static,
+     * wireframe-coloured box in a canyon full of wireframe: without a marker
+     * and a range readout the strike scenario is a hunt rather than an attack.
+     */
+    private drawStrikeTargets(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        strikeTargets: readonly StrikeTarget[],
+        renderer: VectorRenderer
+    ) {
+        if (strikeTargets.length === 0) return;
+
+        ctx.save();
+        noGlow(ctx);
+        for (const target of strikeTargets) {
+            const aim: Vector3 = {
+                x: target.position.x,
+                y: target.position.y + 24,
+                z: target.position.z
+            };
+            const camPt = renderer.transformToCamera(
+                aim, physics.position, physics.pitch, physics.yaw, physics.roll
+            );
+            if (camPt.z < 2.0) continue;
+
+            const proj = renderer.projectCameraPoint(camPt);
+            const range = target.horizontalDistanceTo(physics.position);
+            const color = target.destroyed ? THEME.muted : THEME.caution;
+            const s = Math.max(10, Math.min(40, 30000 / Math.max(1, range)));
+
+            // Diamond designator - deliberately a different shape from the
+            // air-to-air corner brackets, so the two never read as the same thing.
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(proj.x, proj.y - s);
+            ctx.lineTo(proj.x + s, proj.y);
+            ctx.lineTo(proj.x, proj.y + s);
+            ctx.lineTo(proj.x - s, proj.y);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.font = font(11, 700);
+            ctx.fillStyle = color;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(
+                target.destroyed ? 'DESTROYED' : `TGT ${(range / 1000).toFixed(1)}KM`,
+                proj.x + s + 8,
+                proj.y
+            );
+        }
+        ctx.restore();
+    }
+
+    /**
+     * CCIP: where the Mk.82 would land if released now, from the same
+     * ballistic integration the live bomb uses. The strike scenario asks for
+     * a bomb inside 55 m at 250 m/s over a wireframe canyon - without this
+     * the delivery is a guess, and a guess is not a skill.
+     */
+    private drawBombImpactPoint(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        impact: Vector3,
+        strikeTargets: readonly StrikeTarget[],
+        renderer: VectorRenderer
+    ) {
+        const camPt = renderer.transformToCamera(
+            impact, physics.position, physics.pitch, physics.yaw, physics.roll
+        );
+        if (camPt.z < 2.0) return;
+
+        const proj = renderer.projectCameraPoint(camPt);
+
+        // Green until the predicted impact is inside a target's hit radius,
+        // then amber: that transition IS the release cue.
+        const onTarget = strikeTargets.some(
+            t => !t.destroyed && t.horizontalDistanceTo(impact) <= t.hitRadius
+        );
+        const color = onTarget ? THEME.caution : THEME.phosphor;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = onTarget ? 2.2 : 1.5;
+        if (onTarget) glow(ctx, color, 8);
+
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, 9, 0, Math.PI * 2);
+        ctx.moveTo(proj.x - 15, proj.y); ctx.lineTo(proj.x - 9, proj.y);
+        ctx.moveTo(proj.x + 9, proj.y); ctx.lineTo(proj.x + 15, proj.y);
+        ctx.moveTo(proj.x, proj.y - 15); ctx.lineTo(proj.x, proj.y - 9);
+        ctx.moveTo(proj.x, proj.y + 9); ctx.lineTo(proj.x, proj.y + 15);
+        ctx.stroke();
+        noGlow(ctx);
+
+        if (onTarget) {
+            ctx.font = font(13, 700);
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('RELEASE', proj.x, proj.y + 30);
         }
         ctx.restore();
     }

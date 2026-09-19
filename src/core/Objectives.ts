@@ -25,6 +25,12 @@ export interface ObjectiveStep {
     /** True when the player must wait for the sim rather than act. */
     waiting?: boolean;
     urgency: 'NORMAL' | 'ACTION' | 'URGENT';
+    /**
+     * Seconds left on a scenario's clock. Rendered as a large countdown beside
+     * the objective, because a deadline the player cannot see is not a
+     * deadline - it is an ambush.
+     */
+    countdownSeconds?: number;
 }
 
 export interface DeckObjectiveSnapshot {

@@ -50,6 +50,32 @@ export interface CarrierInventory {
 export type MissionState = 'ACTIVE' | 'FAILED';
 
 /**
+ * How a scenario wants the threat director to behave.
+ *
+ * The director used to be hardcoded: a fixed three-package opening act, then
+ * endless escalating waves, always. Selectable scenarios need to vary that -
+ * a strike mission wants the sky quiet so the canyon run is the challenge, a
+ * last-stand wants an immediate surge, and carrier qualification wants no
+ * enemies at all. Everything here is optional and defaults to the original
+ * behaviour.
+ */
+export interface ThreatProfile {
+    /** Opening packages. An empty array means an undefended start. */
+    openingTimeline?: InboundStrikePackage[];
+    /** Generate a new, harder wave when the timeline empties. */
+    endlessWaves?: boolean;
+    /** Escalation starts here, so a scenario can open at wave 6 difficulty. */
+    startWave?: number;
+    /** PRNG seed for wave generation. */
+    seed?: number;
+    /** Starting stocks, merged over the defaults. */
+    inventory?: Partial<CarrierInventory>;
+    /** Payload the jet is armed with for the first sortie. */
+    plannedLoadout?: AircraftLoadout;
+    plannedFuel?: number;
+}
+
+/**
  * Deterministic PRNG (mulberry32). Used for procedural strike waves so a
  * given seed always produces the same campaign — reproducible for testing,
  * still unpredictable to the player without a fixed seed choice.
@@ -152,13 +178,24 @@ export class DeckManager {
     public missionState: MissionState = 'ACTIVE';
     public waveNumber: number = 0; // 0 = the scripted opening act
     private rng: () => number = mulberry32(1988);
+    /** When false the director stops after the opening timeline is resolved. */
+    public endlessWaves: boolean = true;
 
-    constructor() {
-        this.generateThreatTimeline();
+    constructor(profile: ThreatProfile = {}) {
+        this.endlessWaves = profile.endlessWaves ?? true;
+        this.waveNumber = profile.startWave ?? 0;
+        this.rng = mulberry32(profile.seed ?? 1988);
+        this.strikeTimeline = profile.openingTimeline
+            ? profile.openingTimeline.map(p => ({ ...p }))
+            : this.defaultOpeningTimeline();
+
+        if (profile.inventory) Object.assign(this.inventory, profile.inventory);
+        if (profile.plannedLoadout) this.plannedLoadout = { ...profile.plannedLoadout };
+        if (profile.plannedFuel !== undefined) this.plannedFuel = profile.plannedFuel;
     }
 
-    private generateThreatTimeline() {
-        this.strikeTimeline = [
+    private defaultOpeningTimeline(): InboundStrikePackage[] {
+        return [
             {
                 id: 'STRIKE-1',
                 description: 'Inbound MiG-23 Flogger pair',
@@ -318,7 +355,7 @@ export class DeckManager {
         // after ~7 minutes.
         const allResolved = this.strikeTimeline.length > 0 &&
             this.strikeTimeline.every(p => p.isIntercepted || p.hasAttacked);
-        if (allResolved && this.missionState === 'ACTIVE') {
+        if (allResolved && this.endlessWaves && this.missionState === 'ACTIVE') {
             this.waveNumber++;
             this.strikeTimeline = generateWave(this.waveNumber, this.rng);
             this.log(`NEW CONTACTS DETECTED. WAVE ${this.waveNumber} INBOUND.`);

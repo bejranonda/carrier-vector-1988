@@ -14,8 +14,10 @@ import { WireframeModels } from './VectorRenderer';
 import type { ScoreKeeper } from '../core/ScoreKeeper';
 import { CONTROL_SCHEMA, bindingsFor } from '../core/Controls';
 import type { ControlContext } from '../core/Controls';
-import { THEME, WORLD, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
+import { THEME, WORLD, fitText, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
 import type { Rect } from './Theme';
+import { SCENARIOS } from '../core/Scenarios';
+import type { ScenarioCard, ScenarioDef } from '../core/Scenarios';
 
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
@@ -104,7 +106,7 @@ export class BriefingScreen {
      * world layer. Must be called BEFORE compositing; the text overlay is
      * drawn separately afterwards so it stays crisp.
      */
-    public drawBriefingBackdrop(renderer: VectorRenderer, timeSec: number) {
+    public drawBriefingBackdrop(renderer: VectorRenderer, timeSec: number, viewportH = 900) {
         // Orbit radius and pitch are chosen so the camera actually LOOKS AT
         // the origin: the old values pointed 9 degrees down from a 95 m
         // height at 330 m range, which parked the ship low and small in the
@@ -119,9 +121,11 @@ export class BriefingScreen {
         };
         renderer.renderMesh(
             this.carrierMesh,
-            // Sunk slightly so the ship sits in the gap between the phase
-            // cards and the call to action rather than on the text.
-            { x: 0, y: -34, z: 0 },
+            // Sunk so the ship sits in the gap between the loss-condition line
+            // and the call to action rather than crossing either of them. A
+            // compact layout puts that line higher, so the ship goes lower:
+            // ~1.85 screen px per world metre at this orbit radius.
+            { x: 0, y: viewportH < 760 ? -110 : -62, z: 0 },
             0,
             camPos,
             -Math.atan2(height, radius),
@@ -136,6 +140,7 @@ export class BriefingScreen {
         w: number,
         h: number,
         timeSec: number,
+        scenario: ScenarioDef,
         bestScore = 0
     ) {
         ctx.save();
@@ -146,64 +151,53 @@ export class BriefingScreen {
         // and bottom, where all the copy lives.
         const veil = ctx.createLinearGradient(0, 0, 0, h);
         veil.addColorStop(0, 'rgba(7,13,17,0.94)');
-        veil.addColorStop(0.5, 'rgba(7,13,17,0.62)');
+        veil.addColorStop(0.5, 'rgba(7,13,17,0.66)');
         veil.addColorStop(1, 'rgba(7,13,17,0.94)');
         ctx.fillStyle = veil;
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
-        const compact = h < 700 || w < 900;
+        const compact = h < 760 || w < 900;
 
         // --- Masthead ---
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = THEME.ink;
-        ctx.font = font(compact ? 34 : 44, 700);
-        ctx.fillText('CARRIER VECTOR: 1988', cx, compact ? 62 : 84);
+        ctx.font = font(compact ? 30 : 40, 700);
+        ctx.fillText('CARRIER VECTOR: 1988', cx, compact ? 48 : 68);
+
+        ctx.font = font(11);
+        ctx.fillStyle = THEME.muted;
+        let sub = 'Run the flight deck. Fly the sortie. Bring the jet home.';
+        if (bestScore > 0) sub += `   ·   PERSONAL BEST ${bestScore} PTS`;
+        ctx.fillText(sub, cx, compact ? 66 : 90);
+
+        // --- Scenario selector ---
+        const selectorY = compact ? 82 : 112;
+        this.scenarioSelector(ctx, cx, selectorY, w, scenario);
+
+        // --- Selected scenario headline ---
+        const headY = selectorY + (compact ? 66 : 76);
+        ctx.textAlign = 'center';
+        ctx.font = font(compact ? 19 : 23, 700);
+        ctx.fillStyle = THEME.caution;
+        ctx.fillText(scenario.name, cx, headY);
 
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
         ctx.fillText(
-            'Run the flight deck. Fly the sortie. Bring the jet home.',
+            `${scenario.tagline}   ·   ${scenario.duration}`,
             cx,
-            compact ? 84 : 110
+            headY + 19
         );
 
-        // A target to beat, so a second sortie has a point.
-        if (bestScore > 0) {
-            ctx.font = font(11, 600);
-            ctx.fillStyle = THEME.caution;
-            ctx.fillText(`PERSONAL BEST  ${bestScore} PTS`, cx, compact ? 100 : 130);
-        }
-
-        // --- Three phase cards ---
-        const cards: PhaseCard[] = [
-            {
-                n: '1',
-                title: 'ON THE DECK',
-                body: 'Crews arm and fuel your jet. Set the payload, then take the cat shot.',
-                keys: [['1-4', 'payload'], ['ENTER', 'launch']]
-            },
-            {
-                n: '2',
-                title: 'INTERCEPT',
-                body: 'Kill the inbound strike packages before their ETA reaches zero. Drop below the ridge line to break a SAM lock.',
-                keys: [['WASD', 'fly'], ['SPACE', 'fire']]
-            },
-            {
-                n: '3',
-                title: 'TRAP ABOARD',
-                body: 'Come back under 90 m/s at 18-28 m. Fly the meatball. A 3-wire is a perfect trap.',
-                keys: [['SHIFT', 'power'], ['CTRL', 'idle']]
-            }
-        ];
-
-        const margin = 44;
+        // --- Three phase cards, supplied by the scenario ---
         const gutter = 16;
-        const cardsY = compact ? 104 : 148;
-        const cardW = Math.min(320, (w - margin * 2 - gutter * 2) / 3);
-        const cardH = compact ? 150 : 172;
+        const cardsY = headY + (compact ? 32 : 40);
+        const cardW = Math.min(320, (w - 88 - gutter * 2) / 3);
+        const cardH = compact ? 144 : 168;
         const totalW = cardW * 3 + gutter * 2;
-        cards.forEach((card, i) => {
+        scenario.cards.forEach((card, i) => {
             this.phaseCard(ctx, {
                 x: cx - totalW / 2 + i * (cardW + gutter),
                 y: cardsY,
@@ -213,22 +207,18 @@ export class BriefingScreen {
         });
 
         // --- Loss condition: one line, not a paragraph ---
-        const lossY = cardsY + cardH + (compact ? 26 : 40);
+        const lossY = cardsY + cardH + (compact ? 22 : 34);
         ctx.textAlign = 'center';
-        ctx.font = font(13, 600);
+        ctx.font = font(12, 600);
         ctx.fillStyle = THEME.alert;
-        ctx.fillText(
-            'Every package that gets through hits CV-68. At 0% hull integrity the mission is over.',
-            cx,
-            lossY
-        );
+        ctx.fillText(fitText(ctx, scenario.lossCondition, w - 80), cx, lossY);
 
         // --- Primary call to action ---
-        const ctaY = h - (compact ? 74 : 92);
+        const ctaY = h - (compact ? 70 : 88);
         const pulse = 0.72 + 0.28 * Math.sin(timeSec * 3.2);
         ctx.save();
         ctx.globalAlpha = pulse;
-        const ctaText = 'MAN YOUR AIRCRAFT';
+        const ctaText = 'FLY THIS MISSION';
         ctx.font = font(17, 700);
         const ctaW = ctx.measureText(ctaText).width + 128;
         const ctaX = cx - ctaW / 2;
@@ -251,10 +241,14 @@ export class BriefingScreen {
 
         // --- Secondary options ---
         ctx.textBaseline = 'middle';
-        const secY = h - 32;
-        const secs: [string, string][] = [['H', 'all controls'], ['S', 'skip to airborne'], ['P', 'screen style']];
+        const secY = h - 30;
+        const secs: [string, string][] = [
+            ['←  →', 'change mission'],
+            ['H', 'all controls'],
+            ['S', 'skip to airborne'],
+            ['P', 'screen style']
+        ];
         let secW = 0;
-        ctx.font = font(11);
         for (const [k, label] of secs) {
             ctx.font = font(11, 600);
             secW += ctx.measureText(k).width + 14 + 5;
@@ -274,7 +268,77 @@ export class BriefingScreen {
         ctx.restore();
     }
 
-    private phaseCard(ctx: CanvasRenderingContext2D, r: Rect, card: PhaseCard) {
+    /**
+     * Equal-width pills, one per scenario, with the number key that selects
+     * it and a difficulty read-out. Equal widths (with the name fitted into
+     * whatever that comes to) is what keeps five entries on one row from
+     * 800px up, instead of overflowing the moment a name gets long.
+     */
+    private scenarioSelector(
+        ctx: CanvasRenderingContext2D,
+        cx: number,
+        y: number,
+        viewportW: number,
+        selected: ScenarioDef
+    ) {
+        const gap = 8;
+        const totalW = Math.min(viewportW - 72, 1000);
+        const pillW = (totalW - gap * (SCENARIOS.length - 1)) / SCENARIOS.length;
+        const pillH = 44;
+        let x = cx - totalW / 2;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+
+        SCENARIOS.forEach((s, i) => {
+            const isSelected = s.id === selected.id;
+            const accent = isSelected ? THEME.key : THEME.edgeSoft;
+
+            roundRect(ctx, x, y, pillW, pillH, 5);
+            ctx.fillStyle = isSelected ? 'rgba(95,216,255,0.14)' : 'rgba(9,19,25,0.7)';
+            ctx.fill();
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = isSelected ? 1.8 : 1;
+            ctx.stroke();
+
+            ctx.font = font(10, 700);
+            ctx.fillStyle = isSelected ? THEME.key : THEME.muted;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${i + 1}`, x + 9, y + 15);
+
+            ctx.font = font(11, isSelected ? 700 : 400);
+            ctx.fillStyle = isSelected ? THEME.ink : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(fitText(ctx, s.name, pillW - 24), x + pillW / 2, y + 15);
+
+            // Difficulty: filled pips out of five.
+            const pipR = 2.6;
+            const pipGap = 8;
+            const pipsW = pipGap * 4;
+            let px = x + pillW / 2 - pipsW / 2;
+            for (let d = 1; d <= 5; d++) {
+                ctx.beginPath();
+                ctx.arc(px, y + 31, pipR, 0, Math.PI * 2);
+                if (d <= s.difficulty) {
+                    ctx.fillStyle = s.difficulty >= 4 ? THEME.alert
+                        : s.difficulty >= 3 ? THEME.caution
+                            : THEME.phosphor;
+                    ctx.fill();
+                } else {
+                    ctx.strokeStyle = THEME.edgeSoft;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+                px += pipGap;
+            }
+
+            x += pillW + gap;
+        });
+        ctx.restore();
+    }
+
+    private phaseCard(ctx: CanvasRenderingContext2D, r: Rect, card: ScenarioCard) {
         plate(ctx, r, { fill: 'rgba(9,19,25,0.86)', border: THEME.edgeSoft, radius: 6 });
 
         ctx.save();
@@ -418,7 +482,8 @@ export class BriefingScreen {
         score: ScoreKeeper,
         wave: number,
         best = 0,
-        isNewBest = false
+        isNewBest = false,
+        result: DebriefResult = { outcome: 'FAILED', scenarioName: 'CARRIER DEFENSE', reason: null }
     ) {
         ctx.save();
         noGlow(ctx);
@@ -428,6 +493,7 @@ export class BriefingScreen {
         const cx = w / 2;
         ctx.textAlign = 'center';
 
+        const won = result.outcome === 'SUCCESS';
         const b = score.breakdown;
         const rows: [string, string][] = [
             ['WAVES SURVIVED', `${wave}`],
@@ -440,27 +506,41 @@ export class BriefingScreen {
             ['AIRFRAMES LOST', `${b.airframesLost}`],
             ['HULL DAMAGE TAKEN', `${Math.round(b.hullDamageTaken)}%`]
         ];
+        if (b.structureKills > 0) {
+            rows.splice(4, 0, ['HARDENED TARGETS HIT', `${b.structureKills}`]);
+        }
+        if (b.missionsCompleted > 0) {
+            rows.splice(1, 0, ['MISSION OBJECTIVE', 'COMPLETE']);
+        }
 
         // Lay the whole card out from a measured height and centre it. The
         // fixed y = 104 / 162 / ... offsets left a 300px void under the rank
         // on a 900px-tall window, with the prompt stranded at the bottom.
         const boxW = Math.min(460, w - 80);
         const boxH = rows.length * 22 + 36;
-        const blockH = 96 + boxH + 118;
+        const blockH = 112 + boxH + 118;
         const top = Math.max(28, (h - blockH) / 2 - 20);
 
-        ctx.fillStyle = THEME.alert;
+        const headlineColor = won ? THEME.phosphor : THEME.alert;
+        ctx.fillStyle = headlineColor;
         ctx.font = font(Math.min(38, Math.max(26, w / 38)), 700);
-        glow(ctx, THEME.alert, 12);
-        ctx.fillText('MISSION FAILED', cx, top + 40);
+        glow(ctx, headlineColor, 12);
+        ctx.fillText(won ? result.title ?? 'MISSION COMPLETE' : 'MISSION FAILED', cx, top + 40);
         noGlow(ctx);
 
         ctx.fillStyle = THEME.muted;
         ctx.font = font(13);
-        ctx.fillText('CV-68 NIMITZ IS COMBAT INEFFECTIVE', cx, top + 66);
+        ctx.fillText(
+            fitText(ctx, result.reason ?? 'CV-68 NIMITZ IS COMBAT INEFFECTIVE', w - 80),
+            cx,
+            top + 66
+        );
+        ctx.font = font(11, 600);
+        ctx.fillStyle = THEME.muted;
+        ctx.fillText(result.scenarioName, cx, top + 84);
 
         const boxX = cx - boxW / 2;
-        const boxY = top + 96;
+        const boxY = top + 112;
         plate(ctx, { x: boxX, y: boxY, w: boxW, h: boxH }, { border: THEME.edgeSoft, radius: 5 });
 
         ctx.font = font(12);
@@ -496,20 +576,22 @@ export class BriefingScreen {
         }
 
         const promptY = Math.min(h - 40, scoreY + 92);
-        const capW = keycap(ctx, cx - 70, promptY, 'ENTER', { size: 13 });
+        const capW = keycap(ctx, cx - 90, promptY, 'ENTER', { size: 13 });
         ctx.font = font(13, 600);
         ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'left';
-        ctx.fillText('fly again', cx - 70 + capW + 12, promptY);
+        ctx.fillText('back to mission select', cx - 90 + capW + 12, promptY);
         ctx.restore();
     }
 }
 
-interface PhaseCard {
-    n: string;
-    title: string;
-    body: string;
-    keys: [string, string][];
+export interface DebriefResult {
+    outcome: 'SUCCESS' | 'FAILED';
+    scenarioName: string;
+    /** Why it ended, in one line. */
+    reason: string | null;
+    /** Scenario-supplied headline for a win. */
+    title?: string;
 }
 
 /** Greedy word wrap against a measured pixel width. */

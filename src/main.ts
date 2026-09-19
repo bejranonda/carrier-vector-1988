@@ -62,6 +62,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (key === 'enter') {
                 e.preventDefault();
                 game.confirmBriefing();
+            } else if (key === 'arrowleft' || key === 'arrowright') {
+                e.preventDefault();
+                game.selectScenario(key === 'arrowleft' ? -1 : 1);
+            } else if (key >= '1' && key <= '9') {
+                // Direct scenario pick by the number shown on its pill.
+                game.selectScenarioByIndex(Number(key) - 1);
             } else if (key === 's') {
                 // Quick start for returning players
                 game.confirmBriefing();

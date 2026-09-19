@@ -11,8 +11,16 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-/** Minimal Canvas2D stub covering every call the renderer/HUD/deck view make. */
+/**
+ * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
+ *
+ * The drawing calls are plain no-ops rather than `vi.fn()`: a single frame
+ * issues thousands of them, and a long run recorded enough call arguments to
+ * abort the test worker. Nothing here asserts on draw calls - the tests assert
+ * on simulation state.
+ */
 function makeContextStub() {
+    const noop = () => {};
     return {
         canvas: { width: 1280, height: 800 },
         fillStyle: '', strokeStyle: '', lineWidth: 1, font: '',
@@ -20,17 +28,17 @@ function makeContextStub() {
         globalCompositeOperation: 'source-over' as GlobalCompositeOperation,
         textAlign: 'left' as CanvasTextAlign, textBaseline: 'alphabetic' as CanvasTextBaseline,
         filter: 'none', imageSmoothingEnabled: true,
-        fillRect: vi.fn(), clearRect: vi.fn(), strokeRect: vi.fn(),
-        beginPath: vi.fn(), closePath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-        arc: vi.fn(), arcTo: vi.fn(), ellipse: vi.fn(), rect: vi.fn(),
-        stroke: vi.fn(), fill: vi.fn(), clip: vi.fn(),
-        save: vi.fn(), restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
-        scale: vi.fn(), setTransform: vi.fn(), resetTransform: vi.fn(),
-        setLineDash: vi.fn(), drawImage: vi.fn(),
-        fillText: vi.fn(),
+        fillRect: noop, clearRect: noop, strokeRect: noop,
+        beginPath: noop, closePath: noop, moveTo: noop, lineTo: noop,
+        arc: noop, arcTo: noop, ellipse: noop, rect: noop,
+        stroke: noop, fill: noop, clip: noop,
+        save: noop, restore: noop, translate: noop, rotate: noop,
+        scale: noop, setTransform: noop, resetTransform: noop,
+        setLineDash: noop, drawImage: noop,
+        fillText: noop,
         measureText: (t: string) => ({ width: t.length * 7 }),
-        createLinearGradient: () => ({ addColorStop: vi.fn() }),
-        createRadialGradient: () => ({ addColorStop: vi.fn() })
+        createLinearGradient: () => ({ addColorStop: noop }),
+        createRadialGradient: () => ({ addColorStop: noop })
     };
 }
 
@@ -306,6 +314,146 @@ describe('GameLoop integration smoke test', () => {
         runFrames(game, 5);
         const flightObj = game.currentObjective();
         expect(flightObj.title.length).toBeGreaterThan(0);
+    });
+
+    // --- Scenarios -------------------------------------------------------
+
+    it('defaults to the endless carrier defence scenario', () => {
+        const game = new GameLoop(makeCanvasStub());
+        expect(game.scenario.id).toBe('CARRIER_DEFENSE');
+        expect(game.strikeTargets).toHaveLength(0);
+        // The intro mode still teaches; a scripted mission does not.
+        expect(game.training.checklist().length).toBe(6);
+    });
+
+    it('rebuilds the world when a scenario is selected', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('CANYON_STRIKE');
+        game.confirmBriefing();
+
+        expect(game.phase).toBe('ACTIVE');
+        expect(game.scenario.id).toBe('CANYON_STRIKE');
+        expect(game.strikeTargets).toHaveLength(1);
+        expect(game.strikeTargets[0].destroyed).toBe(false);
+        // The strike mission arms bombs and silences the wave director.
+        expect(game.deck.plannedLoadout.ironBombs).toBeGreaterThan(0);
+        expect(game.deck.strikeTimeline).toHaveLength(0);
+        expect(game.training.checklist()).toHaveLength(0);
+        runFrames(game, 60);
+    });
+
+    it('starts carrier quals airborne with an empty sky', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('CARRIER_QUALS');
+        game.confirmBriefing();
+
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+        expect(game.currentView).toBe('MICRO_FLIGHT');
+        expect(game.sensors.samSites).toHaveLength(0);
+        expect(game.airborneTargets).toHaveLength(0);
+        runFrames(game, 60);
+        expect(game.phase).toBe('ACTIVE');
+    });
+
+    it('flies the canyon strike through every phase to a mission success', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('CANYON_STRIKE');
+        game.confirmBriefing();
+
+        // Launch.
+        expect(game.requestCatapultLaunch()).toBe(true);
+        runFrames(game, 240);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+        expect(game.missionStatus.phase?.id).toBe('INGRESS');
+
+        // Run the fjord: put the jet on the target and release.
+        const target = game.strikeTargets[0];
+        game.physics.position = { x: target.position.x, y: 120, z: target.position.z - 900 };
+        game.physics.velocity = { x: 0, y: 0, z: 200 };
+        runFrames(game, 10);
+        expect(game.missionStatus.phase?.id).toBe('STRIKE');
+
+        // Drop it straight in rather than modelling a real delivery, then get
+        // the jet clear so it does not fly into the fjord floor while the
+        // bomb is still falling (which would fail the mission instead).
+        game.physics.position = { x: target.position.x, y: 60, z: target.position.z };
+        game.physics.velocity = { x: 0, y: -40, z: 0 };
+        game.selectedWeapon = 'BOMB';
+        game.weapons.dropBomb(game.physics);
+        game.physics.position = { x: target.position.x, y: 1500, z: target.position.z };
+        game.physics.velocity = { x: 0, y: 0, z: 200 };
+        runFrames(game, 120);
+        expect(target.destroyed).toBe(true);
+        expect(game.score.breakdown.structureKills).toBe(1);
+        expect(game.missionStatus.phase?.id).toBe('EGRESS');
+
+        // Egress clear of the fjord, then trap aboard.
+        game.physics.position = { x: 0, y: 400, z: 1500 };
+        runFrames(game, 10);
+        expect(game.missionStatus.phase?.id).toBe('RECOVER');
+
+        game.physics.position = { x: 0, y: 22, z: -100 };
+        game.physics.velocity = { x: 0, y: 0, z: -40 };
+        runFrames(game, 20);
+
+        expect(game.score.breakdown.traps).toBeGreaterThan(0);
+        expect(game.phase).toBe('DEBRIEF');
+        expect(game.missionOutcome).toBe('SUCCESS');
+        expect(game.score.breakdown.missionsCompleted).toBe(1);
+    });
+
+    it('runs the canyon strike raid window down while the pen stands', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('CANYON_STRIKE');
+        game.confirmBriefing();
+
+        // The status is published by the first simulation tick, not by
+        // confirmBriefing() itself.
+        runFrames(game, 5);
+        const atStart = game.missionStatus.secondsRemaining;
+        expect(atStart).toBeCloseTo(240, 0);
+
+        game.requestCatapultLaunch();
+        runFrames(game, 600);
+
+        expect(game.strikeTargets[0].destroyed).toBe(false);
+        expect(game.missionStatus.secondsRemaining).not.toBeNull();
+        expect(game.missionStatus.secondsRemaining!).toBeLessThan(atStart!);
+        // (The window actually expiring is asserted in Scenarios.test.ts,
+        // which can reach T+240 without simulating four minutes of frames.)
+    });
+
+    it('returns to mission select from the debrief', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('LAST_STAND');
+        game.confirmBriefing();
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 20);
+        expect(game.phase).toBe('DEBRIEF');
+        expect(game.missionOutcome).toBe('FAILED');
+
+        game.restartFromDebrief();
+        expect(game.phase).toBe('BRIEFING');
+        expect(game.missionOutcome).toBe('ACTIVE');
+        // The selection is kept, so "fly it again" is one keypress.
+        expect(game.scenario.id).toBe('LAST_STAND');
+        runFrames(game, 30);
+    });
+
+    it('steps and wraps the scenario selector', () => {
+        const game = new GameLoop(makeCanvasStub());
+        const first = game.scenario.id;
+        game.selectScenario(1);
+        expect(game.scenario.id).not.toBe(first);
+        game.selectScenario(-1);
+        expect(game.scenario.id).toBe(first);
+        game.selectScenario(-1);
+        expect(game.scenario.id).toBe('CARRIER_QUALS');
     });
 
     it('cycles the display mode without throwing', () => {

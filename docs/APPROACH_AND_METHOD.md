@@ -216,6 +216,49 @@ Legibility was treated as measurable, not as taste.
   1600x900 against 16.7 ms without it, so only `RETRO` pays for it; `MODERN`
   buys its glow from the ¼-resolution bloom pass instead.
 
+## 6c. Missions as Data
+
+The game shipped with one mode, and every system a second mode would need was
+already present — a navigable canyon, radar line of sight, hardened SAM sites,
+iron bombs, graded traps. What was missing was anything that asked the player
+to use them **in a particular order**. The bomb was dead weight and the canyon
+was only ever cover.
+
+A scenario is therefore a piece of data, not a code path:
+
+```
+ScenarioDef = world setup + ordered phases + failure predicate + prose
+```
+
+`core/Scenarios.ts` imports no subsystem and touches no canvas. That has two
+consequences worth stating plainly. First, mission *copy* is unit-testable —
+every phase's `detail()` is exercised against hostile snapshots (a null range,
+no bombs, a dead target) so the HUD can never ask a mission what to say and get
+an exception. Second, `GameLoop` never branches on a mission id: if a scenario
+needs something new from the world, it goes in `ScenarioSetup` and the loop
+applies it generically. Adding a sixth mission touches one file.
+
+### What the phases caught
+
+Writing the director surfaced three design errors that a hand-rolled state
+machine would have buried:
+
+- **Failure outranked victory.** Both can become true on the same tick —
+  landing the final sortie on the last airframe. A mission you have already
+  completed cannot fail, so victory is tested first.
+- **One crash ended the raid.** `CANYON_STRIKE` originally failed outright on a
+  lost airframe, which made its four-minute window decorative: you never lived
+  long enough for it to matter. Losing a jet now costs the ~30s
+  hangar-and-rearm cycle and the clock does the punishing — which is the
+  tension the mission was for.
+- **The objective line lied on the deck.** An air phase kept insisting "RUN THE
+  FJORD — 8.1 km to the pen" at a pilot sitting in the hangar. Phases now
+  declare whether they are about the deck, and hand the line back when they are
+  not.
+
+The last one is the general lesson from this codebase repeated once more: a
+system that is well implemented but wired to the wrong screen is worth nothing.
+
 ## 7. Testing Method
 
 Canvas rendering cannot be asserted in a node environment, so the method is to
@@ -232,6 +275,9 @@ Canvas rendering cannot be asserted in a node environment, so the method is to
 | `BriefingScreen.warmupEnvelope` | Boot animation phases |
 | `getContextualHint` | Coach priority policy |
 | `deckObjective` / `flightObjective` | Objective phrasing and precedence, for every state |
+| `MissionDirector` | Phase progression, victory/failure precedence, mission clocks |
+| `StrikeTarget.registerImpact` | Hardened-target hit geometry, including the boundary |
+| `WeaponsSystem.predictBombImpact` | CCIP agreement with the real bomb path |
 | `fitText` | Text never overflows the panel it is drawn in |
 | `DISPLAY_MODES` / `loadDisplayMode` | Effect ladder ordering and storage failure modes |
 | `recordBestScore` | Personal-best comparison and corrupt-storage handling |
