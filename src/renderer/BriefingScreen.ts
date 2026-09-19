@@ -21,6 +21,7 @@ import type { ScenarioCard, ScenarioDef } from '../core/Scenarios';
 import { DEFAULT_MAP, mapById } from '../tactics/TerrainProfiles';
 import { isCleared, recordFor } from '../core/MissionRecords';
 import type { MissionRecords } from '../core/MissionRecords';
+import type { DailyResult } from '../core/DailySortie';
 
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
@@ -145,7 +146,9 @@ export class BriefingScreen {
         timeSec: number,
         scenario: ScenarioDef,
         bestScore = 0,
-        records: MissionRecords = {}
+        records: MissionRecords = {},
+        pacingLabel = 'ops tempo',
+        daily: DailyPanel | null = null
     ) {
         ctx.save();
         noGlow(ctx);
@@ -178,8 +181,11 @@ export class BriefingScreen {
         if (bestScore > 0) sub += `   ·   PERSONAL BEST ${bestScore} PTS`;
         ctx.fillText(fitText(ctx, sub, w - 60), cx, compact ? 66 : 90);
 
+        // --- Daily sortie ---
+        if (daily) this.dailyPanel(ctx, cx, compact ? 74 : 98, w, daily, timeSec);
+
         // --- Scenario selector ---
-        const selectorY = compact ? 82 : 112;
+        const selectorY = (compact ? 82 : 112) + (daily ? 34 : 0);
         const recommended = recommendScenario(records);
         this.scenarioSelector(ctx, cx, selectorY, w, scenario, records, recommended.id);
 
@@ -271,6 +277,7 @@ export class BriefingScreen {
             ['←  →', 'change mission'],
             ['H', 'all controls'],
             ['S', 'skip to airborne'],
+            ['O', pacingLabel],
             ['P', 'screen style']
         ];
         let secW = 0;
@@ -290,6 +297,62 @@ export class BriefingScreen {
             sx += ctx.measureText(label).width + 18;
         }
 
+        ctx.restore();
+    }
+
+    /**
+     * One line above the mission list: the same run for everybody, today only.
+     * It is the only thing in this game that can leave the tab, so it gets the
+     * first thing the eye lands on after the title.
+     */
+    private dailyPanel(
+        ctx: CanvasRenderingContext2D,
+        cx: number,
+        y: number,
+        viewportW: number,
+        daily: DailyPanel,
+        timeSec: number
+    ) {
+        const flown = daily.result !== null;
+        const accent = flown ? THEME.phosphor : THEME.caution;
+        const headline = `DAILY SORTIE #${daily.number}`;
+        const detail = flown
+            ? `TODAY: WAVE ${daily.result!.wave} · ${daily.result!.score.toLocaleString('en-US')} PTS · ${daily.result!.rank}`
+            : 'Same seed for every pilot in the world. One run, one score to share.';
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.font = font(12, 700);
+        const headW = ctx.measureText(headline).width;
+        ctx.font = font(11);
+        // Measured as drawn, separator included - measuring the bare detail
+        // left the line truncated with an ellipsis inside its own plate.
+        const detailW = ctx.measureText(`   ·   ${detail}`).width;
+        const w = Math.min(viewportW - 72, headW + detailW + 62);
+        const x = cx - w / 2;
+
+        plate(ctx, { x, y, w, h: 30 }, { fill: 'rgba(9,19,25,0.8)', border: accent, radius: 5 });
+
+        // A quiet pulse when it has not been flown today: this is the thing a
+        // returning player is here for, and it should catch the eye once.
+        ctx.globalAlpha = flown ? 1 : 0.8 + 0.2 * Math.sin(timeSec * 2.6);
+        const capW = keycap(ctx, x + 10, y + 15, 'D', { size: 11 });
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(12, 700);
+        ctx.fillStyle = accent;
+        ctx.fillText(headline, x + 10 + capW + 10, y + 15);
+
+        ctx.font = font(11);
+        ctx.fillStyle = THEME.muted;
+        const detailX = x + 10 + capW + 10 + ctx.measureText(headline).width;
+        ctx.font = font(11);
+        ctx.fillText(
+            fitText(ctx, `   ·   ${detail}`, w - (detailX - x) - 14),
+            detailX,
+            y + 15
+        );
         ctx.restore();
     }
 
@@ -574,9 +637,33 @@ export class BriefingScreen {
         // fixed y = 104 / 162 / ... offsets left a 300px void under the rank
         // on a 900px-tall window, with the prompt stranded at the bottom.
         const boxW = Math.min(460, w - 80);
+
+        /**
+         * On a short window the full nine-row breakdown plus a share card is
+         * taller than the viewport. Rather than clipping it - the deck screen
+         * and the cockpit both shed content instead of clipping, and this
+         * should match - drop the rows that read zero, which are exactly the
+         * ones carrying no information.
+         */
+        const fullHeight = (n: number) => 112 + (n * 22 + 36) + 118
+            + (result.shareCard ? result.shareCard.split('\n').length * 17 + 46 + 56 : 0);
+        let compact = false;
+        if (fullHeight(rows.length) > h - 40) {
+            const essential = new Set(['WAVES SURVIVED', 'MISSION OBJECTIVE']);
+            const trimmed = rows.filter(([label, value]) =>
+                essential.has(label) || !/^0%?$/.test(value));
+            rows.length = 0;
+            rows.push(...trimmed);
+            compact = fullHeight(rows.length) > h - 40;
+        }
+
         const boxH = rows.length * 22 + 36;
-        const blockH = 112 + boxH + 118;
-        const top = Math.max(28, (h - blockH) / 2 - 20);
+        // The share card is part of the block, not an afterthought pasted
+        // under it: leaving it out of the height left the ENTER prompt drawn
+        // straight through the card on a 700px-tall window.
+        const cardH = result.shareCard ? result.shareCard.split('\n').length * 17 + 46 : 0;
+        const blockH = 112 + boxH + 118 + (cardH ? cardH + 56 : 0);
+        const top = Math.max(20, (h - blockH) / 2 - 20);
 
         const headlineColor = won ? THEME.phosphor : THEME.alert;
         ctx.fillStyle = headlineColor;
@@ -614,15 +701,26 @@ export class BriefingScreen {
 
         const scoreY = boxY + boxH + 44;
         ctx.textAlign = 'center';
-        ctx.fillStyle = THEME.caution;
-        ctx.font = font(30, 700);
-        ctx.fillText(`${score.totalScore} PTS`, cx, scoreY);
-        ctx.font = font(17, 700);
-        ctx.fillStyle = THEME.ink;
-        ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 30);
+
+        /**
+         * On a window too short for both, the share card IS the summary - it
+         * already carries the score and the rank - so the big readout stands
+         * down rather than pushing the card off the bottom of the screen.
+         */
+        const showScoreBlock = !(compact && result.shareCard);
+        if (showScoreBlock) {
+            ctx.fillStyle = THEME.caution;
+            ctx.font = font(30, 700);
+            ctx.fillText(`${score.totalScore} PTS`, cx, scoreY);
+            ctx.font = font(17, 700);
+            ctx.fillStyle = THEME.ink;
+            ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 30);
+        }
 
         ctx.font = font(12, 600);
-        if (isNewBest) {
+        if (!showScoreBlock) {
+            // Nothing: the card says it.
+        } else if (isNewBest) {
             ctx.fillStyle = THEME.phosphor;
             glow(ctx, THEME.phosphor, 8);
             ctx.fillText('NEW PERSONAL BEST', cx, scoreY + 54);
@@ -634,7 +732,7 @@ export class BriefingScreen {
 
         // ...and how this run compares on THIS mission, which for anything
         // other than the endless defence is the number that means something.
-        if (result.missionBest !== undefined && result.missionBest > 0) {
+        if (showScoreBlock && result.missionBest !== undefined && result.missionBest > 0) {
             ctx.font = font(11, 600);
             ctx.fillStyle = result.isMissionBest ? THEME.phosphor : THEME.muted;
             ctx.fillText(
@@ -646,18 +744,66 @@ export class BriefingScreen {
             );
         }
 
-        if (result.nextUp) {
+        // Below the personal-best and mission-best lines, which both live at
+        // scoreY + 54 / + 74 and were being covered by the card's top edge.
+        const cardY = showScoreBlock ? scoreY + 96 : boxY + boxH + 24;
+        if (result.shareCard) {
+            this.shareCard(ctx, cx, cardY, w, result.shareCard, result.copied === true);
+        } else if (result.nextUp) {
             ctx.font = font(11, 600);
             ctx.fillStyle = THEME.key;
             ctx.fillText(fitText(ctx, `NEXT UP: ${result.nextUp}`, w - 80), cx, scoreY + 94);
         }
 
-        const promptY = Math.min(h - 40, scoreY + 112);
+        // Below the card, or below the score block when there is no card. Not
+        // clamped into the card: a prompt drawn over the thing it refers to is
+        // worse than a prompt slightly off the bottom.
+        const promptY = result.shareCard
+            ? cardY + cardH + 26
+            : Math.min(h - 32, scoreY + 112);
         const capW = keycap(ctx, cx - 90, promptY, 'ENTER', { size: 13 });
         ctx.font = font(13, 600);
         ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'left';
         ctx.fillText('back to mission select', cx - 90 + capW + 12, promptY);
+        ctx.restore();
+    }
+
+    /**
+     * The daily result, as the text that gets pasted somewhere. Drawn as the
+     * card itself rather than as a prettier summary, so what the player sees
+     * is exactly what lands in the clipboard.
+     */
+    private shareCard(
+        ctx: CanvasRenderingContext2D,
+        cx: number,
+        y: number,
+        viewportW: number,
+        card: string,
+        copied: boolean
+    ) {
+        const lines = card.split('\n');
+        ctx.save();
+        noGlow(ctx);
+        ctx.font = font(11);
+        const w = Math.min(viewportW - 60, Math.max(...lines.map(l => ctx.measureText(l).width)) + 48);
+        const h = lines.length * 17 + 46;
+        const x = cx - w / 2;
+        plate(ctx, { x, y, w, h }, { fill: 'rgba(9,19,25,0.9)', border: THEME.phosphor, radius: 5 });
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        lines.forEach((line, i) => {
+            ctx.font = font(i === 0 ? 11 : i === 1 ? 13 : 11, i <= 1 ? 700 : 400);
+            ctx.fillStyle = i === 1 ? THEME.ink : i === 0 ? THEME.phosphor : THEME.muted;
+            ctx.fillText(fitText(ctx, line, w - 24), cx, y + 18 + i * 17);
+        });
+
+        const capW = keycap(ctx, cx - 58, y + h - 15, 'C', { size: 11 });
+        ctx.font = font(11, 600);
+        ctx.fillStyle = copied ? THEME.phosphor : THEME.muted;
+        ctx.textAlign = 'left';
+        ctx.fillText(copied ? 'copied to clipboard' : 'copy result', cx - 58 + capW + 10, y + h - 15);
         ctx.restore();
     }
 }
@@ -675,6 +821,16 @@ export interface DebriefResult {
     isMissionBest?: boolean;
     /** The mission the debrief suggests flying next, if any. */
     nextUp?: string;
+    /** The daily result as shareable text, when this was a daily run. */
+    shareCard?: string | null;
+    /** Whether the card has just been copied, for the confirmation line. */
+    copied?: boolean;
+}
+
+/** What the briefing needs to draw the daily sortie line. */
+export interface DailyPanel {
+    number: number;
+    result: DailyResult | null;
 }
 
 /** Greedy word wrap against a measured pixel width. */

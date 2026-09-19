@@ -33,6 +33,7 @@ import { formatEta } from '../core/Objectives';
 import type { StrikeTarget } from '../tactics/StrikeTarget';
 import type { TargetSolution } from '../tactics/TargetDesignation';
 import type { ControlDemand } from '../flight/FlightAssist';
+import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
 import type { HudLayout } from './HudLayout';
@@ -54,6 +55,20 @@ export interface AirborneTarget {
     position: Vector3;
     velocity: Vector3;
     isAlive: boolean;
+
+    /**
+     * Structural integrity, 0-100. Optional and defaulted to full by the
+     * weapons system, so a plain target literal still works.
+     *
+     * It exists because a single 20 mm round inside an eighteen-metre radius
+     * used to destroy any aircraft instantly. That made the cannon both
+     * trivially easy and completely weightless: there was no such thing as
+     * hitting something, only killing it, so there was nothing to give the
+     * player feedback about.
+     */
+    integrity?: number;
+    /** Seconds remaining on the hit flash the renderer draws. */
+    hitFlash?: number;
 
     /**
      * Visual orientation, derived from the velocity vector by EnemyAI so
@@ -86,6 +101,12 @@ export interface HudContext {
     assistLabel?: string;
     /** Which flight-control protection is taking authority this frame. */
     assistOverride?: ControlDemand['override'];
+    /** "That worked": kills, traps, losses. Newest first. */
+    callouts?: readonly Callout[];
+    /** Seconds left on the cannon hit marker, 0 when no round has connected. */
+    hitMarker?: number;
+    /** Wire grade to stamp over the deck while the trap payoff plays. */
+    trapStamp?: string | null;
 }
 
 /**
@@ -188,6 +209,9 @@ export class HUD {
         );
         if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, layout.cx);
         if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
+        if (context.hitMarker) this.drawHitMarker(ctx, layout, context.hitMarker);
+        this.drawCallouts(ctx, context.callouts ?? [], layout);
+        if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         this.drawScoreChip(ctx, context.score);
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
@@ -629,6 +653,96 @@ export class HUD {
             ctx.fillText(text, x, y);
             x += ctx.measureText(text).width + 14;
         }
+        ctx.restore();
+    }
+
+    /**
+     * A round connected. Four short strokes around the boresight, drawn for a
+     * fifth of a second. Without it the cannon has exactly two states -
+     * nothing and an explosion - and at 1.5 km through a wireframe a player
+     * cannot tell a hit from a miss.
+     */
+    private drawHitMarker(ctx: CanvasRenderingContext2D, layout: HudLayout, life: number) {
+        const strength = Math.min(1, life / 0.18);
+        ctx.save();
+        noGlow(ctx);
+        ctx.globalAlpha = strength;
+        ctx.strokeStyle = THEME.caution;
+        ctx.lineWidth = 2.4;
+        const inner = 9;
+        const outer = 9 + 9 * strength;
+        const { cx, cy } = layout;
+        ctx.beginPath();
+        for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+            ctx.moveTo(cx + sx * inner, cy + sy * inner);
+            ctx.lineTo(cx + sx * outer, cy + sy * outer);
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /**
+     * Kill / trap / loss callouts. Their own band, deliberately below the
+     * waterline and above the systems block: the warning band answers "what is
+     * about to kill me" and must never queue behind "that worked".
+     */
+    private drawCallouts(ctx: CanvasRenderingContext2D, callouts: readonly Callout[], layout: HudLayout) {
+        if (callouts.length === 0) return;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        let y = layout.cy + 118;
+        for (const c of callouts) {
+            const progress = 1 - c.life / c.span;
+            // Hold, then fade in the last third.
+            const alpha = progress < 0.66 ? 1 : Math.max(0, 1 - (progress - 0.66) / 0.34);
+            const color = c.tone === 'LOSS' ? THEME.alert
+                : c.tone === 'PRAISE' ? THEME.caution
+                    : THEME.phosphor;
+
+            ctx.globalAlpha = alpha;
+            ctx.font = font(c.tone === 'PRAISE' ? 22 : 18, 700);
+            const w = Math.max(ctx.measureText(c.text).width, c.detail ? ctx.measureText(c.detail).width : 0) + 34;
+            const h = c.detail ? 44 : 30;
+            plate(ctx, { x: layout.cx - w / 2, y, w, h },
+                { fill: 'rgba(6,13,17,0.72)', border: color, radius: 4 });
+
+            ctx.fillStyle = color;
+            ctx.fillText(c.text, layout.cx, y + (c.detail ? 17 : 15));
+            if (c.detail) {
+                ctx.font = font(10, 600);
+                ctx.fillStyle = THEME.muted;
+                ctx.fillText(fitText(ctx, c.detail, w - 20), layout.cx, y + 33);
+            }
+
+            y += h + 6;
+        }
+        ctx.restore();
+    }
+
+    /** The wire grade, stamped over the deck while the trap payoff plays. */
+    private drawTrapStamp(ctx: CanvasRenderingContext2D, grade: string, layout: HudLayout) {
+        const bolter = grade === 'BOLTER';
+        const color = bolter ? THEME.alert : THEME.caution;
+        ctx.save();
+        noGlow(ctx);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(Math.min(64, Math.max(34, this.width / 20)), 700);
+        const w = ctx.measureText(grade).width + 80;
+        const y = layout.cy - 150;
+        plate(ctx, { x: layout.cx - w / 2, y: y - 44, w, h: 88 },
+            { fill: 'rgba(6,13,17,0.82)', border: color, radius: 6 });
+        ctx.fillStyle = color;
+        glow(ctx, color, 14);
+        ctx.fillText(grade, layout.cx, y - 6);
+        noGlow(ctx);
+        ctx.font = font(12, 600);
+        ctx.fillStyle = THEME.muted;
+        ctx.fillText(bolter ? 'GO AROUND' : 'TRAPPED ABOARD CV-68', layout.cx, y + 26);
         ctx.restore();
     }
 

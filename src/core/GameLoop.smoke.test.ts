@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { angleDelta } from '../flight/FlightAssist';
+import type { AirborneTarget } from '../renderer/HUD';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -78,10 +79,19 @@ describe('GameLoop integration smoke test', () => {
         vi.resetModules();
     });
 
-    /** Drive n frames of the private step() via its public rAF entry. */
+    /**
+     * Drive n frames of the private step() via its public rAF entry.
+     *
+     * The timestamp continues from wherever the last call left it. It used to
+     * restart at zero, which handed step() a timestamp earlier than the one
+     * before and cost a frame on every call - harmless for a single long run,
+     * but it meant `runFrames(game, 1)` in a loop advanced the simulation not
+     * at all, silently.
+     */
     function runFrames(game: InstanceType<typeof GameLoop>, frames: number, msPerFrame = 16.7) {
-        const step = (game as unknown as { step: (t: number) => void }).step.bind(game);
-        let t = 0;
+        const inner = game as unknown as { step: (t: number) => void; lastTimestamp: number };
+        const step = inner.step.bind(game);
+        let t = inner.lastTimestamp || 0;
         for (let i = 0; i < frames; i++) {
             t += msPerFrame;
             step(t);
@@ -467,6 +477,412 @@ describe('GameLoop integration smoke test', () => {
         expect(game.scenario.id).toBe(first);
         game.selectScenario(-1);
         expect(game.scenario.id).toBe('CARRIER_QUALS');
+    });
+
+    // -----------------------------------------------------------------
+    // Daily sortie
+    // -----------------------------------------------------------------
+
+    it('starts the daily on the endless defence, seeded from the date', () => {
+        const day = new Date('2026-09-19T08:00:00Z');
+        const a = new GameLoop(makeCanvasStub());
+        runFrames(a, 150);
+        a.startDailySortie(day);
+
+        const b = new GameLoop(makeCanvasStub());
+        runFrames(b, 150);
+        b.startDailySortie(day);
+
+        expect(a.scenario.id).toBe('CARRIER_DEFENSE');
+        expect(a.isDailyRun).toBe(true);
+        expect(a.phase).toBe('ACTIVE');
+        // The whole point: two players, same day, same campaign.
+        expect(a.deck.strikeTimeline).toEqual(b.deck.strikeTimeline);
+    });
+
+    it('gives a different campaign on a different day', () => {
+        /** Resolve the opening act so the seeded wave director takes over. */
+        const escalate = (game: InstanceType<typeof GameLoop>) => {
+            for (const pkg of game.deck.strikeTimeline) pkg.isIntercepted = true;
+            runFrames(game, 30);
+            return game.deck.strikeTimeline.map(p => [p.aircraftType, p.count]);
+        };
+
+        const a = new GameLoop(makeCanvasStub());
+        runFrames(a, 150);
+        a.startDailySortie(new Date('2026-09-19T08:00:00Z'));
+
+        const b = new GameLoop(makeCanvasStub());
+        runFrames(b, 150);
+        b.startDailySortie(new Date('2026-09-20T08:00:00Z'));
+
+        const waveA = escalate(a);
+        const waveB = escalate(b);
+        expect(waveA.length).toBeGreaterThan(0);
+        expect(waveA).not.toEqual(waveB);
+    });
+
+    it('gives two pilots on the same day the same escalation, not just the same opening', () => {
+        const day = new Date('2026-09-19T08:00:00Z');
+        const escalate = (game: InstanceType<typeof GameLoop>) => {
+            for (const pkg of game.deck.strikeTimeline) pkg.isIntercepted = true;
+            runFrames(game, 30);
+            return game.deck.strikeTimeline.map(p => [p.aircraftType, p.count]);
+        };
+
+        const a = new GameLoop(makeCanvasStub());
+        runFrames(a, 150);
+        a.startDailySortie(day);
+
+        const b = new GameLoop(makeCanvasStub());
+        runFrames(b, 150);
+        b.startDailySortie(day);
+
+        expect(escalate(a)).toEqual(escalate(b));
+    });
+
+    it('forces arcade pacing so the comparison is like for like', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.pacing = 'SIM';
+        runFrames(game, 150);
+        game.startDailySortie();
+        expect(game.pacing).toBe('ARCADE');
+    });
+
+    it('records the run and builds a shareable card when it ends', () => {
+        const day = new Date('2026-09-19T08:00:00Z');
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.startDailySortie(day);
+
+        expect(game.todaysDaily(day)).toBeNull();
+
+        // Sink the boat to end the run.
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+        expect(game.phase).toBe('DEBRIEF');
+
+        const today = game.todaysDaily(day);
+        expect(today).not.toBeNull();
+        expect(today!.attempts).toBe(1);
+        expect(game.dailyCard).toContain('DAILY SORTIE #');
+        expect(game.dailyCard).toContain('attempt 1');
+    });
+
+    it('counts a second attempt and keeps the better run', () => {
+        const day = new Date('2026-09-19T08:00:00Z');
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+
+        game.startDailySortie(day);
+        game.score.recordKill('BOMBER');
+        game.score.recordKill('BOMBER');
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+        const best = game.todaysDaily(day)!.score;
+
+        game.restartFromDebrief();
+        game.startDailySortie(day);
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+
+        const today = game.todaysDaily(day)!;
+        expect(today.attempts).toBe(2);
+        expect(today.score).toBe(best);
+        expect(game.dailyCard).toContain('attempt 2');
+    });
+
+    it('does not record an ordinary mission as the daily', () => {
+        const day = new Date('2026-09-19T08:00:00Z');
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+
+        expect(game.phase).toBe('DEBRIEF');
+        expect(game.todaysDaily(day)).toBeNull();
+        expect(game.dailyCard).toBeNull();
+    });
+
+    it('does not fall over when the clipboard is unavailable', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        expect(game.copyDailyCard()).toBe(false);
+
+        game.startDailySortie();
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+        expect(() => game.copyDailyCard()).not.toThrow();
+    });
+
+    // -----------------------------------------------------------------
+    // Feel: shake, callouts, hit feedback, the trap payoff
+    // -----------------------------------------------------------------
+
+    it('shakes the camera when you shoot, and settles back to still', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        // An empty sky: nothing but the player's own trigger can add trauma,
+        // so "it settles" is a statement about the decay and not about how
+        // quiet the fight happened to be.
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+        runFrames(game, 5);
+
+        expect(game.trauma).toBe(0);
+        game.inputState[' '] = true;
+        runFrames(game, 30);
+        game.inputState[' '] = false;
+        expect(game.trauma).toBeGreaterThan(0);
+
+        runFrames(game, 180);
+        expect(game.trauma).toBe(0);
+    });
+
+    /**
+     * The shake is a camera effect. If it ever reaches the flight model,
+     * every fixed-timestep guarantee in this project becomes a coin flip.
+     */
+    it('never lets the shake touch the flight model', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 5);
+
+        const attitude = { pitch: game.physics.pitch, roll: game.physics.roll, yaw: game.physics.yaw };
+        game.shake(1);
+        runFrames(game, 1);
+        expect(game.physics.roll).toBeCloseTo(attitude.roll, 6);
+        expect(game.physics.yaw).toBeCloseTo(attitude.yaw, 6);
+    });
+
+    it('calls out a kill and clears the callout after its lifetime', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        // One bandit dead ahead, killed with a Sidewinder: the missile homes,
+        // so this tests the kill -> callout wiring rather than the author's
+        // ability to fly a gun solution in a headless test.
+        const p = game.physics.position;
+        const bandit: AirborneTarget = {
+            id: 'BANDIT', name: 'MiG-23 FLOGGER #1', isAlive: true,
+            position: { x: p.x, y: p.y, z: p.z + 2500 },
+            velocity: { x: 0, y: 0, z: 0 }
+        };
+        game.airborneTargets = [bandit];
+        game.sensors.samSites = [];
+        runFrames(game, 2);
+
+        game.tracker.designateById('BANDIT');
+        game.selectedWeapon = 'AIM9';
+        game.physics.loadout.sidewinders = 2;
+        game.fireSelectedWeapon();
+
+        for (let i = 0; i < 40 && bandit.isAlive; i++) runFrames(game, 15);
+
+        expect(bandit.isAlive).toBe(false);
+        expect(game.score.breakdown.fighterKills).toBe(1);
+        expect(game.callouts.active().length).toBeGreaterThan(0);
+        expect(game.callouts.active()[0].text).toBe('SPLASH ONE');
+        expect(game.callouts.active()[0].detail).toBe('MiG-23 FLOGGER #1');
+
+        runFrames(game, 180);
+        expect(game.callouts.active()).toHaveLength(0);
+    });
+
+    it('counts the splashes up within a sortie and resets them on the next one', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        game.sensors.samSites = [];
+
+        const killOne = (id: string) => {
+            const p = game.physics.position;
+            const bandit: AirborneTarget = {
+                id, name: `MiG-23 FLOGGER ${id}`, isAlive: true,
+                position: { x: p.x, y: p.y, z: p.z + 2200 },
+                velocity: { x: 0, y: 0, z: 0 }
+            };
+            game.airborneTargets = [bandit];
+            runFrames(game, 2);
+            game.tracker.designateById(id);
+            game.selectedWeapon = 'AIM9';
+            game.physics.loadout.sidewinders = 2;
+            game.fireSelectedWeapon();
+            for (let i = 0; i < 40 && bandit.isAlive; i++) runFrames(game, 15);
+        };
+
+        killOne('A');
+        expect(game.callouts.active()[0].text).toBe('SPLASH ONE');
+        killOne('B');
+        expect(game.callouts.active()[0].text).toBe('SPLASH TWO');
+    });
+
+    it('holds the cockpit for the wire, then hands over to the deck', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        // On the wires, slow enough to catch one.
+        game.physics.position = { x: 0, y: 22, z: -100 };
+        game.physics.velocity = { x: 0, y: 0, z: -40 };
+        runFrames(game, 20);
+
+        expect(game.score.breakdown.traps).toBeGreaterThan(0);
+        // Still in the cockpit, with the grade on the glass.
+        expect(game.currentView).toBe('MICRO_FLIGHT');
+
+        runFrames(game, 150); // 2.5 s: the payoff plays out
+        expect(game.currentView).toBe('MACRO_DECK');
+    });
+
+    it('starts each mission with clean presentation state', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        game.shake(1);
+        game.callouts.push('SPLASH ONE');
+
+        game.restartFromDebrief();
+        game.selectScenarioById('CARRIER_QUALS');
+        game.confirmBriefing();
+        expect(game.trauma).toBe(0);
+        expect(game.callouts.active()).toHaveLength(0);
+    });
+
+    // -----------------------------------------------------------------
+    // Operational tempo
+    // -----------------------------------------------------------------
+
+    /**
+     * The first sortie is launchable immediately - the deck opens ready on the
+     * catapult. It is every sortie AFTER that one which used to cost a full
+     * hangar-and-rearm cycle, and that is what the pacing setting addresses.
+     */
+    it('opens ready to launch, whatever the pacing', () => {
+        for (const pacing of ['ARCADE', 'SIM'] as const) {
+            const game = new GameLoop(makeCanvasStub());
+            game.pacing = pacing;
+            runFrames(game, 150);
+            game.confirmBriefing();
+            expect(game.deck.aircraftState).toBe('CATAPULT_READY');
+        }
+    });
+
+    /**
+     * The claim the pacing change rests on, asserted rather than
+     * screenshotted: the turnaround after coming home is a beat, not a wait.
+     */
+    it('turns the jet around in seconds after a trap under ARCADE', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+
+        game.deck.processTrapRecovery(3000, false);
+        runFrames(game, 720); // 12 s at 60 Hz
+        expect(game.deck.aircraftState).toBe('CATAPULT_READY');
+    });
+
+    it('still takes the deliberate path home under SIM', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.pacing = 'SIM';
+        runFrames(game, 150);
+        game.confirmBriefing();
+
+        game.deck.processTrapRecovery(3000, false);
+        runFrames(game, 720);
+        // 3 s de-rig + 18 s hangar + 14 s arming: nowhere near ready.
+        expect(game.deck.aircraftState).not.toBe('CATAPULT_READY');
+    });
+
+    it('pulls the opening threat timeline forward and the contacts in closer', () => {
+        const arcade = new GameLoop(makeCanvasStub());
+        runFrames(arcade, 150);
+        arcade.confirmBriefing();
+
+        const sim = new GameLoop(makeCanvasStub());
+        sim.pacing = 'SIM';
+        runFrames(sim, 150);
+        sim.confirmBriefing();
+
+        const firstEta = (g: InstanceType<typeof GameLoop>) => g.deck.strikeTimeline[0].etaSeconds;
+        const nearestContact = (g: InstanceType<typeof GameLoop>) =>
+            Math.min(...g.airborneTargets.map(t => t.position.z));
+
+        expect(firstEta(arcade)).toBeLessThan(firstEta(sim));
+        expect(firstEta(arcade)).toBeLessThan(60);
+        expect(nearestContact(arcade)).toBeLessThan(nearestContact(sim));
+        // Close enough that the transit is a beat, not a commute.
+        expect(nearestContact(arcade)).toBeLessThan(5000);
+    });
+
+    it('puts a spare airframe on the catapult seconds after a loss under ARCADE', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        const spares = game.deck.inventory.spareAirframes;
+        // Fly it into the sea.
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        expect(game.score.breakdown.airframesLost).toBe(1);
+        expect(game.deck.inventory.spareAirframes).toBe(spares - 1);
+        // The cost is the jet and the score, not the waiting.
+        expect(game.deck.aircraftState).toBe('ARMING_REFUELING');
+        runFrames(game, 300); // 5 s
+        expect(game.deck.aircraftState).toBe('CATAPULT_READY');
+    });
+
+    it('sends the pilot to the hangar the long way under SIM', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.pacing = 'SIM';
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        expect(game.score.breakdown.airframesLost).toBe(1);
+        expect(game.deck.aircraftState).toBe('HANGAR_MAINTENANCE');
+    });
+
+    it('cycles the ops tempo and remembers it for the next scenario build', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.cyclePacing();
+        expect(game.pacing).toBe('SIM');
+        runFrames(game, 150);
+        game.confirmBriefing();
+        expect(game.deck.timing.armingSeconds).toBe(14);
+
+        game.cyclePacing();
+        game.restartFromDebrief();
+        game.confirmBriefing();
+        expect(game.deck.timing.armingSeconds).toBe(5);
     });
 
     // -----------------------------------------------------------------

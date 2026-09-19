@@ -176,3 +176,74 @@ describe('generateWave procedural escalation', () => {
         }
     });
 });
+
+describe('DeckManager operational tempo', () => {
+    /** Run the state machine for `seconds` of simulated time at 60 Hz. */
+    function run(deck: DeckManager, seconds: number) {
+        const dt = 1 / 60;
+        for (let i = 0; i < Math.round(seconds / dt); i++) deck.update(dt);
+    }
+
+    it('uses the original simulation timings when no pacing is injected', () => {
+        const deck = new DeckManager();
+        expect(deck.timing).toEqual({
+            maintenanceSeconds: 18,
+            armingSeconds: 14,
+            repairSeconds: 30,
+            derigSeconds: DeckManager.TRAP_DERIG_SEC
+        });
+    });
+
+    it('honours injected deck timings', () => {
+        const deck = new DeckManager({
+            timing: { maintenanceSeconds: 4, armingSeconds: 5, repairSeconds: 8, derigSeconds: 1.5 }
+        });
+        deck.aircraftState = 'HANGAR_MAINTENANCE';
+        deck.currentTaskProgress = 0;
+
+        // Crew speed scales with stamina, so this is "well under the 18s the
+        // simulation timing would have taken", not an exact stopwatch.
+        run(deck, 8);
+        expect(deck.aircraftState).not.toBe('HANGAR_MAINTENANCE');
+    });
+
+    it('still takes the long way round under the simulation timings', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'HANGAR_MAINTENANCE';
+        deck.currentTaskProgress = 0;
+        run(deck, 8);
+        expect(deck.aircraftState).toBe('HANGAR_MAINTENANCE');
+    });
+
+    it('scrambles a spare airframe to the catapult in seconds, not in a hangar cycle', () => {
+        const deck = new DeckManager({
+            timing: { maintenanceSeconds: 4, armingSeconds: 5, repairSeconds: 8, derigSeconds: 1.5 }
+        });
+        deck.aircraftState = 'HANGAR_MAINTENANCE';
+        deck.currentTaskProgress = 0;
+
+        deck.scrambleSpareAirframe(3);
+        expect(deck.aircraftState).toBe('ARMING_REFUELING');
+
+        run(deck, 5);
+        expect(deck.aircraftState).toBe('CATAPULT_READY');
+    });
+
+    it('does not put a jet on the catapult instantly', () => {
+        // The scramble removes the waiting, not the work: there is still a
+        // beat on the deck, and the tactical situation moves during it.
+        const deck = new DeckManager();
+        deck.scrambleSpareAirframe(3);
+        deck.update(1 / 60);
+        expect(deck.aircraftState).toBe('ARMING_REFUELING');
+    });
+
+    it('clears the catapult and de-rig clocks when scrambling', () => {
+        const deck = new DeckManager();
+        deck.catapultTimer = 1.2;
+        deck.trapDerigTimer = 0.8;
+        deck.scrambleSpareAirframe(3);
+        expect(deck.catapultTimer).toBe(0);
+        expect(deck.trapDerigTimer).toBe(0);
+    });
+});

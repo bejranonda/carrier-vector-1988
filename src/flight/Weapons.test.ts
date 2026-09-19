@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WeaponsSystem } from './Weapons';
+import type { WeaponsWorld } from './Weapons';
 import { AircraftPhysics } from './AircraftPhysics';
 import { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
 import type { AirborneTarget } from '../renderer/HUD';
@@ -57,21 +58,92 @@ describe('WeaponsSystem ballistics', () => {
         expect(weapons.bullets[0].vel.y).toBeLessThan(initialVelY);
     });
 
-    it('destroys an airborne target within the bullet hit radius', () => {
-        weapons.fireGun(physics);
-        const target: AirborneTarget = {
+    /**
+     * Rounds wound; enough of them kill. One round used to destroy any
+     * aircraft anywhere inside 18 m, which made the cannon impossible to miss
+     * with and impossible to feel.
+     */
+    function fighterAt(z: number): AirborneTarget {
+        return {
             id: 'T1',
-            name: 'Test Target',
-            position: { x: 0, y: 5000, z: 20 }, // directly ahead, close enough for one tick
+            name: 'MiG-23 FLOGGER #1',
+            position: { x: 0, y: 5000, z },
             velocity: { x: 0, y: 0, z: 0 },
             isAlive: true
         };
+    }
 
+    /** Fire one round and let it reach the target. */
+    function oneRound(target: AirborneTarget, hooks: Partial<WeaponsWorld> = {}) {
+        weapons.gunFireTimer = 0;
+        weapons.fireGun(physics);
+        for (let i = 0; i < 5 && weapons.bullets.length > 0; i++) {
+            weapons.update(1 / 120, { terrain, targets: [target], samSites: [], ...hooks });
+        }
+    }
+
+    it('wounds an airborne target rather than destroying it with one round', () => {
+        const target = fighterAt(20);
+        let hitIntegrity: number | null = null;
+        oneRound(target, { onTargetHit: (_t, left) => { hitIntegrity = left; } });
+
+        expect(target.isAlive).toBe(true);
+        expect(target.integrity).toBeLessThan(100);
+        expect(hitIntegrity).toBe(target.integrity);
+    });
+
+    it('destroys a fighter with a short burst on target', () => {
+        const target = fighterAt(20);
         let destroyed: AirborneTarget | null = null;
-        for (let i = 0; i < 5 && target.isAlive; i++) {
-            weapons.update(1 / 120, { terrain, targets: [target], samSites: [], onTargetDestroyed: (t) => { destroyed = t; } });
+        for (let i = 0; i < 6 && target.isAlive; i++) {
+            oneRound(target, { onTargetDestroyed: (t) => { destroyed = t; } });
         }
 
+        expect(target.isAlive).toBe(false);
+        expect(destroyed).toBe(target);
+    });
+
+    it('makes a bomber visibly harder to kill than a fighter', () => {
+        const rounds = (target: AirborneTarget) => {
+            let n = 0;
+            while (target.isAlive && n < 60) {
+                oneRound(target);
+                n++;
+            }
+            return n;
+        };
+        const fighter = fighterAt(20);
+        const bomber: AirborneTarget = { ...fighterAt(20), id: 'B1', name: 'Tu-22M BACKFIRE' };
+        expect(rounds(bomber)).toBeGreaterThan(rounds(fighter));
+    });
+
+    it('reports a kill once, not once per round', () => {
+        const target = fighterAt(20);
+        let kills = 0;
+        for (let i = 0; i < 12; i++) {
+            oneRound(target, { onTargetDestroyed: () => { kills++; } });
+        }
+        expect(kills).toBe(1);
+    });
+
+    it('does not reward a near miss', () => {
+        // Offset well outside the 12 m hit radius, directly abeam the path.
+        const target = fighterAt(20);
+        target.position.x = 40;
+        oneRound(target);
+        expect(target.isAlive).toBe(true);
+        expect(target.integrity ?? 100).toBe(100);
+    });
+
+    it('still lets the Sidewinder kill outright', () => {
+        const target = fighterAt(2000);
+        physics.loadout.sidewinders = 2;
+        weapons.fireSidewinder(physics, [target], 'T1');
+
+        let destroyed: AirborneTarget | null = null;
+        for (let i = 0; i < 400 && target.isAlive; i++) {
+            weapons.update(1 / 60, { terrain, targets: [target], samSites: [], onTargetDestroyed: (t) => { destroyed = t; } });
+        }
         expect(target.isAlive).toBe(false);
         expect(destroyed).toBe(target);
     });
