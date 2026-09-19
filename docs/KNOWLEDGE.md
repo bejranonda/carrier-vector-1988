@@ -363,6 +363,16 @@ the flight-checkout scenario when nothing has ever been flown, otherwise the
 easiest uncleared one (preferring one already attempted), and once everything is
 cleared, the hardest.
 
+### The daily sortie
+
+`core/DailySortie.ts`. The seed is the UTC date as an integer
+(`YYYY*10000 + MM*100 + DD`), fed to the existing `mulberry32` wave director,
+so two players on the same day get an identical campaign and consecutive days
+do not resemble each other. The sortie number counts days from 2026-01-01.
+Attempts are unlimited; the stored record keeps the best run whole (not a mix
+of best figures from different attempts) and counts attempts, which the card
+prints.
+
 ### Hardened targets
 
 ```
@@ -459,6 +469,78 @@ broken by id so the cycle order is stable frame to frame.
 `pursuitNav()` turns a solution into an autopilot `NavTarget`: co-altitude for an
 air intercept (floored at 260 m AGL, bank limit 1.15), 520 m AGL at 250 m/s with
 a 0.8 bank limit for a ground attack run.
+
+## 7f. Operational tempo
+
+`core/Pacing.ts`. The deck-crew durations were literals inside
+`DeckManager.update()`; they are now injected through `ThreatProfile.timing`
+and default to the original numbers.
+
+| | ARCADE (default) | SIM |
+| --- | --- | --- |
+| Hangar maintenance | 4 s | 18 s |
+| Arming / refuelling | 5 s | 14 s |
+| Battle-damage repair | 8 s | 30 s |
+| Trap de-rig | 1.5 s | 3 s |
+| Spare airframe after a loss | 3 s, straight to arming | full hangar cycle |
+| Opening timeline ETAs | ×0.35 (150/280/440 → 53/98/154) | ×1 |
+| Contact spawn distance | ×0.55 (8.3 km → 4.6 km) | ×1 |
+
+Measured in Chromium, briefing to first kill: **ARCADE 9.6 s; SIM produced no
+kill inside a two-minute budget.** Crew stamina still scales every task, so
+these are nominal durations, not stopwatch guarantees.
+
+## 7g. Camera shake
+
+`renderer/CameraShake.ts`. Trauma model, applied to the camera angles in
+`GameLoop.drawCockpitSim()` and to nothing else.
+
+```
+trauma' = clamp01(trauma - 1.35 dt)
+shake   = trauma²
+pitch   = sin(2π · 17.3 t) · 0.035 · shake
+yaw     = sin(2π · 13.1 t + 1.7) · 0.030 · shake
+roll    = sin(2π ·  9.7 t + 3.1) · 0.055 · shake
+
+blast(d) = clamp01((1 - d/700)²· 0.6)
+```
+
+Squared amplitude is what separates a cannon round (0.05 trauma) from a hit
+taken (0.55): linear amplitude made every event feel the same size. The three
+rates are incommensurate so a sustained shake never looks like a loop.
+
+## 7h. Audio mix
+
+`audio/AudioMix.ts` holds the decisions; `audio/SoundFX.ts` holds the
+synthesis. Every voice runs:
+
+```
+voice -> [StereoPanner] -> category gain -> master (0.85) -> compressor -> out
+```
+
+The compressor is `threshold -18 dB, knee 12, ratio 6, attack 4 ms,
+release 180 ms`. Bus levels: beds (engine 0.055, airflow 0.05, threat 0.10)
+sit below events (weapons 0.30, world 0.50, impacts 0.55), and alerts (0.62)
+sit above everything, because an alert is an instruction.
+
+Spatialisation, for world events only:
+
+```
+gain = 1 / (1 + (d/320)²)          , zero beyond 7 km
+pan  = ((Δ · right) / |Δ_horizontal|) × 0.85
+```
+
+Beds driven from simulation state:
+
+```
+airflow(v)      = { gain: 0.05 · t, cutoff: 300 + 2400 t },  t = clamp((v-60)/280)
+buffet(α)       = clamp((|α| - 0.7 α_limit) / (0.3 α_limit)) , 1 when stalled
+threatBed(rwr)  = SEARCH 0.045/54 Hz · TRACK 0.08/68 Hz · LAUNCH 0.10/92 Hz
+```
+
+Measured in Chromium with the simulation paused and the beds set by hand
+(peak amplitude at the output): engine 0.15, cannon 0.15, kill confirm 0.28,
+RWR launch 0.38, wire catch 0.39.
 
 ## 8. Scoring
 

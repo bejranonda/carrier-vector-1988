@@ -168,6 +168,27 @@ Rules:
   map it is. A new map is a new `TerrainProfile` plus the invariants in
   `TerrainProfiles.test.ts` — do not add one without making those pass, because
   a map that cannot mask a radar breaks a core mechanic silently.
+- **Presentation may never reach the simulation.** Camera shake is added to
+  the camera angles in `drawCockpitSim()` and nowhere else; the flash, the
+  callouts and the hit marker read state and never write it. The whole test
+  suite rests on a deterministic fixed timestep, and a shake that fed back into
+  the flight model would turn every timing assertion into a coin flip. A smoke
+  test asserts the attitude is untouched after a full-strength shake.
+- **Nothing connects to `AudioContext.destination`.** Every voice goes through
+  a category bus to the master bus and the compressor - that is what keeps a
+  busy fight from clipping and what lets an alert outrank the engine. The bus
+  levels and the spatial maths live in `audio/AudioMix.ts`, which is pure and
+  tested; `SoundFX` only makes sound. Beds (engine, airflow, threat) stay below
+  events, and alerts stay above everything, because an alert is an instruction.
+- **A world event is placed, a cockpit event is not.** Anything that happens
+  out there - a kill, a SAM launch, an explosion - is panned and attenuated
+  from its real position, so the mix carries tactical information. Your own
+  gun, your own warnings and the UI are centred, because that is where they
+  are.
+- **Timings are data, not literals.** Deck-crew durations live in
+  `core/Pacing.ts` and arrive through `ThreatProfile.timing`. They default to
+  the original simulation numbers, so `SIM` is a promise the tests enforce
+  rather than a claim.
 - **Flight assistance is control law, never teleportation.**
   `src/flight/FlightAssist.ts` produces the same stick, rudder and throttle
   demands a pilot would, and `GameLoop` feeds them to the same

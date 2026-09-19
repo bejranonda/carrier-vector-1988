@@ -225,3 +225,49 @@ in [FUN_REVIEW.md](FUN_REVIEW.md).
 - Browser pass in Chromium at 1440x900, 1024x700 and 820x560: all five
   missions selected and flown, designation and all three assist levels
   exercised, terrain pull-up triggered deliberately, no console errors
+
+---
+
+## 9. Follow-up Pass — Pacing, Feel, Sound & the Daily Sortie
+
+**Status:** Complete
+**Trigger:** "review to improve the game to make hit in the market and fun to
+play", followed by "integrate sound effects to the game"
+**Result:** 487 tests across 28 suites, `strict: true`, zero runtime
+dependencies retained
+
+### The findings, measured
+
+| Finding | Evidence |
+| --- | --- |
+| Nothing happened for the first minute | Contacts spawned 8.3 km out (~35 s of transit) under a HUD announcing the first package at 150 s. |
+| Every sortie after the first cost 32 s of progress bars | `HANGAR_MAINTENANCE` (18 s) → `ARMING_REFUELING` (14 s), after a loss *and* after a successful trap. |
+| Nothing had weight | No camera shake existed. One 20 mm round inside an 18 m radius destroyed any aircraft, so the gun had two states: nothing, and an explosion. The trap resolved as an instant view switch. |
+| Nothing left the tab | A single global best score across five scenarios of different length. |
+| The mix was not a mix | Every voice connected to `AudioContext.destination`: no bus, no compression, no stereo, and enemy cannon fire played the player's own gun sound. |
+
+### What the work found
+
+- **A height-agnostic claim about pacing was wrong.** The first sortie always
+  launched immediately - the deck opens `CATAPULT_READY`. The 14 s arming
+  applies to re-launches. The smoke test caught it, and both the tests and the
+  module's rationale were corrected rather than the test being bent to fit.
+- **The smoke harness had been lying quietly.** `runFrames()` restarted its
+  timestamp at zero on every call, so a second call cost a frame and
+  `runFrames(game, 1)` in a loop advanced the simulation not at all. Now
+  monotonic.
+- **Four browser-only layout defects** in the daily card: the prompt drew
+  through the card, the card overflowed a 560 px window, the daily panel
+  truncated its own text, and the ✈ glyph is absent from the game's monospace
+  font.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (487), `npm run build`
+- Chromium, briefing to first kill: **ARCADE 9.6 s, SIM no kill in 120 s**
+- Web Audio instrumented in-browser: one connection to `destination` (the
+  compressor); pan +0.85 right, −0.85 left, 0 ahead, culled out of earshot;
+  peak levels with the sim paused - engine 0.15, cannon 0.15, kill 0.28, RWR
+  launch 0.38, wire catch 0.39
+- Debrief and daily card at 1440×900, 1024×700, 820×560 and 760×520, no
+  console errors

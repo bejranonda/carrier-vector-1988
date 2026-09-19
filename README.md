@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 367 headless Vitest tests
+npm run test     # 487 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -159,6 +159,36 @@ it: the Sidewinder guides on *that* contact instead of whichever one it liked,
 and the autopilot flies the intercept. If it is off the glass, a chevron on the
 boresight ring tells you which way to turn.
 
+### The Daily Sortie
+
+Press `D` on the briefing. It is the endless carrier defence, seeded from
+today's date, so **every player in the world flies the identical campaign** —
+the same packages, in the same order, at the same time. The debrief prints a
+four-line card and `C` copies it:
+
+```
+CARRIER VECTOR: 1988 — DAILY SORTIE #262
+WAVE 7 · 18,400 PTS · LT COMMANDER
+●●●● ◆◆ ▲▲  4 splashed · 2 SAM · 2 traps (1 perfect) · hull 62%
+attempt 2 · carrier-vector-1988
+```
+
+Unlimited attempts; the card says which one it was. Locking the day to a
+single try punishes exactly the person who has just found the game.
+
+### Ops tempo
+
+Press `O`. The deck cycle and the threat timeline have two settings, and the
+difference is not subtle.
+
+| Tempo | What it is | Briefing → first kill |
+| --- | --- | --- |
+| `ARCADE` | **Default.** Fast deck, contacts closer in, a spare airframe on the catapult ~3 s after a loss. | **9.6 s**, measured in Chromium |
+| `SIM` | Every original timing: 14 s arming, contacts 8.3 km out, the full 32 s hangar-and-rearm cycle. | no kill inside a 2-minute budget |
+
+`SIM` is the better simulation and the worse first impression. Both are one
+key apart, so you can have either.
+
 ### Progress
 
 Each mission keeps its own best score and completion count. The selector ticks
@@ -205,6 +235,7 @@ exceeding the mode you picked.
 | `T` | Designate next target (`SHIFT`+`T` steps back) |
 | `Y` | Release the designation |
 | `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
+| `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
 
 ### Flight Deck
 
@@ -222,6 +253,7 @@ exceeding the mode you picked.
 | `1`–`5` | Pick a mission directly |
 | `ENTER` | Fly the selected mission |
 | `S` | Skip the deck and start airborne |
+| `D` | Fly today's daily sortie |
 
 ### System
 
@@ -292,6 +324,35 @@ exceeding the mode you picked.
 - **Procedurally escalating strike waves** from a seeded PRNG after the scripted opening act
 - Graded arrested recoveries (1–4 wire, or a bolter) feeding a score and rank ladder
 
+### Feel
+- **Camera shake** on a trauma model — squared amplitude, so a cannon round and
+  a missile strike read as different events — applied to the camera only, never
+  to the flight model
+- **Rounds wound rather than instantly kill**: ~4 hits for a fighter, ~9 for a
+  bomber, inside a 12 m radius, with a hit marker and a tick per round
+- **Kill callouts** (`SPLASH ONE`, `SAM DOWN`, `3-WIRE`) in their own channel,
+  capped so a furball cannot bury the screen
+- **The trap gets its moment**: the camera holds in the cockpit, the wire grade
+  stamps over the deck, and the arresting gear is the loudest sound in the game
+- **Impact flash** — red when something hits you, green when you kill something
+
+### Sound
+- **A real mix**: every voice runs `[panner] → category bus → master →
+  compressor → out`. Nothing connects to the output directly, so a busy fight
+  compresses instead of clipping
+- **Stereo placement and distance attenuation** for world events — a SAM firing
+  off your left wing is information, not noise. Verified in-browser: right wing
+  `+0.85`, left `−0.85`, dead ahead `0`, out of earshot culled entirely
+- **Alerts cut through**: the RWR and master caution sit on the loudest bus, the
+  engine and airflow beds on the quietest
+- **A threat drone generated from the tactical situation** rather than composed,
+  so the tension is always telling the truth
+- **Airflow over the canopy** scaled by airspeed, and a **pre-stall buffet** that
+  starts before the wing lets go
+- **Incoming fire has its own voice** — it used to play your own cannon sound,
+  so being shot at and shooting were indistinguishable
+- Still zero audio assets: every sound is oscillators and noise buffers
+
 ### Presentation & Readability
 - **Three display modes** (`CLEAN` / `MODERN` / `RETRO CRT`) behind one key, covering
   vector persistence, bloom, per-stroke glow, the scanline mask and the vignette
@@ -328,6 +389,9 @@ src/
 │   ├── Scenarios.ts       # Selectable missions + the phase director (pure)
 │   ├── HighScore.ts       # Persisted personal best
 │   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
+│   ├── DailySortie.ts     # Date-seeded run, result merge, share card (pure)
+│   ├── Pacing.ts          # ARCADE / SIM deck timings and threat scaling (pure)
+│   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
@@ -344,6 +408,7 @@ src/
 ├── renderer/
 │   ├── VectorRenderer.ts  # 3D pipeline: camera transform, near-plane clip, projection
 │   ├── PostProcess.ts     # Phosphor persistence + bloom compositor
+│   ├── CameraShake.ts     # Trauma model for cockpit shake (pure, view-only)
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
 │   ├── DisplayMode.ts     # CLEAN / MODERN / RETRO ladder (canvas + CSS effects)
 │   ├── HudLayout.ts       # Pure cockpit instrument placement solver
@@ -351,7 +416,9 @@ src/
 │   ├── DeckLayout.ts      # Pure responsive panel solver
 │   ├── DeckView.ts        # Flight deck instruments
 │   └── BriefingScreen.ts  # Boot sequence, briefing, help, debrief
-├── audio/SoundFX.ts       # Web Audio synthesis
+├── audio/
+│   ├── AudioMix.ts        # Bus levels, spatialisation, beds (pure)
+│   └── SoundFX.ts         # Web Audio synthesis and the bus graph
 └── main.ts                # Entry point and input dispatch
 ```
 
@@ -404,7 +471,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**367 headless tests** across 23 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**487 headless tests** across 28 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor

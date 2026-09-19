@@ -127,38 +127,83 @@ mechanic with no error message.
 
 ---
 
+## 4b. The first minute, the weight, and something to share
+
+The three findings that prompted the pacing/feel/daily pass, each measured on
+the build that preceded it:
+
+| Finding | Measurement |
+| --- | --- |
+| Nothing happened for the first minute | ~35 s of transit to a contact 8.3 km out, under a HUD announcing the first package at 150 s |
+| Dying cost half a minute of progress bars | `HANGAR_MAINTENANCE` 18 s → `ARMING_REFUELING` 14 s, on every loss *and* every successful trap |
+| Nothing had any weight | No camera shake anywhere; one 20 mm round inside 18 m destroyed any aircraft; the arrested landing was an instant view switch and a log line |
+| Nothing left the tab | One global best score, no artifact, no reason to return tomorrow |
+| The mix was not a mix | Every voice wired straight to the output: clipping under load, no priority, no stereo, so audio carried no tactical information |
+
+What changed, and the reasoning that is worth keeping:
+
+- **ARCADE is the default, SIM is one key away.** The deliberate timings make
+  the better simulation and the worse first impression. Measured briefing to
+  first kill: 9.6 s against no kill in two minutes. Neither audience loses.
+- **The cost of dying is the airframe and the score, not the waiting.**
+  Punishing a mistake twice - once in the currency of the game and once in the
+  player's time - is how a game teaches people to stop playing.
+- **Rounds wound.** A one-hit-kill cannon with an 18 m radius was both trivial
+  and weightless: there was no such thing as *hitting* something, only killing
+  it, so there was no feedback to give. Four hits to a fighter creates the
+  state that hit markers, ticks and a health-bar read of the fight all live in.
+- **The trap gets its moment.** 1.6 s of held camera, a stamped wire grade and
+  the loudest sound in the game. It is the hardest thing here; it should be the
+  most satisfying, and it was the most throwaway.
+- **The daily is unlimited-attempt.** Wordle's one-shot rule works because
+  everybody already knows how to play. Locking the day here punishes exactly
+  the person who has just discovered the game. The card states the attempt, so
+  honesty costs nothing.
+- **Audio became information.** A SAM firing off the left wing now pans left
+  and sounds far away; being shot at no longer plays your own gun sound. The
+  mix has priority - alerts above beds - so the sound that means *do something*
+  is the sound you hear.
+
 ## 5. Still open — ranked by what they would buy
 
-1. **The deck loop is mostly waiting.** The macro layer's interesting decision
+1. **No mobile.** Half of casual web traffic is on a phone and this game is
+   keyboard-only, so half the addressable audience cannot open it at all. With
+   the autopilot and designation already built, a touch build is closer than it
+   looks: the jet flies itself, the player taps a target and a fire button.
+   This is the single largest remaining constraint on reach.
+2. **The deck loop is mostly waiting.** The macro layer's interesting decision
    (fuel versus ordnance) is made once, in about four seconds, and the rest is
    watching a progress bar. It wants a second axis — a choice with a cost, such
    as a rushed turnaround that risks a crew-fatigue penalty, or holding a jet
    back as alert-five cover. This is the largest remaining gap between the
    game's structure and its fun.
-2. **The strike missions have no second act.** Every scenario resolves in one
+3. **The strike missions have no second act.** Every scenario resolves in one
    pass. A mission that changes its mind halfway — a pop-up threat, a target
    that turns out to be defended, a recall — would make the mission director
    earn its structure.
-3. **No map choice on the endless mode.** Carrier defence is the mission people
+4. **No map choice on the endless mode.** Carrier defence is the mission people
    will replay most and it is locked to one map. Letting it be flown on any of
    the three is cheap and triples its replay value.
-4. **The story is scenery, not stakes.** The briefing prose is good and the
+5. **The story is scenery, not stakes.** The briefing prose is good and the
    world is coherent, but nothing carries between missions: the campaign has no
    memory beyond a score. Carrying *losses* forward — airframes, stores, hull
    damage — across a run of missions would make each sortie cost something.
-5. **The autopilot cannot fly the one mission that needs flying well.** It
+6. **The autopilot cannot fly the one mission that needs flying well.** It
    climbs over terrain rather than threading it (see KNOWN_ISSUES §19), so
    handing it the canyon ingress gets you locked. Defensible — the low-level run
    *is* the mission's skill — but a terrain-following mode would let the
    weapons-officer fantasy reach the game's best mission instead of stopping
    just short of it.
-6. **Difficulty is fixed per scenario.** There is no way to ask for a harder
-   carrier defence or an easier canyon strike. With assist levels now in place,
-   a threat-level selector on the briefing would compose neatly with them.
+7. **Difficulty is fixed per scenario.** (A combo multiplier, medals and local
+   leaderboards were all considered for this pass and deliberately left out;
+   the daily was judged the one hook worth building first.)
+8. **Difficulty is fixed per scenario.** There is no way to ask for a harder
+   carrier defence or an easier canyon strike. With assist levels and ops tempo
+   now in place, a threat-level selector would compose neatly with both.
 
 ---
 
-## 6. Principles this pass followed
+## 6. Principles these passes followed
 
 - **Never make the simulation lie.** Every assist is a control law producing the
   same stick and throttle demands a pilot would, integrated by the same physics.
@@ -168,4 +213,13 @@ mechanic with no error message.
   next and what you should shoot at. It never enforces them.
 - **An annunciator that is always lit is not an annunciator.** Auto-levelling
   happens on every frame the stick is centred and is deliberately silent, so
-  that when the glass does say `TERRAIN — AUTO PULL-UP`, it means it.
+  that when the glass does say `TERRAIN — AUTO PULL-UP`, it means it. The same
+  rule governs the mix: the alert bus is loudest precisely because almost
+  nothing is on it.
+- **Presentation must never touch the simulation.** Shake moves the camera;
+  callouts and flashes read state and never write it. The moment feel can
+  influence physics, the determinism the whole test suite rests on is gone.
+- **Measure the claim.** "It feels faster" is an opinion; "briefing to first
+  kill, 9.6 s against no kill in two minutes" is a result. The same applies to
+  the mix, which is verified by instrumenting Web Audio in a real browser
+  rather than by listening once and deciding it sounds fine.
