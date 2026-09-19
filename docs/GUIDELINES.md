@@ -84,7 +84,7 @@ else.
 | `THEME.ink` | Headline values you must read at a glance |
 | `THEME.phosphor` | Primary instrument colour |
 | `THEME.muted` | Labels and secondary copy — deliberately NEUTRAL, not green |
-| `THEME.key` | Cyan, reserved exclusively for key names |
+| `THEME.key` | Cyan — the player's own agency: keys they can press, and the thing they have chosen |
 | `THEME.caution` | Caution / ready |
 | `THEME.alert` | Lethal / hostile |
 | `WORLD.*` | 3D wireframe colours, kept separate from UI chrome |
@@ -96,9 +96,11 @@ Rules:
   there too.
 - **Labels are neutral, values carry the colour.** A desaturated green label turns
   to mud under the vignette, which is exactly what happened before.
-- **Cyan means "this is a key you can press"** and nothing else. Draw keys with
-  `keycap()`, not as `[ENTER]` inside a sentence — players skim for something that
-  looks pressable.
+- **Cyan marks the player's own agency** — a key they can press, or the thing they
+  have selected: the highlighted mission pill, the armed weapon, the designated
+  target. Draw keys with `keycap()`, not as `[ENTER]` inside a sentence; players
+  skim for something that looks pressable. Nothing the *world* does is ever cyan,
+  so a cyan mark on the glass always means "this is yours".
 - **Body text is drawn with NO shadow glow**, on a translucent `plate()`. Glow
   fattens 12px monospace strokes until they smear, and legibility must never
   depend on what part of the wireframe happens to be behind the text.

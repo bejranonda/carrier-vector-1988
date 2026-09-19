@@ -432,7 +432,9 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 `vector graphics game` · `retro flight simulator` · `CRT phosphor effect` · `wireframe 3D renderer` ·
 `TypeScript game development` · `HTML5 canvas game` · `6-DOF flight dynamics` · `aircraft carrier simulation` ·
 `radar terrain masking` · `radar cross section` · `browser game no engine` · `linear algebra 3D projection` ·
-`fixed timestep game loop` · `procedural terrain` · `Web Audio synthesis` · `1980s arcade aesthetic`
+`fixed timestep game loop` · `procedural terrain` · `Web Audio synthesis` · `1980s arcade aesthetic` ·
+`flight assist control laws` · `tactical autopilot` · `target designation` · `terrain avoidance` ·
+`mission scenarios` · `CCIP bombing cue`
 
 ## License
 

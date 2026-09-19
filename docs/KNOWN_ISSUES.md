@@ -197,3 +197,32 @@ Clicking advances the briefing and the debrief and closes the help overlay.
 Flying, the deck and the payload are keyboard-only. **Consequence:** the game is
 not playable on a touch device. A pointer-driven flight model is a different
 game, not a port.
+
+## 19. The autopilot flies a bearing, not a route
+
+`AUTOPILOT` holds the bearing, altitude and speed that `pursuitNav()` gives it.
+It has no path planner and no forward-looking terrain sampling: the terrain
+floor in `FlightAssist` is what keeps it out of the ground, and the floor works
+by pulling up.
+
+**Consequence:** in a fjord or a ridge field the autopilot will climb *over*
+terrain rather than thread it — which is safe but is exactly the thing the SAM
+belt is watching for. On `CANYON_STRIKE` in particular, handing the jet to the
+autopilot on the ingress will get you locked. That is arguably correct (the
+low-level run is the mission's skill, and it should not be automatable), but it
+is a limitation rather than a decision, and a terrain-following mode would be
+the honest fix.
+
+## 20. Designation ignores detection and line of sight
+
+`TargetTracker` ranks every live contact, surviving SAM site and intact strike
+target within 20 km, regardless of whether the player could actually see or
+detect it. There is no sensor model between the scope and the world.
+
+**Consequence:** you can designate a launcher through a mountain, and cycling
+the scope tells you where everything is. The Sidewinder still refuses a shot
+outside its seeker envelope and the gun still needs a tracking solution, so
+this leaks information rather than kills — but it does mean the designation key
+doubles as a free reconnaissance tool. Gating candidates on
+`SensorTacticsManager.checkLOS()` plus a detection range is the fix, and would
+also make terrain masking cut both ways.

@@ -146,7 +146,13 @@ mechanic with no error message.
    world is coherent, but nothing carries between missions: the campaign has no
    memory beyond a score. Carrying *losses* forward — airframes, stores, hull
    damage — across a run of missions would make each sortie cost something.
-5. **Difficulty is fixed per scenario.** There is no way to ask for a harder
+5. **The autopilot cannot fly the one mission that needs flying well.** It
+   climbs over terrain rather than threading it (see KNOWN_ISSUES §19), so
+   handing it the canyon ingress gets you locked. Defensible — the low-level run
+   *is* the mission's skill — but a terrain-following mode would let the
+   weapons-officer fantasy reach the game's best mission instead of stopping
+   just short of it.
+6. **Difficulty is fixed per scenario.** There is no way to ask for a harder
    carrier defence or an easier canyon strike. With assist levels now in place,
    a threat-level selector on the briefing would compose neatly with them.
 

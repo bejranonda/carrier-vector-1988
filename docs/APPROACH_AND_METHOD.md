@@ -54,10 +54,17 @@ This is what makes it a game rather than two demos:
 
 ### Pure linear algebra projection
 
-World point → translate by `−camPos` → apply `−yaw`, `−pitch`, `−roll` → clip
-against `z = 2.0 m` → perspective divide `x' = x·f/z + x₀`. Every mesh, terrain
-line, weapon tracer and HUD reticle flows through this same path, which is why
-the HUD can be made to overlay the world exactly.
+World point → translate by `−camPos` → **project onto the aircraft's own right /
+up / forward basis** → clip against `z = 2.0 m` → perspective divide
+`x' = x·f/z + x₀`. Every mesh, terrain line, weapon tracer and HUD reticle flows
+through this same path, which is why the HUD can be made to overlay the world
+exactly.
+
+The basis projection is deliberate and replaced a hand-composed
+`−yaw, −pitch, −roll` rotation that had the sign of pitch and roll backwards.
+`AircraftPhysics` already computes `forward`, `up` and `right` to resolve thrust
+and lift; reusing *those* vectors means the camera cannot disagree with the
+flight model, because they are the same three numbers. See §7.
 
 ### The two-layer composite
 
@@ -259,6 +266,77 @@ machine would have buried:
 The last one is the general lesson from this codebase repeated once more: a
 system that is well implemented but wired to the wrong screen is worth nothing.
 
+## 6d. Maps as Data
+
+The same argument as §6c, applied to the world. Every mission shared one
+hardcoded height function and three SAM sites nailed into the sensor manager's
+constructor, so variety had to come entirely from objectives and learning the
+map once removed most of the tension from all five.
+
+```
+TerrainProfile = height function + SAM order of battle + corridor landmarks
+```
+
+`TacticalTerrain` samples a profile into its grid and `SensorTacticsManager`
+builds its launchers from one; neither knows which map it has. The interesting
+part is not the refactor, it is what a map is allowed to be: **a map carries
+obligations, and the test suite is where they are written down.** A map must
+have a navigable corridor, a clear approach tube off the bow, and somewhere that
+terrain masks a radar — because a map that quietly cannot mask breaks a core
+mechanic with no error message anywhere.
+
+Stating those as tests rather than as intentions caught five real defects,
+including a 300 m cliff step 1.2 km off the bow that appeared out of flat sea on
+every launch, and an "open sea" map whose launchers sat on island peaks and were
+therefore masked by their own islands — which would have silently given the
+nowhere-to-hide map total cover.
+
+It also caught a defect in a *mission*: moving the intro scenario onto the open
+sea would have made its flight-checkout step "descend until the RWR goes silent"
+unsatisfiable. The map was fine; the pairing was not.
+
+## 6e. Assistance as Control Law
+
+The 6-DOF model is the reason the project is interesting and, for a new player,
+a wall: the first several sorties end in a canyon wall, and the game behind the
+flying is never seen. The temptation is to soften the aeroplane. The method
+taken instead is to let the player choose how much of it to fly, and to
+implement every level as **control law rather than state manipulation**:
+
+```
+keyboard → PilotInput → resolveControls(level, state, input, nav) → ControlDemand
+        → the same applyPitchInput / applyRollInput / applyYawInput the pilot uses
+```
+
+Nothing in an assist may write position, velocity or attitude. That single rule
+is what keeps the simulation honest: at every level the aircraft is somewhere it
+could have flown itself, and `MANUAL` is the identity function, so the raw
+flight model is provably unchanged.
+
+Writing the laws against the real flight model surfaced three things:
+
+- **A terrain floor must measure time, not height.** A floor engaging at 180 m
+  AGL has one second to work with at 60 m/s against a 1.35 rad/s pitch rate — it
+  watches the aircraft hit the ground while gently disagreeing. Seconds to
+  impact is the quantity that scales correctly with speed, which is why real
+  terrain-avoidance systems use it.
+- **This flight model has no bank-to-turn yaw coupling.** `AircraftPhysics`
+  changes `yaw` only through the rudder; banking tilts the lift vector and
+  curves the flight *path* while the nose keeps pointing where it pointed. A
+  bank-only autopilot therefore banks beautifully and never captures a bearing.
+  Discovering that from a failing convergence test, rather than from a player
+  reporting that the autopilot "doesn't work", is the whole argument for testing
+  control laws as pure functions.
+- **Every protection must answer what it makes impossible.** The ground-proximity
+  laws had to stand down on a carrier approach, because an approach *is* a
+  controlled descent to a deck 20 m above the water — and the default assist
+  level would otherwise have made the best thing in the game unreachable.
+
+The tactical autopilot is where this stops being an accessibility feature and
+becomes a second game: with the flying handled and a designation key to choose
+targets with, the player's whole attention moves to *which contact, which
+weapon, when to shoot, when to break*. See [FUN_REVIEW.md](FUN_REVIEW.md).
+
 ## 7. Testing Method
 
 Canvas rendering cannot be asserted in a node environment, so the method is to
@@ -280,7 +358,12 @@ Canvas rendering cannot be asserted in a node environment, so the method is to
 | `WeaponsSystem.predictBombImpact` | CCIP agreement with the real bomb path |
 | `fitText` | Text never overflows the panel it is drawn in |
 | `DISPLAY_MODES` / `loadDisplayMode` | Effect ladder ordering and storage failure modes |
-| `recordBestScore` | Personal-best comparison and corrupt-storage handling |
+| `recordBestScore` / `mergeMissionResult` | Personal-best comparison, per-mission records, corrupt-storage handling |
+| `recommendScenario` | Which mission to suggest next, for any record set |
+| `TerrainProfile.heightAt` | Per-map navigability invariants: corridor, approach tube, masking |
+| `stallLimiter` / `terrainFloor` / `attitudeHold` / `autopilotDemand` | Each control law in isolation, plus `resolveControls`' order of authority |
+| `solveTarget` / `rankTargets` | Designation geometry, weapon envelopes, stable cycle order |
+| `assistCaption` | What the annunciator is allowed to say, and when it must stay silent |
 | `generateWave` / `mulberry32` | Determinism and escalation monotonicity |
 
 The camera entry deserves a note: asserting a transform against the *physics*
