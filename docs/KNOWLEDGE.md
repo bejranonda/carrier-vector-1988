@@ -242,6 +242,24 @@ the viewport, across a 10 × 7 × 2 matrix of sizes.
 | Objective strip / orders panel | What is this phase asking of me, and which key does it? | `core/Objectives.ts` |
 | Coach ticker | What is about to kill me? | `core/Tutorial.ts` |
 | Flight checkout | Which controls have I proved I can use? | `TrainingSequence.checklist()` |
+| Designation bracket | Which thing have I chosen, how far is it, what kills it? | `tactics/TargetDesignation.ts` |
+| Assist annunciator | Which protection is flying the aeroplane right now? | `assistCaption()` in `renderer/HUD.ts` |
+
+The designated target draws a solid box in the key colour (amber when the
+current geometry actually supports a shot) with `NAME · RANGE · WEAPON`
+underneath; off the glass it becomes a chevron on the boresight ring plus a
+`TURN LEFT / RIGHT` line. That is deliberately a different shape from both the
+air-contact corner brackets and the strike-target diamond, so three kinds of
+"something is there" never read as one.
+
+The assist annunciator is silent for `LEVEL` and `NONE`, and fires only once a
+protection takes more than 0.02 of stick authority. Auto-levelling happens on
+every frame the stick is centred; a caption for it would be permanently lit, and
+a permanently lit annunciator is one the pilot has learned to ignore by the time
+it says `TERRAIN — AUTO PULL-UP`.
+
+The objective strip reserves 150 px on each side of itself so it cannot run
+underneath the score chip in the same band — the two collided below ~1000 px.
 
 Contextual coach rules outrank the training prompt. The reverse ordering — which
 shipped — suppressed stall, terrain and missile warnings for a first-time
@@ -555,7 +573,7 @@ deliberately separate sets.
 | `ink` | `#eafff5` | Headline values read at a glance |
 | `phosphor` | `#57e39b` | Primary instrument colour |
 | `muted` | `#93a9a4` | Labels and secondary copy — neutral, **not** green |
-| `key` | `#5fd8ff` | Reserved exclusively for key names |
+| `key` | `#5fd8ff` | The player's agency: key names, the selected mission, the armed weapon, the designated target |
 | `caution` | `#ffc94d` | Caution / ready |
 | `alert` | `#ff6363` | Lethal / hostile |
 
@@ -576,4 +594,6 @@ deliberately separate sets.
 palette paired a saturated `#00ff66` with a desaturated `#00aa44` under a
 92%-black vignette and a scanline mask, which put the most important readouts
 below 3:1. The rule that replaced it: labels are neutral, values carry colour,
-and cyan means "this is a key you can press".
+and cyan means "this one is yours" — a key you can press or a thing you have
+chosen. Nothing the world does is cyan, which is what lets a designation bracket
+read as a decision rather than as another contact.
