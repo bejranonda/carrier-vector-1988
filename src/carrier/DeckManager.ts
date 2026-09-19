@@ -9,6 +9,7 @@
  */
 
 import type { AircraftLoadout } from '../flight/AircraftPhysics';
+import type { DeckTiming } from '../core/Pacing';
 
 export type AircraftDeckState =
     | 'HANGAR_MAINTENANCE'
@@ -73,6 +74,12 @@ export interface ThreatProfile {
     /** Payload the jet is armed with for the first sortie. */
     plannedLoadout?: AircraftLoadout;
     plannedFuel?: number;
+    /**
+     * Deck-crew task durations. Defaults to the original simulation timings,
+     * so a caller that does not care about pacing gets exactly what this
+     * state machine always did; `core/Pacing.ts` is what overrides them.
+     */
+    timing?: DeckTiming;
 }
 
 /**
@@ -171,7 +178,20 @@ export class DeckManager {
 
     // Recovery de-rig timer (RECOVERY_TRAP state)
     public trapDerigTimer: number = 0;
+    /** The original de-rig duration, kept as the SIM-pacing default. */
     public static readonly TRAP_DERIG_SEC = 3.0;
+
+    /**
+     * How long each deck task takes. These were literals inside update() -
+     * 18 s, 14 s, 30 s and TRAP_DERIG_SEC - which made the opening minute of
+     * the game unmovable. The defaults here are those same numbers.
+     */
+    public timing: DeckTiming = {
+        maintenanceSeconds: 18,
+        armingSeconds: 14,
+        repairSeconds: 30,
+        derigSeconds: DeckManager.TRAP_DERIG_SEC
+    };
     private pendingTrapOutcome: 'HANGAR' | 'REPAIR' = 'HANGAR';
 
     // Mission / campaign progression
@@ -187,14 +207,20 @@ export class DeckManager {
         this.rng = mulberry32(profile.seed ?? 1988);
         this.strikeTimeline = profile.openingTimeline
             ? profile.openingTimeline.map(p => ({ ...p }))
-            : this.defaultOpeningTimeline();
+            : DeckManager.defaultOpeningTimeline();
 
+        if (profile.timing) this.timing = { ...profile.timing };
         if (profile.inventory) Object.assign(this.inventory, profile.inventory);
         if (profile.plannedLoadout) this.plannedLoadout = { ...profile.plannedLoadout };
         if (profile.plannedFuel !== undefined) this.plannedFuel = profile.plannedFuel;
     }
 
-    private defaultOpeningTimeline(): InboundStrikePackage[] {
+    /**
+     * The scripted opening act. Static so callers (the pacing layer in
+     * GameLoop) can scale its ETAs before handing it back as an explicit
+     * `openingTimeline`, rather than reaching inside a constructed deck.
+     */
+    public static defaultOpeningTimeline(): InboundStrikePackage[] {
         return [
             {
                 id: 'STRIKE-1',
@@ -251,7 +277,7 @@ export class DeckManager {
             const speedMultiplier = (0.4 + 0.6 * (mechCrew.stamina / 100)) * mechCrew.efficiency;
             mechCrew.stamina = Math.max(10, mechCrew.stamina - 4.0 * dt);
 
-            this.currentTaskProgress += (100 / 18) * speedMultiplier * dt; // 18 seconds base
+            this.currentTaskProgress += (100 / this.timing.maintenanceSeconds) * speedMultiplier * dt;
             if (this.currentTaskProgress >= 100) {
                 this.currentTaskProgress = 0;
                 this.aircraftState = 'ARMING_REFUELING';
@@ -267,7 +293,7 @@ export class DeckManager {
             ordCrew.stamina = Math.max(10, ordCrew.stamina - 3.5 * dt);
 
             const combinedSpeed = Math.min(fuelSpeed, ordSpeed);
-            this.currentTaskProgress += (100 / 14) * combinedSpeed * dt; // 14 seconds base
+            this.currentTaskProgress += (100 / this.timing.armingSeconds) * combinedSpeed * dt;
 
             if (this.currentTaskProgress >= 100) {
                 this.currentTaskProgress = 100;
@@ -279,7 +305,7 @@ export class DeckManager {
             const speed = (0.3 + 0.7 * (mechCrew.stamina / 100));
             mechCrew.stamina = Math.max(5, mechCrew.stamina - 6.0 * dt);
 
-            this.currentTaskProgress += (100 / 30) * speed * dt; // 30s base
+            this.currentTaskProgress += (100 / this.timing.repairSeconds) * speed * dt;
             if (this.currentTaskProgress >= 100) {
                 this.currentTaskProgress = 0;
                 this.aircraftState = 'ARMING_REFUELING';
@@ -298,8 +324,8 @@ export class DeckManager {
             // actually assigned — processTrapRecovery() used to jump
             // straight to HANGAR_MAINTENANCE/DAMAGED_REPAIR.
             this.trapDerigTimer += dt;
-            this.currentTaskProgress = Math.min(100, (this.trapDerigTimer / DeckManager.TRAP_DERIG_SEC) * 100);
-            if (this.trapDerigTimer >= DeckManager.TRAP_DERIG_SEC) {
+            this.currentTaskProgress = Math.min(100, (this.trapDerigTimer / this.timing.derigSeconds) * 100);
+            if (this.trapDerigTimer >= this.timing.derigSeconds) {
                 this.trapDerigTimer = 0;
                 this.currentTaskProgress = 0;
                 if (this.pendingTrapOutcome === 'REPAIR') {
@@ -393,6 +419,27 @@ export class DeckManager {
      * the RECOVERY_TRAP de-rig state first — the aircraft doesn't teleport
      * straight to the hangar or repair bay the instant the hook catches.
      */
+    /**
+     * Put a spare airframe on the catapult without running the full
+     * hangar-and-rearm cycle, ready in roughly `readyInSeconds`.
+     *
+     * Losing a jet cost thirty-two seconds of watching progress bars before
+     * the player could fly again - which punishes the mistake twice, once in
+     * the score and once in the only currency a player actually has. The cost
+     * of a loss stays exactly what it was (an airframe off the boat and the
+     * score penalty); what goes is the waiting.
+     */
+    public scrambleSpareAirframe(readyInSeconds: number) {
+        this.aircraftState = 'ARMING_REFUELING';
+        this.catapultTimer = 0;
+        this.trapDerigTimer = 0;
+        // Arming advances at (100 / armingSeconds) x crew speed per second, so
+        // starting this far along leaves about readyInSeconds of work.
+        const remaining = (100 / this.timing.armingSeconds) * readyInSeconds;
+        this.currentTaskProgress = Math.max(0, Math.min(100, 100 - remaining));
+        this.log('SPARE AIRFRAME RANGED ON CAT 1. CREW WORKING HOT.');
+    }
+
     public processTrapRecovery(fuelRemaining: number, isDamaged: boolean) {
         this.aircraftState = 'RECOVERY_TRAP';
         this.trapDerigTimer = 0;

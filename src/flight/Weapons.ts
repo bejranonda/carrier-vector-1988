@@ -55,9 +55,19 @@ export interface WeaponsWorld {
     /** Hardened structures a scenario wants destroyed. */
     strikeTargets?: StrikeTarget[];
     onTargetDestroyed?: (target: AirborneTarget) => void;
+    /** A round connected but the aircraft is still flying. */
+    onTargetHit?: (target: AirborneTarget, integrityLeft: number) => void;
     onSAMDestroyed?: (sam: SAMSite) => void;
     /** Fired for every bomb inside the hit radius, hit or kill. */
     onStrikeTargetHit?: (target: StrikeTarget, destroyed: boolean) => void;
+}
+
+/**
+ * Bombers are built to absorb punishment; fighters are not. Expressed as a
+ * damage divisor so the cannon's own number stays the one to tune.
+ */
+function toughnessFactor(target: AirborneTarget): number {
+    return /Tu-22|BACKFIRE|BOMBER/i.test(target.name) ? 0.45 : 1;
 }
 
 export class WeaponsSystem {
@@ -67,6 +77,15 @@ export class WeaponsSystem {
     public explosions: ExplosionParticle[] = [];
 
     public gunFireTimer: number = 0;
+
+    /**
+     * Cannon hit geometry. The radius is deliberately tighter than the old
+     * 18 m - at that size the gun could not be missed with - and four hits
+     * kill a fighter, which at 20 rounds/sec is a burst of about a fifth of a
+     * second on target. A bomber takes roughly nine.
+     */
+    public static readonly GUN_HIT_RADIUS = 12;
+    public static readonly GUN_DAMAGE = 25;
     public readonly gunFireRate = 0.05; // 20 rounds/sec (simulating 6000 rpm burst)
 
     public fireGun(physics: AircraftPhysics) {
@@ -245,7 +264,7 @@ export class WeaponsSystem {
     }
 
     public update(dt: number, world: WeaponsWorld) {
-        const { terrain, targets, samSites, onTargetDestroyed, onSAMDestroyed } = world;
+        const { terrain, targets, samSites, onTargetDestroyed, onSAMDestroyed, onTargetHit } = world;
         if (this.gunFireTimer > 0) this.gunFireTimer -= dt;
 
         // 1. Bullets
@@ -271,16 +290,30 @@ export class WeaponsSystem {
                 continue;
             }
 
-            // Target hit check
+            // Target hit check. Rounds wound; enough of them kill. The old
+            // behaviour - one round inside 18 m destroying anything - made the
+            // gun both trivial and weightless, and left nothing to report back
+            // to the player between "nothing happened" and "it exploded".
             let hit = false;
             for (const t of targets) {
                 if (!t.isAlive) continue;
                 const d = Math.hypot(b.pos.x - t.position.x, b.pos.y - t.position.y, b.pos.z - t.position.z);
-                if (d < 18) { // 18m hit radius
-                    t.isAlive = false;
-                    this.spawnExplosion(t.position, 24, '#ff3333');
-                    if (onTargetDestroyed) onTargetDestroyed(t);
+                if (d < WeaponsSystem.GUN_HIT_RADIUS) {
                     hit = true;
+                    const integrity = (t.integrity ?? 100) - WeaponsSystem.GUN_DAMAGE * toughnessFactor(t);
+                    t.integrity = Math.max(0, integrity);
+                    t.hitFlash = 0.12;
+
+                    if (t.integrity <= 0) {
+                        t.isAlive = false;
+                        this.spawnExplosion(t.position, 24, '#ff3333');
+                        if (onTargetDestroyed) onTargetDestroyed(t);
+                    } else {
+                        // A visible spark, not a fireball: the difference has
+                        // to be readable at 1.5 km through a wireframe.
+                        this.spawnExplosion(t.position, 4, '#ffdd88');
+                        if (onTargetHit) onTargetHit(t, t.integrity);
+                    }
                     break;
                 }
             }

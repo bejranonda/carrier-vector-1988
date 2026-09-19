@@ -17,9 +17,10 @@ import { HUD } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 import { DeckManager } from '../carrier/DeckManager';
-import type { InboundStrikePackage } from '../carrier/DeckManager';
+import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
 import { soundFX } from '../audio/SoundFX';
+import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
 import { getContextualHint, TrainingSequence } from './Tutorial';
@@ -62,6 +63,33 @@ import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesign
 import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
 import {
+    deckTiming,
+    loadPacing,
+    nextPacing,
+    pacingSpec,
+    savePacing,
+    scaleOpeningEta
+} from './Pacing';
+import type { PacingId } from './Pacing';
+import {
+    SHAKE_SOURCES,
+    addTrauma,
+    blastTrauma,
+    decayTrauma,
+    shakeOffsets
+} from '../renderer/CameraShake';
+import { Callouts, splashLine } from './Callouts';
+import {
+    dailyKey,
+    dailyNumber,
+    dailySeed,
+    formatShareCard,
+    loadDailyResults,
+    mergeDailyResult,
+    saveDailyResults
+} from './DailySortie';
+import type { DailyResult, DailyResults } from './DailySortie';
+import {
     loadMissionRecords,
     mergeMissionResult,
     recordFor,
@@ -71,6 +99,9 @@ import type { MissionRecords } from './MissionRecords';
 import type { ObjectiveStep } from './Objectives';
 
 export type GamePhase = 'BOOT' | 'BRIEFING' | 'ACTIVE' | 'DEBRIEF';
+
+/** How long the camera stays in the cockpit after catching a wire. */
+const TRAP_CINEMATIC_SECONDS = 1.6;
 
 export class GameLoop {
     public canvas: HTMLCanvasElement;
@@ -146,6 +177,13 @@ export class GameLoop {
      * sessions, cycled with one key, and applied by pure control laws in
      * FlightAssist - see that module for why this exists at all.
      */
+    /**
+     * Operational tempo. ARCADE compresses the deck cycle and pulls the
+     * threat timeline forward so the first shot happens inside half a minute;
+     * SIM restores the original deliberate timings. See core/Pacing.ts.
+     */
+    public pacing: PacingId = loadPacing();
+
     public assistLevel: AssistLevel = loadAssistLevel();
     /** Which protection, if any, is currently taking authority. For the HUD. */
     public assistOverride: ControlDemand['override'] = 'NONE';
@@ -156,6 +194,34 @@ export class GameLoop {
      * on, and where the autopilot flies.
      */
     public tracker = new TargetTracker();
+
+    /**
+     * Cockpit shake and the full-screen hit flash. Both are presentation only:
+     * the shake is added to the CAMERA angles at draw time and never to the
+     * physics, so the fixed-timestep simulation stays deterministic and every
+     * timing test in the suite stays meaningful.
+     */
+    public trauma = 0;
+    private flashAlpha = 0;
+    private flashColor: string = THEME.alert;
+
+    /** "That worked" - the one channel for kills, traps and losses. */
+    public callouts = new Callouts();
+    /** Kills this sortie, so the callout can say SPLASH ONE, SPLASH TWO. */
+    private sortieKills = 0;
+    /** Seconds remaining on the cannon hit marker. */
+    private hitMarker = 0;
+    /** Last-seen missileActive per SAM, for launch-edge detection. */
+    private samMissileActive = new Map<string, boolean>();
+    /** Damage at the last master-caution, so it fires per event not per frame. */
+    private lastCautionDamage = 0;
+
+    /**
+     * Wire-catch payoff. The trap used to resolve as an instant view switch
+     * and a log line - the best moment in the game, over before it registered.
+     */
+    private trapCinematic = 0;
+    private trapGrade: string | null = null;
 
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
@@ -168,6 +234,18 @@ export class GameLoop {
      */
     public missionRecords: MissionRecords = loadMissionRecords();
     private isMissionBest = false;
+
+    /**
+     * The daily sortie: one date-seeded run everybody gets the same version
+     * of, and the only thing in this game that can leave the tab.
+     */
+    public dailyResults: DailyResults = loadDailyResults();
+    /** True while the active run counts as today's daily. */
+    public isDailyRun = false;
+    /** The card for the run just finished, shown on the debrief. */
+    public dailyCard: string | null = null;
+    /** Set briefly after a successful copy, for the confirmation line. */
+    public dailyCopied = false;
 
     /**
      * Rolling average frame time, used to back the bloom pass off on hardware
@@ -236,6 +314,7 @@ export class GameLoop {
 
     /** Step the briefing screen's scenario selector, wrapping at both ends. */
     public selectScenario(delta: number) {
+        soundFX.playUiMove();
         this.scenario = scenarioAt(this.scenarioIndex + delta);
         // Normalise rather than letting the index drift off into the negatives
         // over a long browse; scenarioAt() wraps the value, not the field.
@@ -249,6 +328,7 @@ export class GameLoop {
     /** Direct pick from the number shown on a selector pill. */
     public selectScenarioByIndex(index: number) {
         if (index < 0 || index >= SCENARIOS.length) return;
+        if (index !== this.scenarioIndex) soundFX.playUiMove();
         this.scenarioIndex = index;
         this.scenario = SCENARIOS[index];
     }
@@ -258,7 +338,7 @@ export class GameLoop {
      * state is replaced rather than reset in place, so a scenario can never
      * inherit a stale SAM lock, a half-finished deck task or a live bomb.
      */
-    private applyScenario(scenario: ScenarioDef) {
+    private applyScenario(scenario: ScenarioDef, seedOverride?: number) {
         const setup = scenario.setup;
 
         // The map is part of the scenario, so the terrain is rebuilt with it.
@@ -269,7 +349,7 @@ export class GameLoop {
             this.terrain = new TacticalTerrain(mapId);
         }
 
-        this.deck = new DeckManager(setup.threat);
+        this.deck = new DeckManager(this.pacedThreat(setup.threat, seedOverride));
         this.sensors = new SensorTacticsManager(this.terrain);
         if (setup.noSamSites) this.sensors.samSites.length = 0;
         this.weapons = new WeaponsSystem();
@@ -304,6 +384,16 @@ export class GameLoop {
         this.lastSpawnedWave = this.deck.waveNumber;
         this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
 
+        this.callouts.clear();
+        this.samMissileActive.clear();
+        this.lastCautionDamage = 0;
+        this.sortieKills = 0;
+        this.trauma = 0;
+        this.flashAlpha = 0;
+        this.hitMarker = 0;
+        this.trapCinematic = 0;
+        this.trapGrade = null;
+
         this.deck.log(`SCENARIO: ${scenario.name.toUpperCase()} - ${scenario.tagline}`);
 
         if (setup.startAirborne) {
@@ -312,6 +402,22 @@ export class GameLoop {
         } else {
             this.currentView = 'MACRO_DECK';
         }
+    }
+
+    /**
+     * Fold the active pacing into a scenario's threat profile: crew timings,
+     * and the ETAs of whatever opening timeline the scenario supplies (its own,
+     * or the deck's default three packages).
+     */
+    private pacedThreat(threat: ThreatProfile, seedOverride?: number): ThreatProfile {
+        const paced: ThreatProfile = { ...threat, timing: deckTiming(this.pacing) };
+        if (seedOverride !== undefined) paced.seed = seedOverride;
+        const opening = threat.openingTimeline ?? DeckManager.defaultOpeningTimeline();
+        paced.openingTimeline = opening.map(p => ({
+            ...p,
+            etaSeconds: scaleOpeningEta(p.etaSeconds, this.pacing)
+        }));
+        return paced;
     }
 
     /** Snapshot of everything the mission director is allowed to look at. */
@@ -357,12 +463,19 @@ export class GameLoop {
 
     /** A bomb went into (or through) a hardened structure. */
     private onStrikeTargetHit(target: StrikeTarget, destroyed: boolean) {
+        const blast = blastTrauma(this.rangeTo(target.position), 1200);
         if (destroyed) {
             this.score.recordKill('STRUCTURE');
             this.deck.log(`DIRECT HIT: ${target.name} DESTROYED.`);
-            soundFX.playExplosion();
+            soundFX.playExplosion(this.placeAt(target.position));
+            soundFX.playKillConfirm();
+            this.callouts.push('TARGET DESTROYED', 'KILL', target.name);
+            this.shake(Math.max(blast, 0.35));
+            this.flash(THEME.caution, 0.3);
         } else {
             this.deck.log(`HIT ON ${target.name} - ${target.hits}/${target.hitsRequired} REQUIRED.`);
+            this.callouts.push('DIRECT HIT', 'KILL', `${target.hits}/${target.hitsRequired} REQUIRED`);
+            this.shake(Math.max(blast, 0.2));
         }
     }
 
@@ -414,7 +527,11 @@ export class GameLoop {
             if (pkg.isIntercepted || pkg.hasAttacked) continue;
 
             const bearingRad = pkg.bearingDeg * (Math.PI / 180);
-            const spawnZ = 6500 + Math.min(6000, pkg.etaSeconds * 12);
+            // Under ARCADE the whole fight is fought closer in: a contact
+            // eight kilometres out is thirty-five seconds of holding a
+            // heading, which is not a gameplay beat.
+            const spawnZ = (6500 + Math.min(6000, pkg.etaSeconds * 12))
+                * pacingSpec(this.pacing).spawnDistanceScale;
             // Keep contacts inside the canyon corridor so they don't spawn
             // buried inside a mountain; bearing still drives lateral offset.
             const lateralX = Math.sin(bearingRad) * 900;
@@ -500,13 +617,27 @@ export class GameLoop {
     /** Issue a fresh airframe after a loss. */
     private replaceAirframe(reason: string) {
         this.score.recordAirframeLost();
+        this.callouts.push('AIRFRAME LOST', 'LOSS');
+        this.shake(SHAKE_SOURCES.damageTaken);
+        this.flash(THEME.alert, 0.75);
+        this.sortieKills = 0;
         this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
         this.deck.log(reason);
         this.physics.repair();
         this.physics.velocity = { x: 0, y: 0, z: 0 };
         this.physics.throttle = 0;
-        this.deck.aircraftState = 'HANGAR_MAINTENANCE';
-        this.deck.currentTaskProgress = 0;
+
+        // The cost of losing a jet is the airframe and the score. Under
+        // ARCADE it is not also half a minute of watching a progress bar -
+        // that punishes the mistake twice, and the second punishment lands on
+        // the only thing the player came here to do.
+        const respawn = pacingSpec(this.pacing).respawnSeconds;
+        if (respawn > 0 && this.deck.inventory.spareAirframes > 0) {
+            this.deck.scrambleSpareAirframe(respawn);
+        } else {
+            this.deck.aircraftState = 'HANGAR_MAINTENANCE';
+            this.deck.currentTaskProgress = 0;
+        }
         this.currentView = 'MACRO_DECK';
     }
 
@@ -629,9 +760,56 @@ export class GameLoop {
 
         // Held-trigger cannon fire
         if (k[' '] && this.selectedWeapon === 'GUN') {
+            const before = this.weapons.bullets.length;
             this.weapons.fireGun(this.physics);
+            if (this.weapons.bullets.length > before) this.shake(SHAKE_SOURCES.gun);
             this.training.progress.gunFired = true;
         }
+    }
+
+    /**
+     * SAM launches, as an audible event at the launcher rather than a generic
+     * warble in your head. Detected as the missileActive edge, because the
+     * sensor manager owns the launch decision and does not announce it.
+     */
+    private reportSamLaunches() {
+        for (const sam of this.sensors.samSites) {
+            const wasActive = this.samMissileActive.get(sam.id) === true;
+            if (sam.missileActive && !wasActive) {
+                soundFX.playDistantLaunch(this.placeAt(sam.position));
+                this.callouts.push('SAM LAUNCH', 'LOSS', sam.name);
+            }
+            this.samMissileActive.set(sam.id, sam.missileActive);
+        }
+    }
+
+    /** Where a world sound happened, for panning and attenuation. */
+    private placeAt(source: Vector3): SoundPlacement {
+        return {
+            listener: this.physics.position,
+            listenerYaw: this.physics.yaw,
+            source
+        };
+    }
+
+    /** Slant range from the aircraft to a world point. */
+    private rangeTo(p: Vector3): number {
+        return Math.hypot(
+            p.x - this.physics.position.x,
+            p.y - this.physics.position.y,
+            p.z - this.physics.position.z
+        );
+    }
+
+    /** Register a shake event. Presentation only - see the field comment. */
+    public shake(amount: number) {
+        this.trauma = addTrauma(this.trauma, amount);
+    }
+
+    /** Full-screen flash, used sparingly: damage taken and kills. */
+    private flash(color: string, alpha: number) {
+        this.flashColor = color;
+        this.flashAlpha = Math.max(this.flashAlpha, alpha);
     }
 
     /** Everything the assist laws are allowed to know about the aircraft. */
@@ -702,8 +880,86 @@ export class GameLoop {
     // Player commands: assist level, designation, weapon release
     // -----------------------------------------------------------------
 
+    /**
+     * Fly today's daily sortie: the endless carrier defence, seeded from the
+     * date so every player in the world gets the identical campaign, at ARCADE
+     * pacing so the comparison is like for like whatever they have set.
+     */
+    public startDailySortie(now: Date = new Date()) {
+        this.selectScenarioById('CARRIER_DEFENSE');
+        this.isDailyRun = true;
+        this.dailyCard = null;
+        this.dailyCopied = false;
+        this.pacing = 'ARCADE';
+        this.phase = 'BRIEFING';
+        this.confirmBriefing(dailySeed(now));
+    }
+
+    /** Today's stored result, if it has been flown. */
+    public todaysDaily(now: Date = new Date()): DailyResult | null {
+        return this.dailyResults[dailyKey(now)] ?? null;
+    }
+
+    public dailyNumberToday(now: Date = new Date()): number {
+        return dailyNumber(now);
+    }
+
+    /**
+     * Copy the card. Called from a keydown so the browser's gesture
+     * requirement is satisfied; failure is not an error worth stopping for,
+     * because the card is on screen either way.
+     */
+    public copyDailyCard(): boolean {
+        if (!this.dailyCard) return false;
+        try {
+            void globalThis.navigator?.clipboard?.writeText(this.dailyCard);
+            this.dailyCopied = true;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Fold a finished daily run into the stored record and build its card. */
+    private recordDailyRun(now: Date = new Date()) {
+        const b = this.score.breakdown;
+        const merged = mergeDailyResult(this.dailyResults, {
+            date: dailyKey(now),
+            score: this.score.totalScore,
+            rank: this.score.rank,
+            wave: this.deck.waveNumber,
+            fighterKills: b.fighterKills,
+            bomberKills: b.bomberKills,
+            samKills: b.samKills,
+            traps: b.traps,
+            perfectTraps: b.perfectTraps,
+            hullRemaining: this.deck.inventory.carrierHealth,
+            completed: this.missionOutcome === 'SUCCESS'
+        });
+
+        this.dailyResults = merged.results;
+        saveDailyResults(this.dailyResults);
+        this.dailyCard = formatShareCard(merged.today);
+    }
+
+    /**
+     * Cycle ARCADE <-> SIM. Takes effect on the next run rather than mid-flight,
+     * because re-timing a deck cycle that is already half finished would show
+     * up as a progress bar jumping backwards.
+     */
+    public cyclePacing() {
+        soundFX.playUiMove();
+        this.pacing = nextPacing(this.pacing);
+        savePacing(this.pacing);
+        const spec = pacingSpec(this.pacing);
+        this.deck.log(`OPS TEMPO: ${spec.label} - ${spec.blurb}.`);
+        if (this.phase === 'BRIEFING') return;
+        this.deck.log('TAKES EFFECT ON THE NEXT SORTIE.');
+    }
+
     /** Cycle MANUAL -> ASSIST -> AUTOPILOT, and say so in the log. */
     public cycleAssistLevel() {
+        soundFX.playUiMove();
         this.assistLevel = nextAssistLevel(this.assistLevel);
         saveAssistLevel(this.assistLevel);
         this.assistOverride = 'NONE';
@@ -719,6 +975,7 @@ export class GameLoop {
         if (chosen) {
             const range = (chosen.range / 1000).toFixed(1);
             this.deck.log(`DESIGNATED ${chosen.target.name} - ${range} KM - ${chosen.recommendedWeapon}.`);
+            soundFX.playLockTone();
         } else {
             this.deck.log('NO TARGETS ON THE SCOPE.');
         }
@@ -741,13 +998,17 @@ export class GameLoop {
         if (this.currentView !== 'MICRO_FLIGHT') return;
         if (this.selectedWeapon === 'AIM9') {
             const designated = this.tracker.designated();
+            const before = this.weapons.missiles.length;
             this.weapons.fireSidewinder(
                 this.physics,
                 this.airborneTargets,
                 designated?.target.kind === 'AIR' ? designated.target.id : null
             );
+            if (this.weapons.missiles.length > before) this.shake(SHAKE_SOURCES.missileLaunch);
         } else if (this.selectedWeapon === 'BOMB') {
+            const before = this.weapons.bombs.length;
             this.weapons.dropBomb(this.physics);
+            if (this.weapons.bombs.length > before) this.shake(SHAKE_SOURCES.bombRelease);
         }
     }
 
@@ -779,6 +1040,12 @@ export class GameLoop {
 
         this.deck.update(dt);
 
+        if (wasLaunching) {
+            // A stroke that puts 11 tonnes at 160 m/s in two and a half
+            // seconds should be felt, not read off a progress bar.
+            this.shake(SHAKE_SOURCES.catapultStroke * 0.04);
+        }
+
         if (wasLaunching && this.deck.aircraftState === 'AIRBORNE') {
             this.isCatapultLaunching = false;
             this.catapultProgress = 0;
@@ -798,6 +1065,26 @@ export class GameLoop {
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
+            soundFX.updateAmbience({
+                airSpeed: 0, alpha: 0, isStalled: false, isAirborne: false, rwrState: 'SILENT'
+            });
+        }
+
+        // Presentation decays on the same fixed clock as everything else, so
+        // shake and callouts do not run at different speeds on different
+        // monitors.
+        this.trauma = decayTrauma(this.trauma, dt);
+        this.flashAlpha = Math.max(0, this.flashAlpha - dt * 2.6);
+        this.hitMarker = Math.max(0, this.hitMarker - dt);
+        this.callouts.update(dt);
+        if (this.trapCinematic > 0) {
+            this.trapCinematic = Math.max(0, this.trapCinematic - dt);
+            // The deck state machine already owns the aircraft; this is purely
+            // how long the camera stays with it.
+            if (this.trapCinematic === 0) {
+                this.trapGrade = null;
+                this.currentView = 'MACRO_DECK';
+            }
         }
 
         this.updateMission(dt);
@@ -814,6 +1101,14 @@ export class GameLoop {
         // contact that died this tick has to drop itself immediately.
         this.refreshDesignation();
         soundFX.updateEngine(this.physics.throttle, true);
+        this.reportSamLaunches();
+        soundFX.updateAmbience({
+            airSpeed: this.physics.airSpeed,
+            alpha: this.physics.alpha,
+            isStalled: this.physics.isStalled,
+            isAirborne: true,
+            rwrState: this.sensors.masterRwrState
+        });
 
         // Sensors, RWR and SAM engagements
         this.sensors.update(dt, this.physics);
@@ -829,6 +1124,11 @@ export class GameLoop {
             this.physics.applyDamage(impact.damage);
             this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
             this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
+            soundFX.playExplosion(this.placeAt(impact.position));
+            soundFX.playMasterCaution();
+            this.shake(SHAKE_SOURCES.damageTaken);
+            this.flash(THEME.alert, 0.5);
+            this.callouts.push('HIT', 'LOSS', `${Math.round(impact.damage)}% AIRFRAME DAMAGE`);
         }
 
         // Enemy aircraft behaviour (also integrates their positions)
@@ -838,7 +1138,9 @@ export class GameLoop {
             const dmg = 4 + Math.random() * 6;
             this.physics.applyDamage(dmg);
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
-            soundFX.playGunShot();
+            soundFX.playIncomingFire(this.placeAt(enemy.position));
+            this.shake(SHAKE_SOURCES.damageTaken * 0.5);
+            this.flash(THEME.alert, 0.28);
         });
 
         // Player weapons
@@ -848,12 +1150,29 @@ export class GameLoop {
             samSites: this.sensors.samSites,
             strikeTargets: this.strikeTargets,
             onTargetDestroyed: (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
+            onTargetHit: () => {
+                // Every round that connects says so. Without this the gun has
+                // only two states - nothing and an explosion - and the player
+                // cannot tell a near miss from a hit at 1.5 km.
+                this.hitMarker = 0.18;
+                soundFX.playHitTick();
+            },
             onSAMDestroyed: (destroyedSAM) => {
                 this.score.recordKill('SAM');
                 this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
+                this.callouts.push('SAM DOWN', 'KILL', destroyedSAM.name);
+                this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedSAM.position), 900));
+                soundFX.playExplosion(this.placeAt(destroyedSAM.position));
+                soundFX.playKillConfirm();
             },
             onStrikeTargetHit: (target, destroyed) => this.onStrikeTargetHit(target, destroyed)
         });
+
+        // Master caution at each 25% of airframe damage: a panel sound for a
+        // panel problem, distinct from the RWR, which means look outside.
+        const damageStep = Math.floor(this.physics.damage / 25);
+        if (damageStep > Math.floor(this.lastCautionDamage / 25)) soundFX.playMasterCaution();
+        this.lastCautionDamage = this.physics.damage;
 
         // Aircraft destroyed by accumulated battle damage
         if (this.physics.damage >= 100) {
@@ -884,7 +1203,20 @@ export class GameLoop {
                         ? 'BOLTER! MISSED THE WIRES.'
                         : `TRAP GRADE: ${grade}-WIRE.`
                 );
-                this.currentView = 'MACRO_DECK';
+
+                // Hold the cockpit for a beat and let the wire do its work.
+                // Cutting instantly to the deck screen threw away the payoff
+                // for the hardest thing in the game.
+                this.trapCinematic = TRAP_CINEMATIC_SECONDS;
+                this.trapGrade = grade === 'BOLTER' ? 'BOLTER' : `${grade}-WIRE`;
+                if (grade === 'BOLTER') {
+                    this.callouts.push('BOLTER', 'LOSS', 'MISSED THE WIRES');
+                } else {
+                    this.callouts.push(`${grade}-WIRE`, 'PRAISE',
+                        grade === 3 ? 'PERFECT TRAP' : 'TRAPPED ABOARD');
+                    this.shake(SHAKE_SOURCES.wireCatch);
+                    soundFX.playWireCatch();
+                }
             }
         }
     }
@@ -892,6 +1224,14 @@ export class GameLoop {
     private onTargetDestroyed(destroyedTarget: AirborneTarget) {
         this.deck.log(`COMBAT REPORT: ${destroyedTarget.name} DESTROYED.`);
         this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
+
+        this.sortieKills++;
+        this.callouts.push(splashLine(this.sortieKills), 'KILL', destroyedTarget.name);
+        // A kill at knife-fighting range should rattle the canopy; one at
+        // five kilometres is a flash on the horizon.
+        this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedTarget.position), 900));
+        this.flash(THEME.phosphor, 0.12);
+        soundFX.playKillConfirm();
 
         // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
         const pkgId = destroyedTarget.id.replace(/-\d+$/, '');
@@ -937,7 +1277,10 @@ export class GameLoop {
         this.missionRecords = merged.records;
         this.isMissionBest = merged.isNewBest;
         saveMissionRecords(this.missionRecords);
+        if (this.isDailyRun) this.recordDailyRun();
+
         this.deck.log(outcome === 'SUCCESS' ? 'MISSION COMPLETE.' : 'MISSION FAILED.');
+        soundFX.playDebriefSting(outcome === 'SUCCESS');
         this.phase = 'DEBRIEF';
     }
 
@@ -1057,7 +1400,9 @@ export class GameLoop {
             this.briefing.drawBriefingBackdrop(this.renderer, this.elapsedSeconds, h);
             this.post.composite(this.ctx);
             this.briefing.drawBriefing(
-                this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords
+                this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords,
+                `${pacingSpec(this.pacing).label} pacing`,
+                { number: this.dailyNumberToday(), result: this.todaysDaily() }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
@@ -1073,7 +1418,9 @@ export class GameLoop {
                     title: this.scenario.victoryTitle,
                     missionBest: recordFor(this.missionRecords, this.scenario.id).best,
                     isMissionBest: this.isMissionBest,
-                    nextUp: this.nextUpLabel() ?? undefined
+                    nextUp: this.nextUpLabel() ?? undefined,
+                    shareCard: this.dailyCard,
+                    copied: this.dailyCopied
                 }
             );
             return;
@@ -1104,13 +1451,33 @@ export class GameLoop {
                 this.currentView === 'MICRO_FLIGHT' ? 'FLIGHT' : 'DECK'
             );
         }
+
+        this.drawImpactFlash(w, h);
+    }
+
+    /**
+     * A single translucent wash over the whole screen: red when something hits
+     * you, green when you kill something. Drawn over the HUD deliberately -
+     * this is the one cue that has to land even if the player is reading an
+     * instrument.
+     */
+    private drawImpactFlash(w: number, h: number) {
+        if (this.flashAlpha <= 0.002) return;
+        this.ctx.save();
+        this.ctx.globalAlpha = Math.min(0.75, this.flashAlpha);
+        this.ctx.fillStyle = this.flashColor;
+        this.ctx.fillRect(0, 0, w, h);
+        this.ctx.restore();
     }
 
     private drawCockpitSim(frameDt: number) {
+        // The shake is added HERE and nowhere else: the camera sees it, the
+        // flight model never does.
+        const jolt = shakeOffsets(this.trauma, this.elapsedSeconds);
         const camPos = this.physics.position;
-        const camPitch = this.physics.pitch;
-        const camYaw = this.physics.yaw;
-        const camRoll = this.physics.roll;
+        const camPitch = this.physics.pitch + jolt.pitch;
+        const camYaw = this.physics.yaw + jolt.yaw;
+        const camRoll = this.physics.roll + jolt.roll;
 
         // Phosphor decay instead of a hard clear: old strokes fade out over
         // ~60ms leaving authentic vector-CRT trails. This happens on the
@@ -1186,7 +1553,10 @@ export class GameLoop {
                     : null,
                 designated: this.tracker.designated(),
                 assistLabel: assistSpec(this.assistLevel).label,
-                assistOverride: this.assistOverride
+                assistOverride: this.assistOverride,
+                callouts: this.callouts.active(),
+                hitMarker: this.hitMarker,
+                trapStamp: this.trapGrade
             }
         );
     }
@@ -1231,10 +1601,11 @@ export class GameLoop {
     // Phase transitions driven by the input layer
     // -----------------------------------------------------------------
 
-    public confirmBriefing() {
+    public confirmBriefing(seedOverride?: number) {
         if (this.phase !== 'BRIEFING') return;
+        soundFX.playUiSelect();
         // Build the world fresh from whatever the selector landed on.
-        this.applyScenario(this.scenario);
+        this.applyScenario(this.scenario, seedOverride);
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'ACTIVE';
@@ -1244,6 +1615,8 @@ export class GameLoop {
     public restartFromDebrief() {
         this.isNewBest = false;
         this.isMissionBest = false;
+        this.isDailyRun = false;
+        this.dailyCopied = false;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'BRIEFING';
@@ -1258,6 +1631,7 @@ export class GameLoop {
      * single, discoverable way to turn it off.
      */
     public cycleDisplayMode() {
+        soundFX.playUiMove();
         this.displayMode = nextDisplayMode(this.displayMode);
         this.applyDisplayMode();
         this.post.hardClear();

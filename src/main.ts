@@ -20,6 +20,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const game = new GameLoop(canvas);
 
+    // Dev-only handle, so a browser session can be measured and driven from
+    // the outside (time-to-first-kill, forcing a mission end for a screenshot).
+    // Stripped from production builds by the bundler's dead-code elimination.
+    if (import.meta.env.DEV) {
+        const dev = window as unknown as Record<string, unknown>;
+        dev.__game = game;
+        dev.__sfx = soundFX;
+    }
+
     const handleResize = () => game.resize(window.innerWidth, window.innerHeight);
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -56,6 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
             game.cycleDisplayMode();
             return;
         }
+        if (key === 'o') {
+            game.cyclePacing();
+            return;
+        }
 
         // --- Phase transitions ---
         if (game.phase === 'BRIEFING') {
@@ -68,6 +81,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key >= '1' && key <= '9') {
                 // Direct scenario pick by the number shown on its pill.
                 game.selectScenarioByIndex(Number(key) - 1);
+            } else if (key === 'd') {
+                // Today's daily sortie: the same seeded run for everyone.
+                e.preventDefault();
+                game.startDailySortie();
             } else if (key === 's') {
                 // Quick start for returning players
                 game.confirmBriefing();
@@ -77,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (game.phase === 'DEBRIEF') {
             if (key === 'enter') game.restartFromDebrief();
+            else if (key === 'c') game.copyDailyCard();
             return;
         }
         if (game.phase !== 'ACTIVE') return;

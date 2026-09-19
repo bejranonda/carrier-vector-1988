@@ -60,13 +60,15 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['1', '2', '3', '4', '5'], display: '1-5', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['d'], display: 'D', label: "Fly today's daily sortie (same seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
 
     // --- System (available everywhere) ---
     { keys: ['h', 'f1'], display: 'H / F1', label: 'Show control reference', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['escape'], display: 'ESC', label: 'Close overlay', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['tab'], display: 'TAB', label: 'Toggle cockpit / flight deck view', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' }
 ];
 
 /** All bindings valid in a given context, including GLOBAL ones. */

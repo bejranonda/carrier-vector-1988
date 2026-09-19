@@ -167,9 +167,9 @@ at all. Panel priorities live in the spec list at the top of
 
 ## 16. Local storage is best-effort
 
-Four things are persisted, all to `localStorage` under `carrier-vector-1988.*`:
-the display mode, the global personal best, the flight assist level and the
-per-mission records. Storage throws in Safari private mode and when
+Six things are persisted, all to `localStorage` under `carrier-vector-1988.*`:
+the display mode, the global personal best, the flight assist level, the
+per-mission records, the ops tempo and the daily-sortie results. Storage throws in Safari private mode and when
 third-party storage is blocked, so every access is wrapped and falls back
 silently — the display mode reverts to `MODERN`, the assist level to `ASSIST`,
 and the scores read as zero. The mission records are also sanitised field by
@@ -226,3 +226,38 @@ this leaks information rather than kills — but it does mean the designation ke
 doubles as a free reconnaissance tool. Gating candidates on
 `SensorTacticsManager.checkLOS()` plus a detection range is the fix, and would
 also make terrain masking cut both ways.
+
+
+## 21. The daily sortie is local-only **[By design]**
+
+There is no server, no account and no global leaderboard. Today's seed is
+derived from the date, so everybody flies the same campaign, but the only
+record of your result is in your own browser and the only way it travels is
+the text card.
+
+**Consequence:** you cannot see where you placed, and a card can be edited
+before it is pasted. Both are accepted: a leaderboard needs a backend, and
+this project's whole shape is a static bundle with zero runtime dependencies.
+The card is the social layer, not a scoring authority.
+
+## 22. Audio spatialisation is stereo, not 3D **[By design]**
+
+World events are panned and attenuated by distance and bearing
+(`audio/AudioMix.ts`), but there is no HRTF, no elevation cue, no Doppler and
+no occlusion — a SAM launch behind a ridge sounds exactly like one in the open.
+
+**Consequence:** the mix tells you left, right and how far, and nothing else.
+`PannerNode` with HRTF would buy elevation and back-versus-front at real CPU
+cost on a canvas game that is already spending its budget on the renderer.
+Stereo pan plus inverse-square is most of the tactical value for a fraction of
+the cost.
+
+## 23. Gun balance changed with the damage model
+
+Rounds now do 25 damage inside a 12 m radius instead of killing outright
+inside 18 m, so a fighter takes about four hits and a bomber about nine.
+
+**Consequence:** the cannon is meaningfully harder than it was, and any muscle
+memory from an earlier build is wrong. The AIM-9 still kills outright. The
+numbers are `WeaponsSystem.GUN_DAMAGE` and `GUN_HIT_RADIUS`, with the
+bomber multiplier in `toughnessFactor()`.
