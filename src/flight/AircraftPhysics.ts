@@ -4,6 +4,8 @@
  * G-load induced drag, stall control authority loss, afterburner fuel burn, and bay door dynamics.
  */
 
+import { CM_TUNING } from './Countermeasures';
+
 export interface Vector3 {
     x: number;
     y: number;
@@ -14,6 +16,7 @@ export interface AircraftLoadout {
     vulcanAmmo: number; // rounds (e.g. 500)
     sidewinders: number; // count (e.g. 4)
     ironBombs: number; // count (e.g. 2)
+    chaff: number; // countermeasure cartridges (e.g. 12)
 }
 
 export class AircraftPhysics {
@@ -35,7 +38,8 @@ export class AircraftPhysics {
     public loadout: AircraftLoadout = {
         vulcanAmmo: 500,
         sidewinders: 4,
-        ironBombs: 2
+        ironBombs: 2,
+        chaff: CM_TUNING.capacity
     };
 
     // Aerodynamic states

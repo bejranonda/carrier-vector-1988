@@ -145,7 +145,7 @@ describe('GameLoop integration smoke test', () => {
 
         game.deck.aircraftState = 'CATAPULT_READY';
         game.deck.plannedFuel = 3200;               // deliberately NOT the old hardcoded 4500
-        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1 };
+        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1, chaff: 12 };
 
         expect(game.requestCatapultLaunch()).toBe(true);
         expect(game.deck.aircraftState).toBe('CATAPULT_LAUNCHING');

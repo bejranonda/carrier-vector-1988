@@ -7,8 +7,8 @@
  */
 
 import type { Rect } from './DeckLayout';
-import type { HudLayout } from './HudLayout';
-import { HUD_METRICS } from './HudLayout';
+import type { HudLayout, ArcadeBarSlotId } from './HudLayout';
+import { HUD_METRICS, solveArcadeBar } from './HudLayout';
 
 export type DeckAction =
     | 'LAUNCH'
@@ -207,49 +207,39 @@ export function solveHudClickableAreas(
 
     if (isArcade) {
         // --- ARCADE HUD BOTTOM STRIP ---
-        // Clean, prominent horizontal pill bar at bottom
-        const barY = height - 52;
-        const pillH = 34;
-        let curX = 24;
-
-        // Weapon pills
-        const wpns: [HudAction, string, boolean][] = [
-            ['WEAPON_GUN', '1 GUN', state.selectedWeapon === 'GUN'],
-            ['WEAPON_AIM9', '2 AIM-9', state.selectedWeapon === 'AIM9'],
-            ['WEAPON_BOMB', '3 MK82', state.selectedWeapon === 'BOMB']
-        ];
-        for (const [id, label] of wpns) {
-            const w = 78;
-            areas.push({ id, rect: { x: curX, y: barY, w, h: pillH }, label });
-            curX += w + 8;
+        // Same solver `HUD.ts` uses to draw this row, so the click targets
+        // can never drift from what is actually on screen. The status pill
+        // isn't clickable, so `statusTextWidth` is left undefined - the
+        // solver then simply omits that slot.
+        const bar = solveArcadeBar({
+            width,
+            height,
+            weaponCount: 3,
+            showCountermeasure: false,
+            showRewind: true,
+            showPadlock: true
+        });
+        const slotActions: Partial<Record<ArcadeBarSlotId, HudAction>> = {
+            WEAPON_0: 'WEAPON_GUN',
+            WEAPON_1: 'WEAPON_AIM9',
+            WEAPON_2: 'WEAPON_BOMB',
+            ASSIST: 'ASSIST_CYCLE',
+            REWIND: 'TIME_REWIND',
+            PADLOCK: 'PADLOCK'
+        };
+        const slotLabels: Partial<Record<ArcadeBarSlotId, string>> = {
+            WEAPON_0: '1 GUN',
+            WEAPON_1: '2 AIM-9',
+            WEAPON_2: '3 MK82',
+            ASSIST: `ASSIST [${state.assistLabel.toUpperCase()}]`,
+            REWIND: 'REWIND 5S',
+            PADLOCK: state.padlockActive ? 'LOCK: ON' : 'PADLOCK'
+        };
+        for (const s of bar) {
+            const id = slotActions[s.id];
+            if (!id) continue;
+            areas.push({ id, rect: s.rect, label: slotLabels[s.id] ?? '' });
         }
-
-        // Assist Mode Pill
-        curX += 16;
-        const assistW = 110;
-        areas.push({
-            id: 'ASSIST_CYCLE',
-            rect: { x: curX, y: barY, w: assistW, h: pillH },
-            label: `ASSIST [${state.assistLabel.toUpperCase()}]`
-        });
-        curX += assistW + 8;
-
-        // Rewind Pill
-        const rewindW = 84;
-        areas.push({
-            id: 'TIME_REWIND',
-            rect: { x: curX, y: barY, w: rewindW, h: pillH },
-            label: 'REWIND 5S'
-        });
-        curX += rewindW + 8;
-
-        // Padlock Pill
-        const padlockW = 80;
-        areas.push({
-            id: 'PADLOCK',
-            rect: { x: curX, y: barY, w: padlockW, h: pillH },
-            label: state.padlockActive ? 'LOCK: ON' : 'PADLOCK'
-        });
 
         // Top right controls: Deck View, HUD Mode, and Flight Stick Mode
         const rightBtnW = 100;

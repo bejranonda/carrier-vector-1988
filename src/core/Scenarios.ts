@@ -338,7 +338,7 @@ const CANYON_STRIKE: ScenarioDef = {
         // The window is the raid window. Once the pen is down the clock has
         // done its job and the egress is not a race.
         timeLimitActive: (s) => !s.strikeTargetDestroyed,
-        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 2 }
+        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 2, chaff: 12 }
     },
     cards: [
         {
@@ -431,7 +431,7 @@ const IRON_HAND: ScenarioDef = {
         // Four launchers behind offset ridge gaps: each kill needs its own
         // route in, which is the whole point of a SEAD mission.
         map: 'SHATTERED_RIDGE',
-        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4 }
+        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4, chaff: 12 }
     },
     cards: [
         {
@@ -488,7 +488,7 @@ const LAST_STAND: ScenarioDef = {
             plannedFuel: 4200
         },
         map: 'OPEN_SEA',
-        loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0 }
+        loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0, chaff: 12 }
     },
     cards: [
         {
@@ -543,7 +543,7 @@ const CARRIER_QUALS: ScenarioDef = {
         map: 'OPEN_SEA',
         noSamSites: true,
         startAirborne: true,
-        loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0 }
+        loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0, chaff: 12 }
     },
     cards: [
         {

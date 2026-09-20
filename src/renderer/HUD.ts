@@ -35,8 +35,8 @@ import type { TargetSolution } from '../tactics/TargetDesignation';
 import type { ControlDemand } from '../flight/FlightAssist';
 import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
-import { HUD_METRICS, solveHudLayout } from './HudLayout';
-import type { HudLayout, HudReserve } from './HudLayout';
+import { HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
+import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
 import type { MotionSettings } from '../core/Accessibility';
 import { placeLabels } from './LabelDeclutter';
@@ -816,24 +816,40 @@ export class HUD {
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
         context: HudContext
     ) {
-        const barY = this.height - 52;
-        const pillH = 34;
-        let curX = 24;
-
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
 
+        // The status pill's width depends on measured text, so it has to be
+        // known before the solver runs - it decides whether STATUS fits.
+        const ab = physics.throttle > 1.0;
+        const hull = Math.max(0, Math.round(100 - physics.damage));
+        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${Math.floor(physics.fuel)}L  ·  HULL ${hull}%`;
+        ctx.font = font(11, 600);
+        const statusTextWidth = ctx.measureText(statusText).width;
+
+        const bar = solveArcadeBar({
+            width: this.width,
+            height: this.height,
+            weaponCount: 3,
+            showCountermeasure: false,
+            showRewind: true,
+            showPadlock: true,
+            statusTextWidth
+        });
+        const slot = (id: ArcadeBarSlotId) => bar.find(s => s.id === id)?.rect;
+
         // 1. Weapon Pills
-        const wpns: [string, 'GUN' | 'AIM9' | 'BOMB'][] = [
-            [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
-            [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
-            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB']
+        const wpns: [ArcadeBarSlotId, string, 'GUN' | 'AIM9' | 'BOMB'][] = [
+            ['WEAPON_0', `1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
+            ['WEAPON_1', `2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
+            ['WEAPON_2', `3 MK82 ${physics.loadout.ironBombs}`, 'BOMB']
         ];
-        for (const [text, id] of wpns) {
-            const w = 78;
-            const selected = selectedWeapon === id;
-            plate(ctx, { x: curX, y: barY, w, h: pillH }, {
+        for (const [slotId, text, weaponId] of wpns) {
+            const rect = slot(slotId);
+            if (!rect) continue;
+            const selected = selectedWeapon === weaponId;
+            plate(ctx, rect, {
                 fill: selected ? 'rgba(95,216,255,0.22)' : 'rgba(9,19,25,0.7)',
                 border: selected ? THEME.key : THEME.edgeSoft,
                 radius: 4
@@ -842,68 +858,67 @@ export class HUD {
             ctx.font = font(11, 700);
             ctx.fillStyle = selected ? THEME.ink : THEME.muted;
             ctx.textAlign = 'center';
-            ctx.fillText(text, curX + w / 2, barY + pillH / 2);
+            ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
             noGlow(ctx);
-            curX += w + 8;
         }
 
         // 2. Assist Mode Pill
-        curX += 8;
-        const assistW = 110;
-        const assistText = `ASSIST: ${context.assistLabel ?? 'AUTO'}`.toUpperCase();
-        plate(ctx, { x: curX, y: barY, w: assistW, h: pillH }, {
-            fill: 'rgba(9,19,25,0.7)',
-            border: THEME.edgeSoft,
-            radius: 4
-        });
-        ctx.font = font(10, 600);
-        ctx.fillStyle = THEME.phosphor;
-        ctx.textAlign = 'center';
-        ctx.fillText(assistText, curX + assistW / 2, barY + pillH / 2);
-        curX += assistW + 8;
-
-        // 3. Rewind Pill
-        const rewindW = 84;
-        plate(ctx, { x: curX, y: barY, w: rewindW, h: pillH }, {
-            fill: 'rgba(9,19,25,0.7)',
-            border: THEME.edgeSoft,
-            radius: 4
-        });
-        ctx.font = font(10, 600);
-        ctx.fillStyle = THEME.caution;
-        ctx.textAlign = 'center';
-        ctx.fillText('REWIND 5S', curX + rewindW / 2, barY + pillH / 2);
-        curX += rewindW + 8;
-
-        // 4. Padlock Pill
-        const padlockW = 80;
-        const lockOn = context.padlockActive === true || context.isPadlocked === true;
-        plate(ctx, { x: curX, y: barY, w: padlockW, h: pillH }, {
-            fill: lockOn ? 'rgba(255,180,50,0.2)' : 'rgba(9,19,25,0.7)',
-            border: lockOn ? THEME.caution : THEME.edgeSoft,
-            radius: 4
-        });
-        ctx.font = font(10, 600);
-        ctx.fillStyle = lockOn ? THEME.caution : THEME.muted;
-        ctx.textAlign = 'center';
-        ctx.fillText(lockOn ? 'LOCK: ON' : 'PADLOCK', curX + padlockW / 2, barY + pillH / 2);
-        curX += padlockW + 16;
-
-        // 5. Status Telemetry Pill (Throttle, Fuel, Hull)
-        const ab = physics.throttle > 1.0;
-        const hull = Math.max(0, Math.round(100 - physics.damage));
-        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${Math.floor(physics.fuel)}L  ·  HULL ${hull}%`;
-        ctx.font = font(11, 600);
-        const statusW = ctx.measureText(statusText).width + 24;
-        if (curX + statusW < this.width - 24) {
-            plate(ctx, { x: curX, y: barY, w: statusW, h: pillH }, {
+        const assistRect = slot('ASSIST');
+        if (assistRect) {
+            const assistText = `ASSIST: ${context.assistLabel ?? 'AUTO'}`.toUpperCase();
+            plate(ctx, assistRect, {
                 fill: 'rgba(9,19,25,0.7)',
                 border: THEME.edgeSoft,
                 radius: 4
             });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = THEME.phosphor;
+            ctx.textAlign = 'center';
+            ctx.fillText(assistText, assistRect.x + assistRect.w / 2, assistRect.y + assistRect.h / 2);
+        }
+
+        // 3. Rewind Pill
+        const rewindRect = slot('REWIND');
+        if (rewindRect) {
+            plate(ctx, rewindRect, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = THEME.caution;
+            ctx.textAlign = 'center';
+            ctx.fillText('REWIND 5S', rewindRect.x + rewindRect.w / 2, rewindRect.y + rewindRect.h / 2);
+        }
+
+        // 4. Padlock Pill
+        const padlockRect = slot('PADLOCK');
+        if (padlockRect) {
+            const lockOn = context.padlockActive === true || context.isPadlocked === true;
+            plate(ctx, padlockRect, {
+                fill: lockOn ? 'rgba(255,180,50,0.2)' : 'rgba(9,19,25,0.7)',
+                border: lockOn ? THEME.caution : THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = lockOn ? THEME.caution : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(lockOn ? 'LOCK: ON' : 'PADLOCK', padlockRect.x + padlockRect.w / 2, padlockRect.y + padlockRect.h / 2);
+        }
+
+        // 5. Status Telemetry Pill (Throttle, Fuel, Hull) - omitted by the
+        // solver when it would overflow the right edge of the viewport.
+        const statusRect = slot('STATUS');
+        if (statusRect) {
+            plate(ctx, statusRect, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(11, 600);
             ctx.fillStyle = hull < 30 || physics.fuel < 800 ? THEME.caution : THEME.muted;
             ctx.textAlign = 'center';
-            ctx.fillText(statusText, curX + statusW / 2, barY + pillH / 2);
+            ctx.fillText(statusText, statusRect.x + statusRect.w / 2, statusRect.y + statusRect.h / 2);
         }
 
         ctx.restore();

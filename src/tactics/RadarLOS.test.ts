@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TacticalTerrain, SensorTacticsManager } from './RadarLOS';
+import type { SAMSite } from './RadarLOS';
+import { CM_TUNING, decoyExpiry } from '../flight/Countermeasures';
 import { AircraftPhysics } from '../flight/AircraftPhysics';
 
 describe('Tactical Radar LOS & RCS Engine', () => {
@@ -96,6 +98,12 @@ describe('SAM missile proximity fuze (swept-sphere collision)', () => {
 
         aircraft.position = { x: sam.position.x + 5, y: sam.position.y, z: sam.position.z };
         aircraft.yaw = 0;
+        // Stationary on purpose. This test is about the swept-sphere FUZE,
+        // not about guidance, and the missile now flies lead pursuit - against
+        // a jet doing the default 220 m/s it deliberately aims where the jet
+        // is going rather than where it is, so "miss distance" would measure
+        // the lead angle instead of the thing under test.
+        aircraft.velocity = { x: 0, y: 0, z: 0 };
 
         sensors.update(0.1, aircraft);
 
@@ -139,6 +147,10 @@ describe('SAM missile proximity fuze (swept-sphere collision)', () => {
         sam1.missileFuel = 5;
         const directHitAircraft = new AircraftPhysics();
         directHitAircraft.position = { x: sam1.position.x + 1, y: sam1.position.y, z: sam1.position.z };
+        // Stationary, for the same reason as the swept-sphere test above: a
+        // "direct hit" is only exactly direct against a target that is not
+        // being led.
+        directHitAircraft.velocity = { x: 0, y: 0, z: 0 };
         direct.update(0.1, directHitAircraft);
 
         expect(direct.missileImpacts[0].damage).toBeCloseTo(SensorTacticsManager.MAX_MISSILE_DAMAGE, 0);
@@ -160,5 +172,70 @@ describe('SAM missile proximity fuze (swept-sphere collision)', () => {
         aircraft.position = { x: sam.position.x + 50000, y: sam.position.y, z: sam.position.z };
         sensors.update(0.1, aircraft);
         expect(sensors.missileImpacts.length).toBe(0);
+    });
+});
+
+/**
+ * Chaff. Before this existed the only way to survive a launch was terrain, so
+ * a pilot caught over open water had no move to make at all.
+ */
+describe('chaff decoys a seeker', () => {
+    let terrain: TacticalTerrain;
+    let sensors: SensorTacticsManager;
+    let aircraft: AircraftPhysics;
+
+    beforeEach(() => {
+        terrain = new TacticalTerrain();
+        sensors = new SensorTacticsManager(terrain);
+        aircraft = new AircraftPhysics();
+    });
+
+    /** Put the jet where the nearest site will shoot at it. */
+    function engage(): SAMSite {
+        const sam = sensors.samSites[0];
+        aircraft.position = { x: sam.position.x + 900, y: sam.position.y + 700, z: sam.position.z };
+        aircraft.velocity = { x: 0, y: 0, z: 220 };
+        sensors.update(0.1, aircraft);
+        return sam;
+    }
+
+    it('kills a missile already in flight', () => {
+        const sam = engage();
+        expect(sam.missileActive).toBe(true);
+
+        sam.decoyedUntil = decoyExpiry(sensors.missionSeconds);
+        sensors.update(0.1, aircraft);
+
+        expect(sam.missileActive).toBe(false);
+    });
+
+    // Without this the site simply re-launches on the very next tick and the
+    // cartridge the player spent bought them nothing at all.
+    it('stops the site starting a fresh engagement while the cloud is up', () => {
+        const sam = engage();
+        sam.decoyedUntil = decoyExpiry(sensors.missionSeconds);
+
+        for (let i = 0; i < 10; i++) sensors.update(0.1, aircraft);
+        expect(sam.missileActive).toBe(false);
+    });
+
+    it('lets the site re-engage once the cloud has blown through', () => {
+        const sam = engage();
+        sam.decoyedUntil = decoyExpiry(sensors.missionSeconds);
+
+        // Run past the decoy window.
+        for (let i = 0; i < Math.ceil(CM_TUNING.decoySeconds / 0.1) + 4; i++) {
+            sensors.update(0.1, aircraft);
+        }
+        expect(sam.missileActive).toBe(true);
+    });
+
+    it('reports the decoy on the threat contact so the HUD can show it', () => {
+        const sam = engage();
+        sam.decoyedUntil = decoyExpiry(sensors.missionSeconds);
+        sensors.update(0.1, aircraft);
+
+        const contact = sensors.activeThreats.find(t => t.id === sam.id);
+        expect(contact?.isDecoyed).toBe(true);
     });
 });

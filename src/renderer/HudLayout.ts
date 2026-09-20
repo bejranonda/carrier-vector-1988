@@ -12,6 +12,8 @@
  * same way `DeckLayout` makes it testable for the deck screen.
  */
 
+import type { Rect } from './DeckLayout';
+
 export const HUD_METRICS = {
     /** Margin from the viewport edge. */
     edge: 20,
@@ -62,7 +64,36 @@ export const HUD_METRICS = {
      * announced three other ways: the MISSILE LAUNCH banner, the spatialised
      * launch audio, and the threat drone that rises with the RWR state.
      */
-    touchRwrMinHeight: 460
+    touchRwrMinHeight: 460,
+    /**
+     * The ARCADE bottom pill bar: weapon pills, an optional countermeasure
+     * pill, the assist/rewind/padlock pills, and the status telemetry pill.
+     * `HUD.ts` and `PointerInteractivity.ts` used to each hardcode this row
+     * independently (`barY = height - 52`, weapon `w = 78`, `+8` spacing...)
+     * which is exactly the kind of drift that puts a click on the wrong
+     * button. `solveArcadeBar` below is now the single source of truth.
+     */
+    arcadeBar: {
+        /** Distance of the bar's top edge from the bottom of the viewport. */
+        y: 52,
+        pillH: 34,
+        startX: 24,
+        /** Standard horizontal gap between two adjacent pills. */
+        gap: 8,
+        weaponW: 78,
+        countermeasureW: 96,
+        assistW: 110,
+        rewindW: 84,
+        padlockW: 80,
+        /** Total gap (not additional to `gap`) before the assist pill. */
+        preAssistGap: 16,
+        /** Total gap (not additional to `gap`) before the status pill. */
+        preStatusGap: 16,
+        /** Added to the measured text width to get the status pill's width. */
+        statusPadding: 24,
+        /** The status pill self-suppresses within this margin of the edge. */
+        edgeMargin: 24
+    }
 } as const;
 
 export interface HudLayout {
@@ -221,4 +252,90 @@ export function solveHudLayout(input: HudLayoutInput): HudLayout {
         showCompass,
         showRwr
     };
+}
+
+export type ArcadeBarSlotId =
+    | 'WEAPON_0' | 'WEAPON_1' | 'WEAPON_2' | 'WEAPON_3'
+    | 'COUNTERMEASURE' | 'ASSIST' | 'REWIND' | 'PADLOCK' | 'STATUS';
+
+export interface ArcadeBarSlot {
+    id: ArcadeBarSlotId;
+    rect: Rect;
+}
+
+export interface ArcadeBarInput {
+    width: number;
+    height: number;
+    /** 3 today, 4 once the HARM (or similar) lands. Clamped to [0, 4]. */
+    weaponCount: number;
+    showCountermeasure: boolean;
+    showRewind: boolean;
+    showPadlock: boolean;
+    /**
+     * `ctx.measureText(statusText).width` for the status telemetry text.
+     * The status pill's width is derived from this, and the pill self-
+     * suppresses (the STATUS slot is omitted) if it would run past the
+     * right edge of the viewport - matching the old inline behaviour in
+     * `HUD.ts`. Omit this when the caller has no canvas context (e.g. for
+     * hit-testing, where the status pill has never been clickable) - the
+     * STATUS slot is then always omitted.
+     */
+    statusTextWidth?: number;
+}
+
+const ARCADE_BAR_WEAPON_IDS: ArcadeBarSlotId[] = ['WEAPON_0', 'WEAPON_1', 'WEAPON_2', 'WEAPON_3'];
+
+/**
+ * Solves the geometry of the ARCADE HUD's bottom pill bar: weapon pills,
+ * an optional countermeasure pill, then assist / rewind / padlock, then an
+ * optional status telemetry pill. Both the drawing code (`HUD.ts`) and the
+ * mouse hit-testing code (`PointerInteractivity.ts`) consume this so their
+ * rectangles can never drift apart.
+ */
+export function solveArcadeBar(input: ArcadeBarInput): ArcadeBarSlot[] {
+    const m = HUD_METRICS.arcadeBar;
+    const width = Math.max(320, input.width);
+    const height = Math.max(240, input.height);
+    const barY = height - m.y;
+
+    const slots: ArcadeBarSlot[] = [];
+    let curX = m.startX;
+
+    const weaponCount = Math.max(0, Math.min(ARCADE_BAR_WEAPON_IDS.length, Math.floor(input.weaponCount)));
+    for (let i = 0; i < weaponCount; i++) {
+        slots.push({ id: ARCADE_BAR_WEAPON_IDS[i], rect: { x: curX, y: barY, w: m.weaponW, h: m.pillH } });
+        curX += m.weaponW + m.gap;
+    }
+
+    if (input.showCountermeasure) {
+        slots.push({ id: 'COUNTERMEASURE', rect: { x: curX, y: barY, w: m.countermeasureW, h: m.pillH } });
+        curX += m.countermeasureW + m.gap;
+    }
+
+    // The assist pill gets extra breathing room from the weapon/CM block.
+    curX += m.preAssistGap - m.gap;
+    slots.push({ id: 'ASSIST', rect: { x: curX, y: barY, w: m.assistW, h: m.pillH } });
+    curX += m.assistW + m.gap;
+
+    if (input.showRewind) {
+        slots.push({ id: 'REWIND', rect: { x: curX, y: barY, w: m.rewindW, h: m.pillH } });
+        curX += m.rewindW + m.gap;
+    }
+
+    if (input.showPadlock) {
+        slots.push({ id: 'PADLOCK', rect: { x: curX, y: barY, w: m.padlockW, h: m.pillH } });
+        curX += m.padlockW + m.gap;
+    }
+
+    // The status pill gets extra breathing room too, then self-suppresses
+    // (is simply never pushed) if it would overflow the right edge.
+    curX += m.preStatusGap - m.gap;
+    if (input.statusTextWidth !== undefined) {
+        const statusW = input.statusTextWidth + m.statusPadding;
+        if (curX + statusW < width - m.edgeMargin) {
+            slots.push({ id: 'STATUS', rect: { x: curX, y: barY, w: statusW, h: m.pillH } });
+        }
+    }
+
+    return slots;
 }
