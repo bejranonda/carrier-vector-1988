@@ -603,6 +603,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Comprehensive AI-assisted design review, playtest feedback, and future development roadmap |
+| [docs/reviews/](docs/reviews/README.md) | **Systematic Review Suite:** Multi-dimensional critique, scoring, roadmap, and copy-paste AI master prompts |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
