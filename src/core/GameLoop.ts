@@ -97,6 +97,8 @@ import {
     shakeOffsets
 } from '../renderer/CameraShake';
 import { Callouts, splashLine } from './Callouts';
+import { motionSettings, readMotionPreferences } from './Accessibility';
+import type { MotionSettings } from './Accessibility';
 import {
     dailyKey,
     dailyNumber,
@@ -236,6 +238,12 @@ export class GameLoop {
      * timing test in the suite stays meaningful.
      */
     public trauma = 0;
+    /**
+     * Motion and flash limits. The shake and the impact flash are exactly the
+     * effects `prefers-reduced-motion` exists for, and the canvas was ignoring
+     * a preference the CSS already honoured.
+     */
+    public motion: MotionSettings = motionSettings(readMotionPreferences());
     private flashAlpha = 0;
     private flashColor: string = THEME.alert;
 
@@ -700,6 +708,8 @@ export class GameLoop {
             height: this.viewHeight
         });
         this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets);
+        // Re-read on resize: a preference can change mid-session.
+        this.motion = motionSettings(readMotionPreferences());
 
         if (this.controlScheme === 'TOUCH' && previous !== 'TOUCH') this.applyTouchDefaults();
     }
@@ -1028,13 +1038,13 @@ export class GameLoop {
 
     /** Register a shake event. Presentation only - see the field comment. */
     public shake(amount: number) {
-        this.trauma = addTrauma(this.trauma, amount);
+        this.trauma = addTrauma(this.trauma, amount * this.motion.shakeScale);
     }
 
     /** Full-screen flash, used sparingly: damage taken and kills. */
     private flash(color: string, alpha: number) {
         this.flashColor = color;
-        this.flashAlpha = Math.max(this.flashAlpha, alpha);
+        this.flashAlpha = Math.max(this.flashAlpha, alpha * this.motion.flashScale);
     }
 
     /** Everything the assist laws are allowed to know about the aircraft. */
@@ -1842,7 +1852,8 @@ export class GameLoop {
                 hitMarker: this.hitMarker,
                 trapStamp: this.trapGrade,
                 touchMode: this.controlScheme === 'TOUCH',
-                touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined
+                touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
+                motion: this.motion
             }
         );
     }

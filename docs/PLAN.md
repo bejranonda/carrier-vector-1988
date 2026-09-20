@@ -373,3 +373,37 @@ never flown on. The day is now fixed when the run starts.
   phones previously had 46°
 - Screenshots at 1440x900, 1024x700, and all three handsets: landscape visible,
   no label collisions, no instrument overdraw
+
+---
+
+## 12. Follow-up Pass — Flash Safety, Reduced Motion & the Solver Bug (v1.1.1)
+
+**Status:** Complete
+**Trigger:** "anything else to improve?"
+**Result:** 611 tests across 34 suites
+
+Three defects, found by auditing what the previous passes had asserted or
+worked around rather than by adding anything new.
+
+| Finding | Evidence |
+| --- | --- |
+| Warning banners flashed above the seizure threshold | The stall banner ran on a 220 ms period (4.5 Hz) and the missile-launch banner on 260 ms (3.8 Hz). WCAG 2.3.1 caps it at three flashes per second. |
+| The canvas ignored `prefers-reduced-motion` | The CSS honoured it for the CRT flicker; the camera shake and full-screen impact flash added in §9 did not, and they are precisely what the preference is for. |
+| The deck solver could draw an `essential` panel off-screen | It grew panels to fill spare space but never squeezed them when there was none. §10 worked around this by choosing row counts that fit rather than fixing it. |
+
+Things that were checked and found **healthy**, and so left alone:
+
+- CI already gates the Pages deploy on typecheck, the full test suite and a
+  build; every merge this session is green.
+- The dev-only `window.__game` handle really is stripped from the production
+  bundle — `import.meta.env.DEV` is statically replaced, and the built asset
+  contains no reference to it.
+- No ESLint, deliberately: `strict` TypeScript with `noUnusedLocals`,
+  `noUnusedParameters` and `erasableSyntaxOnly` already covers what a linter
+  would catch here, and adding one now would mostly generate noise.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (611), `npm run build`
+- Four emulated handsets end to end, plus the deck screen at 568x320, where the
+  squeezed turnaround panel now fits inside its own border

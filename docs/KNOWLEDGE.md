@@ -621,6 +621,29 @@ alone were not enough: in a head-on merge on a phone the contacts cluster
 around the boresight with both sides blocked by the systems line, and every tag
 was dropped.
 
+## 7k. Motion and flash safety
+
+`core/Accessibility.ts`. Two separate concerns, only one of which is a
+preference.
+
+**Flash rate is capped for everyone.** WCAG 2.3.1 sets the limit at three
+flashes per second, because faster flashing of a large or high-contrast area
+can trigger photosensitive seizures. The stall banner shipped on a 220 ms
+period and the missile-launch banner on 260 ms — 4.5 and 3.8 per second. Every
+blink now goes through `blinkVisible()`, which floors the period at
+`MIN_BLINK_PERIOD_MS` (400 ms, 2.5 per second) whatever the caller asks for.
+
+**Motion is a preference.** Under `prefers-reduced-motion: reduce`:
+
+| Effect | Normal | Reduced |
+| --- | --- | --- |
+| Camera shake | full | **off** |
+| Impact flash | full | 25% |
+| HUD blinking | 2.5 Hz | off — the warning stays **lit**, not hidden |
+
+A warning that vanishes is worse than one that fails to flash, so switching
+blinking off leaves the element visible rather than hiding it.
+
 ## 8. Scoring
 
 | Event | Points |

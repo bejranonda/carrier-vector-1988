@@ -5,6 +5,27 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-09-20
+
+### Fixed
+
+- **Warning banners flashed above the seizure-safety threshold.** The stall
+  banner blinked at 4.5 Hz and the missile-launch banner at 3.8 Hz, against the
+  WCAG 2.3.1 limit of three flashes per second. Every blink is now capped at
+  2.5 Hz for all players.
+- **`prefers-reduced-motion` was ignored on the canvas.** The CSS honoured it
+  for the CRT flicker while the camera shake and full-screen impact flash —
+  exactly the effects the preference exists for — did not. Reduced motion now
+  turns the shake off and damps the flash, and leaves warnings lit rather than
+  blinking.
+- **The deck layout solver could draw an `essential` panel off-screen.** It
+  grew panels to fill spare space but never squeezed them when there was none,
+  so a panel it was not allowed to drop overflowed its own content box by about
+  fifty pixels on a 320 px screen. Growing and squeezing are now one
+  computation.
+- The turnaround panel drew its progress bar through its own title once the
+  solver squeezed it; it now sheds its blurb instead.
+
 ## [1.1.0] — 2026-09-20
 
 The playable-everywhere release: three maps, a jet that can fly itself, a

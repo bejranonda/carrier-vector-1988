@@ -228,7 +228,18 @@ export function computeDeckLayout(specs: readonly PanelSpec[], opts: LayoutOptio
         bottomReserved = bottomHeights.reduce((sum, h) => sum + h + m.gutter, 0);
     }
 
-    const available = Math.max(60, contentBottom - bottomReserved - topCursor);
+    /**
+     * Space actually left for the flow panels, and the (larger) figure the
+     * fit attempts are allowed to aim at.
+     *
+     * The floor matters: when a top-pinned panel has eaten most of a short
+     * screen there may genuinely be forty pixels left, and pretending there
+     * are sixty is how an essential panel ends up drawn past the bottom edge.
+     * The attempts may aim at the optimistic figure; the final scale is
+     * measured against the real one.
+     */
+    const realAvailable = Math.max(24, contentBottom - bottomReserved - topCursor);
+    const available = Math.max(60, realAvailable);
 
     // 3. Fit the flow panels: shrink, then drop, then grow.
     const flowSpecs = active.filter(s => (s.pin ?? 'flow') === 'flow');
@@ -268,12 +279,20 @@ export function computeDeckLayout(specs: readonly PanelSpec[], opts: LayoutOptio
         candidates = candidates.filter(s => s.id !== victim.id);
     }
 
-    // 4. Grow to fill leftover vertical space so the screen doesn't read as
-    //    half-empty on a tall window.
+    /**
+     * 4. Scale to fit the space that is really there.
+     *
+     * Growing and squeezing are the same computation. This used to grow only
+     * (`used < available`), which left the other case unhandled: an essential
+     * panel - one the shedding loop above is not allowed to drop - stayed at
+     * its intrinsic height and was simply drawn off the bottom of the screen.
+     * A one-row turnaround panel on a 320 px phone overflowed its own content
+     * box by fifty pixels that way.
+     */
     const used = usedHeight(packed.colHeights);
     let growScale = 1;
-    if (used > 0 && used < available) {
-        growScale = Math.min(MAX_GROW, available / used);
+    if (used > 0) {
+        growScale = Math.min(MAX_GROW, realAvailable / used);
     }
 
     for (const [id, r] of Object.entries(packed.rects)) {

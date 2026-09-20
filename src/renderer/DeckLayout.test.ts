@@ -204,3 +204,58 @@ describe('computeDeckLayout', () => {
         }
     });
 });
+
+describe('essential panels on a short screen', () => {
+    /**
+     * The shedding loop is not allowed to drop an `essential` panel, so when
+     * one will not fit it used to be packed at its intrinsic height and drawn
+     * straight off the bottom of the screen - which is precisely the failure
+     * the whole solver exists to prevent. A one-row turnaround panel on a
+     * 320 px phone overflowed its content box by about fifty pixels.
+     */
+    const PHONE_SIZES: [number, number][] = [
+        [568, 320], [658, 320], [750, 340], [844, 390], [1024, 420]
+    ];
+
+    const essentialSpecs = [
+        { id: 'ORDERS', minW: 220, rows: 1, pin: 'top' as const, essential: true },
+        { id: 'TURNAROUND', minW: 220, rows: 3, priority: 9, essential: true },
+        { id: 'THREATS', minW: 220, rows: 4, priority: 7 }
+    ];
+
+    it('keeps every panel inside the content box, however short the screen', () => {
+        for (const [width, height] of PHONE_SIZES) {
+            for (const footerH of [44, 64, 90]) {
+                const layout = computeDeckLayout(essentialSpecs, { width, height, footerH });
+                const contentBottom = layout.content.y + layout.content.h;
+                for (const [id, r] of Object.entries(layout.panels)) {
+                    expect(
+                        r.y + r.h,
+                        `${width}x${height} footer ${footerH}: ${id} overflows by ${Math.round(r.y + r.h - contentBottom)}px`
+                    ).toBeLessThanOrEqual(contentBottom + 1);
+                }
+            }
+        }
+    });
+
+    it('never draws a panel over the footer', () => {
+        for (const [width, height] of PHONE_SIZES) {
+            const layout = computeDeckLayout(essentialSpecs, { width, height, footerH: 72 });
+            for (const [id, r] of Object.entries(layout.panels)) {
+                expect(r.y + r.h, `${width}x${height}: ${id}`).toBeLessThanOrEqual(layout.footer.y + 1);
+            }
+        }
+    });
+
+    it('squeezes rather than dropping a panel it is told to keep', () => {
+        const layout = computeDeckLayout(essentialSpecs, { width: 568, height: 320, footerH: 64 });
+        expect(layout.panels['ORDERS']).toBeDefined();
+        expect(layout.panels['TURNAROUND']).toBeDefined();
+        expect(layout.dropped).toContain('THREATS');
+    });
+
+    it('still grows to fill a tall window', () => {
+        const layout = computeDeckLayout(essentialSpecs, { width: 1440, height: 1200 });
+        expect(layout.growScale).toBeGreaterThan(1);
+    });
+});

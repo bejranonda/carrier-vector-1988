@@ -168,6 +168,20 @@ Rules:
   map it is. A new map is a new `TerrainProfile` plus the invariants in
   `TerrainProfiles.test.ts` — do not add one without making those pass, because
   a map that cannot mask a radar breaks a core mechanic silently.
+- **Nothing flashes faster than 2.5 Hz, ever.** Route every blink through
+  `blinkVisible()`. This is WCAG 2.3.1, not a style choice: faster flashing can
+  trigger photosensitive seizures, and the banners shipped at 4.5 Hz. And when
+  blinking is switched off, the element stays **lit** — a warning that
+  disappears is worse than one that does not flash.
+- **Honour `prefers-reduced-motion` on the canvas, not just in CSS.** Camera
+  shake and the full-screen flash are exactly what the preference exists for.
+  Scale them through `GameLoop.motion`; never read the media query at a call
+  site.
+- **A layout solver must fit what it is not allowed to drop.** `essential`
+  means the panel cannot be shed, which makes squeezing it the solver's
+  problem — packing it at its intrinsic height and letting the caller draw it
+  off-screen is the one outcome the solver exists to prevent. Growing and
+  squeezing are the same computation; do both.
 - **The camera's field of view is an angle, not a pixel count.** `fov` is
   derived from the viewport in `VectorRenderer.resize()`. A fixed focal length
   means small screens see a narrower slice of the world, and the world is the
