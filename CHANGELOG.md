@@ -5,6 +5,63 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-09-20
+
+Six items off the open list: the autopilot learns to fly low, the phone learns
+to land, and the palette, the map and the difficulty all become choices.
+
+### Added
+
+- **Terrain following** (`flight/TerrainFollowing.ts`, `G`, on by default). The
+  autopilot samples the ground ahead and asks how high it must be *now* to
+  clear each point by its set clearance when it gets there. It climbs the face
+  of a ridge early, crosses with clearance, and sinks back into the valley
+  instead of cruising at ridge height in plain view of the SAM belt. A
+  replacement for the commanded altitude against a ground target, a floor only
+  on an air intercept, and off entirely on an approach.
+- **Recovery assist** (`flight/ApproachGuidance.ts`, `L`, or the `RCVY` button
+  on a phone, where it is on by default). On final it holds the glideslope and
+  the approach speed and hands the aeroplane back at short final. Lineup stays
+  the player's, with a steer call on the glass, and so does the trap. Out of the
+  approach corridor it is a cue — `RECOVERY — GET ASTERN OF THE BOAT` — rather
+  than a hand-over; see KNOWN_ISSUES §29 for why.
+- **Colour-blind palette** (`C`). Green instruments against red hostiles is the
+  one pairing a deuteranope or protanope cannot separate; the alternative moves
+  onto the blue-yellow axis — cyan instruments, amber hostiles, violet keycaps,
+  and the two warning tones separated by lightness as well as hue.
+- **Map choice on the endless mode** (`↑` / `↓` at the briefing). Holding the
+  boat in a fjord, over open water and in a ridge field are three different
+  problems. The scripted missions keep their own terrain.
+- **Threat level** (`core/ThreatLevel.ts`, `V`) — `CADET` / `REGULAR` /
+  `VETERAN`, which move a scenario along the escalation curve wave generation
+  already implements. Not a score multiplier, and the daily forces `REGULAR`.
+
+### Fixed
+
+- **The stall limiter only knew one sign.** `isStalled` is `|alpha| >
+  critical`, so the wing can let go at negative alpha — nose low and unloaded,
+  which is where a descending turn puts it — and the limiter answered every
+  stall with a push. Alpha went further negative, it pushed harder, and it flew
+  the aeroplane into the sea with its own recovery law. Unloading now means
+  moving alpha toward zero, whichever side of zero it is on.
+- **The autopilot led with full rudder.** A large heading error meant full
+  deflection held for seconds at 220 m/s, which does not turn the aeroplane, it
+  departs it. The rudder is capped and follows the bank.
+- **A stall did not always annunciate.** The caption appeared only when the
+  limiter changed the demand, so a wing that let go while the stick was already
+  where the limiter wanted it said nothing.
+- **The Sidewinder's fallback seeker ignored line of sight**, so with nothing
+  designated a missile could be sent after a contact behind a ridge. It takes
+  the same visibility gate the scope does; a deliberate designation is still
+  honoured whatever the terrain does next.
+- **The autopilot fought the touch throttle**, putting power back a frame after
+  a thumb had set it.
+- **A contact range tag could land through the assist annunciator** on a phone.
+  The band was never in the declutter keepout list because the caption used to
+  be rare.
+- **The briefing's options row clipped its first and last entries** at 800 px.
+  It wraps now, and a wrapped block sits clear of the call to action.
+
 ## [1.1.2] — 2026-09-20
 
 ### Changed

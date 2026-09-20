@@ -464,3 +464,113 @@ terrain masking.
 contact inside the seeker cone without a line-of-sight check (KNOWN_ISSUES §20).
 It costs the player a round rather than gaining them a kill, and every path
 the player actually uses is gated, so it is recorded rather than rushed.
+
+---
+
+## 14. Second Pass on the Open List (v1.2.0)
+
+**Status:** Complete
+**Trigger:** "Continue all as you suggested, update docs and merge at the end."
+**Result:** 738 tests across 38 suites, released as **v1.2.0**
+
+Six items off `FUN_REVIEW` §5 and `KNOWN_ISSUES`. Five landed as designed. One
+turned into a research task and came back smaller than it went in, which is the
+most useful thing in this section.
+
+| Item | Outcome |
+| --- | --- |
+| The Sidewinder's blind fallback seeker (§20) | Gated on the same visibility rule as the scope |
+| Autopilot terrain following (§19) | `flight/TerrainFollowing.ts`, on by default, `G` |
+| Assisted carrier approach (§24) | Narrowed twice; ships as ball-and-speed only |
+| Colour-blind palette (§28) | `renderer/Theme.ts`, `C` |
+| Map choice on the endless mode | `↑`/`↓` at the briefing |
+| Threat level | `core/ThreatLevel.ts`, `V` |
+
+### Terrain following
+
+`terrainFloor()` is reactive: it works by pulling up once the ground is already
+close, and a reactive law can only ever climb OVER terrain. In a fjord that is
+the wrong answer, because the ridge it climbs is the one the SA-6 belt is
+watching — handing the jet to the autopilot on the `CANYON_STRIKE` ingress got
+you locked.
+
+The anticipatory half asks, for each sample on the track ahead, how high the jet
+has to be *now* to clear that point by its set clearance when it arrives, and
+flies the highest answer. The commanded altitude therefore rises up the face of
+a ridge and collapses back to the set clearance the moment it is behind.
+
+It replaces the commanded altitude against a ground target, is only a floor on
+an air intercept, and stands aside entirely on an approach.
+
+### The recovery assist, and what it cost
+
+Scoped as "the autopilot flies the glideslope and hands back at short final".
+It was built as a full recovery — join the pattern from anywhere, turn, descend,
+decelerate — and it put the jet in the sea with great consistency from an
+entirely ordinary starting state. Each attempt to fix that found something real:
+
+1. **The stall limiter only knew one sign.** `isStalled` is `|α| > critical`,
+   so the wing can let go at negative alpha — nose low, unloaded, which is
+   exactly where a descending turn puts it — and the limiter answered every
+   stall with a push. Alpha went further negative, it pushed harder, and it flew
+   the aeroplane into the sea with its own recovery law.
+2. **The autopilot led with full rudder.** A large heading error meant full
+   deflection held for seconds at 220 m/s. That does not turn the aeroplane, it
+   departs it: the nose leaves the velocity vector and α runs to π/2.
+3. **A vertical-speed altitude hold made it worse, not better.** The existing
+   law bleeds pitch demand off as bank increases, which looks backwards. It is
+   not: in a sustained bank the pull rotates the lift vector sideways rather
+   than up, so a loop that pulls harder as the sink grows departs the aeroplane,
+   where the proportional law spirals gently and the terrain floor catches it.
+   The change was reverted, and the reasoning is now a comment where the next
+   person will find it.
+4. **A stall did not always annunciate.** The caption appeared only when the
+   limiter changed the demand, so a wing that let go while the stick was already
+   where the limiter wanted it said nothing at all.
+
+The conclusion was that a route-flying autopilot needs an altitude hold with an
+integral term and a real bank-to-turn law — a rework with the whole game's feel
+downstream of it. So the assist was narrowed to **the ball and the speed**: on
+final it holds the glideslope and the approach speed, lineup stays the player's
+(with a steer call on the glass), and out of the corridor it gives directions
+rather than a lift. That is the part a phone cannot do and the part this flight
+model does well.
+
+Two details that are the difference between working and not: it levels off at
+pattern altitude and lets the slope come down to meet it, because a jet cannot
+descend steeply and decelerate at once; and it opens the weapons bay as a
+speedbrake, because the airframe has no other drag device and stabilises near
+170 m/s at idle on the slope.
+
+### Accessibility and difficulty
+
+The palette swaps `THEME` and `WORLD` in place rather than threading a palette
+argument through two hundred and sixty draw-time call sites; nothing caches a
+colour between frames, which is what makes that safe. The contrast rule is now
+enforced per palette, and a crude deuteranopia simulation pins the
+friendly/hostile separation so a future palette cannot quietly become another
+red-green pair.
+
+The threat level moves a scenario along the escalation curve wave generation
+already implements, rather than inventing a second set of difficulty numbers.
+It is deliberately not a score multiplier, and the daily forces the standard
+level.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (738), `npm run build`
+- In Chromium: palette cycles and the whole game keeps drawing; the endless mode
+  flies on all three maps; VETERAN starts on wave 4; terrain following holds its
+  clearance and can be toggled; the recovery assist reaches short final on the
+  slope and under 95 m/s and then hands back
+- Briefing checked at 1440, 1024, 900 and 800 px wide after the options row
+  gained two entries — it wraps rather than clipping, and clears the call to
+  action
+- Two layout defects found by looking: a contact range tag through the assist
+  annunciator on a phone, and the clipped options row
+
+### Left open
+
+The deck loop's second axis, a second act for the strike missions, campaign
+memory, and the autopilot rework that items 4 and 5 of the open list both
+depend on.

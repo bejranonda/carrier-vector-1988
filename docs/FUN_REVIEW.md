@@ -84,7 +84,10 @@ Two hard-won details:
   that applied on final would make a trap impossible at the default assist
   level — a far worse bug than the crash it prevents.
 - **The autopilot does not land.** Turning onto final hands the aeroplane back.
-  The trap is the best thing in the game; nobody wants it done for them.
+  The trap is the best thing in the game; nobody wants it done for them. The
+  recovery assist added later does not change that: it flies the ball and the
+  speed and hands back at short final, which removes the part a phone cannot do
+  and keeps the part that is the game.
 
 ---
 
@@ -183,38 +186,29 @@ What changed, and the reasoning that is worth keeping:
    pass. A mission that changes its mind halfway — a pop-up threat, a target
    that turns out to be defended, a recall — would make the mission director
    earn its structure.
-3. **No map choice on the endless mode.** Carrier defence is the mission people
-   will replay most and it is locked to one map. Letting it be flown on any of
-   the three is cheap and triples its replay value.
-4. **The story is scenery, not stakes.** The briefing prose is good and the
+3. **The story is scenery, not stakes.** The briefing prose is good and the
    world is coherent, but nothing carries between missions: the campaign has no
    memory beyond a score. Carrying *losses* forward — airframes, stores, hull
    damage — across a run of missions would make each sortie cost something.
-5. **The autopilot cannot fly the one mission that needs flying well.** It
-   climbs over terrain rather than threading it (see KNOWN_ISSUES §19), so
-   handing it the canyon ingress gets you locked. Defensible — the low-level run
-   *is* the mission's skill — but a terrain-following mode would let the
-   weapons-officer fantasy reach the game's best mission instead of stopping
-   just short of it.
-6. **Landing on a phone is brutal.** Touch mode makes flying and fighting
-   comfortable and leaves the trap exactly as hard as it was, on a virtual
-   stick. An assisted approach - the autopilot flying the glideslope and
-   handing over at short final - is the missing piece, and is the one place
-   where "the autopilot does not land" costs more than it buys.
-7. **Difficulty is fixed per scenario.** There is no way to ask for a harder
-   carrier defence or an easier canyon strike. With assist levels and ops tempo
-   now in place, a threat-level selector would compose neatly with both.
-8. **Colour carries meaning on its own** (KNOWN_ISSUES §28). Red and green are
-   load-bearing across the HUD and the deck screen, and there is no
-   colour-blind palette option.
+4. **The autopilot cannot fly a route.** It follows terrain now, and it holds a
+   bearing well, but a large heading change departs the aeroplane (KNOWN_ISSUES
+   §19). That is what stops the recovery assist being a "take me home" button,
+   and it is the one piece of unfinished engineering the rest of this list keeps
+   running into.
+5. **Nothing offers the colour-blind palette to the player who needs it.** It
+   exists and it works; it is behind a key in the control reference. An
+   accessibility prompt on first run would cost very little.
 
 A combo multiplier, medals and local leaderboards were all considered and
 deliberately left out; the daily sortie was judged the one retention hook worth
 building first.
 
-**Closed since this list was written:** designation ignored line of sight, so
-masking cut only one way. That was ranked highest value per unit of work and is
-now done — see the later addition at the end of §3.
+**Closed since this list was written:** designation ignoring line of sight (see
+the later addition at the end of §3); the autopilot climbing over terrain
+rather than threading it; landing on a phone being brutal; carrier defence
+being locked to one map; difficulty being fixed per scenario; and red and green
+being load-bearing. Five of the eight, and the three that remain are the three
+that are really design work rather than engineering.
 
 ---
 
@@ -241,6 +235,24 @@ Two judgements worth keeping:
   carried by something that stayed. That is the same rule the deck screen and
   the cockpit already followed - it just had to be told that a thumb is a
   layout constraint.
+
+---
+
+## 5c. What the second pass actually cost
+
+Worth recording, because the shape of it was not obvious going in: **four of
+the six items in that pass were cheap, and the fifth ate more time than the
+other five together.** The recovery assist was scoped as "fly the glideslope",
+looked like an afternoon, and turned into an investigation of the flight model
+that found three real defects — a stall limiter that only knew one sign, an
+autopilot that led with full rudder, and a stall that did not always annunciate
+— before ending up deliberately smaller than it started.
+
+The lesson is not "avoid the hard ones". It is that a feature which asks the
+simulation to do something it has never been asked to do is a research task
+wearing a feature's clothes, and it should be scheduled as one.
+
+---
 
 ## 6. Principles these passes followed
 

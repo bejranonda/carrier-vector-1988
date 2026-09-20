@@ -11,9 +11,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { angleDelta } from '../flight/FlightAssist';
+import { APPROACH_TUNING as APPROACH, glideslopeAltitude } from '../flight/ApproachGuidance';
+import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { SCENARIOS } from './Scenarios';
+import { MAPS } from '../tactics/TerrainProfiles';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -1316,6 +1319,9 @@ describe('GameLoop integration smoke test', () => {
             position: { x: 0, y: 750, z: game.physics.position.z + 1200 },
             velocity: { x: 0, y: 0, z: -200 }
         }];
+        // A frame, so the visibility tracker sees the contact that was just
+        // dropped into the world: auto-acquisition is gated on it too now.
+        runFrames(game, 1);
         game.tracker.clear();
         game.selectedWeapon = 'AIM9';
         game.physics.loadout.sidewinders = 2;
@@ -1353,6 +1359,296 @@ describe('GameLoop integration smoke test', () => {
         // And it is still flying: the autopilot has not stalled or dug in.
         expect(game.deck.aircraftState).toBe('AIRBORNE');
         expect(game.physics.airSpeed).toBeGreaterThan(80);
+    });
+
+    /**
+     * The claim the feature rests on: with terrain following the autopilot
+     * threads the terrain instead of cruising over it. Asserted rather than
+     * screenshotted, because "it looked low" is not a regression net.
+     */
+    it('flies the autopilot lower with terrain following than without', () => {
+        const fly = (terrainFollowing: boolean) => {
+            const game = new GameLoop(makeCanvasStub());
+            game.selectScenarioById('CANYON_STRIKE');
+            airborne(game);
+            game.assistLevel = 'AUTO';
+            game.terrainFollowing = terrainFollowing;
+            game.airborneTargets = [];
+            game.sensors.samSites = [];
+
+            let sum = 0;
+            let samples = 0;
+            for (let i = 0; i < 40; i++) {
+                runFrames(game, 15);
+                const p = game.physics.position;
+                sum += p.y - game.terrain.getElevation(p.x, p.z);
+                samples++;
+            }
+            return { game, meanAgl: sum / samples };
+        };
+
+        const off = fly(false);
+        const on = fly(true);
+
+        expect(on.meanAgl).toBeLessThan(off.meanAgl);
+        // And it is flying, not falling: still airborne, still above the dirt.
+        expect(on.game.deck.aircraftState).toBe('AIRBORNE');
+        expect(on.meanAgl).toBeGreaterThan(60);
+    });
+
+    it('never lets terrain following take the aeroplane below the hard floor', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CANYON_STRIKE');
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.terrainFollowing = true;
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < 60; i++) {
+            runFrames(game, 10);
+            const p = game.physics.position;
+            lowest = Math.min(lowest, p.y - game.terrain.getElevation(p.x, p.z));
+        }
+        expect(lowest).toBeGreaterThan(0);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+    });
+
+    it('leaves terrain following out of the way on an approach', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.terrainFollowing = true;
+        // Low and closing on the boat at the origin: the follower must stand
+        // aside or its 200 m floor is a permanent go-around.
+        game.physics.position = { x: 0, y: 120, z: -2600 };
+        game.physics.velocity = { x: 0, y: -4, z: 70 };
+        runFrames(game, 2);
+        expect(HUDClass.isOnApproach(game.physics)).toBe(true);
+        expect(game.terrainFollowClimbing).toBe(false);
+    });
+
+    /**
+     * The claim the recovery assist rests on: from a sane approach entry it
+     * flies the ball and the speed down to short final, and the player only
+     * has to keep it lined up. Asserted, because "it seemed to work" is not
+     * something a player can rely on at the end of a good sortie.
+     */
+    it('flies the ball and the speed from the approach entry to short final', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        game.tracker.clear();
+        // Astern, on the centreline, high and fast - the state a pilot who has
+        // pointed themselves at the boat is actually in.
+        game.physics.position = { x: 0, y: 900, z: APPROACH.touchdownZ - 9000 };
+        game.physics.velocity = { x: 0, y: 0, z: 150 };
+
+        let handover = null as null | { y: number; z: number; speed: number };
+        for (let i = 0; i < 600 && handover === null; i++) {
+            runFrames(game, 10);
+            if (game.approachPhase === 'HANDOVER') {
+                handover = {
+                    y: game.physics.position.y,
+                    z: game.physics.position.z,
+                    speed: game.physics.airSpeed
+                };
+            }
+        }
+
+        expect(handover).not.toBeNull();
+        const h = handover!;
+        // On the slope, and slow enough for the arresting gear to take it.
+        const wanted = glideslopeAltitude(APPROACH.touchdownZ - h.z);
+        expect(Math.abs(h.y - wanted)).toBeLessThan(60);
+        expect(h.speed).toBeLessThan(95);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+    });
+
+    /**
+     * Lineup is the player's, so the assist must not be quietly steering
+     * underneath them: it commands the heading the jet already has.
+     */
+    it('leaves the steering to the pilot on final', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 900, y: 300, z: APPROACH.touchdownZ - 5000 };
+        game.physics.velocity = { x: 0, y: 0, z: 120 };
+        runFrames(game, 120);
+
+        expect(game.approachPhase).toBe('FINAL');
+        // Nine hundred metres off the centreline and the assist has not
+        // dragged it back: that correction is the player's to make.
+        expect(Math.abs(game.physics.position.x - 900)).toBeLessThan(200);
+    });
+
+    it('hands the aeroplane back at short final instead of landing it', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 0, y: glideslopeAltitude(300), z: APPROACH.touchdownZ - 300 };
+        game.physics.velocity = { x: 0, y: -3, z: 70 };
+        runFrames(game, 2);
+
+        expect(game.approachPhase).toBe('HANDOVER');
+        // Not the autopilot's aeroplane any more.
+        expect(game.assistOverride).not.toBe('AUTOPILOT');
+    });
+
+    /**
+     * The assist does not ferry the aeroplane home. Out of the corridor it is
+     * a cue - which way to go - and the player flies it, because a transit is
+     * the part of a sortie that touch controls are already good at.
+     */
+    it('cues rather than flies when the jet is not astern of the boat', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 7000, y: 1400, z: 3000 };
+        runFrames(game, 2);
+
+        expect(game.approachPhase).toBe('JOIN');
+        // Still flying under the ordinary autopilot, not the approach: the
+        // recovery has no say in where the jet goes until it is astern.
+        expect(game.physics.position.y).toBeGreaterThan(1000);
+    });
+
+    it('turns the autopilot on when the recovery assist is asked for', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'MANUAL';
+        game.approachAssist = false;
+        game.toggleApproachAssist();
+        expect(game.approachAssist).toBe(true);
+        expect(game.assistLevel).toBe('AUTO');
+    });
+
+    it('does not fly the recovery when it is switched off', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = false;
+        game.physics.position = { x: 0, y: 400, z: APPROACH.touchdownZ - 3000 };
+        runFrames(game, 5);
+        expect(game.approachPhase).toBe(null);
+    });
+
+    /**
+     * Endless carrier defence is the mission people replay, and it was welded
+     * to the fjord while two perfectly good maps sat behind the missions
+     * nobody replays twice.
+     */
+    it('flies endless carrier defence on a map of the player choosing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        const first = game.selectedMap();
+
+        const chosen = game.cycleMapChoice(1);
+        expect(chosen).not.toBe(null);
+        expect(chosen).not.toBe(first);
+
+        runFrames(game, 150);
+        game.confirmBriefing();
+        expect(game.terrain.profile.id).toBe(chosen);
+    });
+
+    it('comes back to where it started after a full cycle of the maps', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        const first = game.selectedMap();
+        const seen = new Set([first]);
+        for (let i = 0; i < MAPS.length; i++) seen.add(game.cycleMapChoice(1)!);
+        expect(seen.size).toBe(MAPS.length);
+        expect(game.selectedMap()).toBe(first);
+    });
+
+    /**
+     * ...but a canyon strike is about ITS canyon: the briefing, the hardened
+     * target and the ingress corridor all belong to one piece of terrain.
+     */
+    it('will not let a scripted mission be flown somewhere else', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CANYON_STRIKE');
+        const own = game.selectedMap();
+
+        expect(game.cycleMapChoice(1)).toBe(null);
+        expect(game.selectedMap()).toBe(own);
+
+        runFrames(game, 150);
+        game.confirmBriefing();
+        expect(game.terrain.profile.id).toBe(own);
+    });
+
+    it('keeps a map choice from leaking into the missions that own their map', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        game.cycleMapChoice(1);
+        const chosen = game.selectedMap();
+
+        game.selectScenarioById('CANYON_STRIKE');
+        expect(game.selectedMap()).not.toBe(chosen);
+        expect(game.selectedMap()).toBe(SCENARIOS.find(s => s.id === 'CANYON_STRIKE')!.setup.map);
+    });
+
+    /**
+     * The threat level is a different request from either of the settings
+     * that already existed: assist changes how much of the AEROPLANE you fly,
+     * ops tempo how long you WAIT, and neither changes how hard the fight is.
+     */
+    it('starts a harder fight at a higher threat level', () => {
+        const waveAt = (level: 'CADET' | 'REGULAR' | 'VETERAN') => {
+            const game = new GameLoop(makeCanvasStub());
+            game.selectScenarioById('LAST_STAND');
+            game.threatLevel = level;
+            runFrames(game, 150);
+            game.confirmBriefing();
+            return game.deck.waveNumber;
+        };
+
+        expect(waveAt('VETERAN')).toBeGreaterThan(waveAt('REGULAR'));
+        expect(waveAt('CADET')).toBeLessThan(waveAt('REGULAR'));
+    });
+
+    it('cycles the threat level and remembers it across a scenario change', () => {
+        const game = new GameLoop(makeCanvasStub());
+        const first = game.threatLevel;
+        const next = game.cycleThreatLevel();
+        expect(next).not.toBe(first);
+        game.selectScenarioById('CANYON_STRIKE');
+        expect(game.threatLevel).toBe(next);
+    });
+
+    /**
+     * The daily is only worth sharing if everybody flew the same fight, so it
+     * forces the standard threat level exactly as it forces arcade pacing.
+     */
+    it('forces the standard threat level for the daily sortie', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.threatLevel = 'VETERAN';
+        game.pacing = 'SIM';
+        game.startDailySortie();
+        expect(game.threatLevel).toBe('REGULAR');
+        expect(game.pacing).toBe('ARCADE');
+    });
+
+    it('cycles the colour palette and keeps the game drawing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        const first = game.palette;
+        const next = game.cyclePalette();
+        expect(next).not.toBe(first);
+        expect(() => runFrames(game, 30)).not.toThrow();
+        expect(game.phase).toBe('ACTIVE');
     });
 
     it('cycles the display mode without throwing', () => {

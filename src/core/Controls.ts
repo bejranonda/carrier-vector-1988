@@ -47,6 +47,8 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
 
     // --- Flight assistance ---
     { keys: ['f'], display: 'F', label: 'Cycle flight assist (MANUAL / ASSIST / AUTOPILOT)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['g'], display: 'G', label: 'Autopilot terrain following (hug the valleys, on by default)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['l'], display: 'L', label: 'Recovery assist - fly the approach, hand back at short final', context: 'FLIGHT', group: 'FLIGHT' },
 
     // --- Deck operations ---
     { keys: ['enter'], display: 'ENTER', label: 'Launch from catapult', context: 'DECK', group: 'DECK OPS' },
@@ -57,6 +59,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
 
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['arrowup', 'arrowdown'], display: '↑ / ↓', label: 'Change map (endless carrier defence only)', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['1', '2', '3', '4', '5'], display: '1-5', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
@@ -69,7 +72,9 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['v'], display: 'V', label: 'Cycle threat level (CADET / REGULAR / VETERAN)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' }
 ];
 
 /** All bindings valid in a given context, including GLOBAL ones. */

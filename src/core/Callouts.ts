@@ -14,7 +14,14 @@
  * Pure: a queue with lifetimes, no canvas. Rendering reads `active()`.
  */
 
-export type CalloutTone = 'KILL' | 'PRAISE' | 'LOSS';
+/**
+ * `MODE` is the one exception to "this channel answers 'that worked'": a
+ * system the player just toggled with a key has to confirm itself somewhere,
+ * and a mode change that produces no acknowledgement reads as a dead key. It
+ * is rendered in the neutral label colour rather than the instrument green, so
+ * it cannot be mistaken for a kill.
+ */
+export type CalloutTone = 'KILL' | 'PRAISE' | 'LOSS' | 'MODE';
 
 export interface Callout {
     text: string;

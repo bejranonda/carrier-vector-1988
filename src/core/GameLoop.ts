@@ -30,7 +30,16 @@ import { PostProcess } from '../renderer/PostProcess';
 import type { PostQuality } from '../renderer/PostProcess';
 import { DeckView } from '../renderer/DeckView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
-import { THEME, WORLD } from '../renderer/Theme';
+import {
+    THEME,
+    WORLD,
+    applyPalette,
+    loadPalette,
+    nextPalette,
+    paletteSpec,
+    savePalette
+} from '../renderer/Theme';
+import type { PaletteId } from '../renderer/Theme';
 import {
     applyDisplayModeToDocument,
     displayModeSpec,
@@ -61,9 +70,30 @@ import {
 } from '../flight/FlightAssist';
 import type { AssistLevel, ControlDemand, FlightState, NavTarget } from '../flight/FlightAssist';
 import { TargetTracker, pursuitNav } from '../tactics/TargetDesignation';
+import {
+    loadTerrainFollowing,
+    sampleGroundTrack,
+    saveTerrainFollowing,
+    terrainFollowingAltitude
+} from '../flight/TerrainFollowing';
+import {
+    APPROACH_TUNING,
+    approachCaption,
+    approachGuidance,
+    loadApproachAssist,
+    saveApproachAssist,
+    storedApproachAssist
+} from '../flight/ApproachGuidance';
+import type { ApproachPhase } from '../flight/ApproachGuidance';
 import { VisibilityTracker } from '../tactics/Visibility';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
-import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
+import {
+    DEFAULT_MAP,
+    loadMapChoice,
+    nextMap,
+    saveMapChoice
+} from '../tactics/TerrainProfiles';
+import type { MapId } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
 import {
     deckTiming,
@@ -74,6 +104,14 @@ import {
     scaleOpeningEta
 } from './Pacing';
 import type { PacingId } from './Pacing';
+import {
+    loadThreatLevel,
+    nextThreatLevel,
+    saveThreatLevel,
+    startWaveFor,
+    threatLevelSpec
+} from './ThreatLevel';
+import type { ThreatLevelId } from './ThreatLevel';
 import {
     loadSchemePreference,
     needsRotation,
@@ -195,6 +233,21 @@ export class GameLoop {
      * the scanline mask and the vignette. Restored from the last session.
      */
     public displayMode: DisplayModeId = loadDisplayMode();
+    /**
+     * Colour palette. Green-for-us / red-for-them is the one pairing a
+     * red-green colour-blind player cannot read, so it is a setting.
+     */
+    public palette: PaletteId = loadPalette();
+    /**
+     * Chosen map, for the scenarios that let one be chosen. Null means the
+     * scenario's own terrain.
+     */
+    public mapChoice: MapId | null = loadMapChoice();
+    /**
+     * How hard the fight is, as distinct from how much of the aeroplane you
+     * fly (assist level) or how long you wait (ops tempo).
+     */
+    public threatLevel: ThreatLevelId = loadThreatLevel();
 
     /**
      * How much of the aeroplane the player wants to fly. Restored between
@@ -220,10 +273,36 @@ export class GameLoop {
     private safeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
     /** Analog stick demand, which overrides the keyboard axes when present. */
     private analog: { pitch: number; roll: number } | null = null;
+    /**
+     * True while a thumb is on the throttle track. A hand on the throttle
+     * outranks the autopilot's speed hold: the track sets power directly, and
+     * without this the autopilot spent the next frame putting it back.
+     */
+    private touchThrottleHeld = false;
 
     public assistLevel: AssistLevel = loadAssistLevel();
     /** Which protection, if any, is currently taking authority. For the HUD. */
     public assistOverride: ControlDemand['override'] = 'NONE';
+
+    /**
+     * Whether the autopilot looks ahead and hugs the terrain rather than
+     * holding a set altitude. On by default: an autopilot that crosses ridge
+     * lines inside a SAM belt is not flying the aeroplane the way its pilot
+     * would.
+     */
+    public terrainFollowing = loadTerrainFollowing();
+    /** True while a ridge ahead - not the ground below - is setting altitude. */
+    public terrainFollowClimbing = false;
+
+    /**
+     * Whether the autopilot will fly the recovery: join the pattern, roll out
+     * on the final approach course and fly the glideslope to short final,
+     * then hand back. Off by default on a keyboard - the trap is the game -
+     * and on by default on a phone, where the alternative is not landing.
+     */
+    public approachAssist = loadApproachAssist();
+    /** Which phase the recovery is in, or null when it is not flying. */
+    public approachPhase: ApproachPhase | null = null;
 
     /**
      * The pilot's chosen target. Everything downstream follows it: the HUD
@@ -361,6 +440,7 @@ export class GameLoop {
         this.deckView = new DeckView();
         this.briefing = new BriefingScreen();
 
+        applyPalette(this.palette);
         this.applyDisplayMode();
         this.applyScenario(this.scenario);
     }
@@ -376,6 +456,29 @@ export class GameLoop {
         // Normalise rather than letting the index drift off into the negatives
         // over a long browse; scenarioAt() wraps the value, not the field.
         this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === this.scenario.id);
+    }
+
+    /**
+     * Step the map for a scenario that allows one to be chosen.
+     *
+     * Returns the map now selected, or null when this scenario owns its
+     * terrain - which is most of them, and is not a failure.
+     */
+    public cycleMapChoice(delta = 1): MapId | null {
+        if (!this.scenario.setup.allowMapChoice) return null;
+        const current = this.mapChoice ?? this.scenario.setup.map ?? DEFAULT_MAP;
+        this.mapChoice = nextMap(current, delta);
+        saveMapChoice(this.mapChoice);
+        soundFX.playUiMove();
+        return this.mapChoice;
+    }
+
+    /** The map the selected scenario would be flown on right now. */
+    public selectedMap(): MapId {
+        const setup = this.scenario.setup;
+        return setup.allowMapChoice && this.mapChoice !== null
+            ? this.mapChoice
+            : setup.map ?? DEFAULT_MAP;
     }
 
     public selectScenarioById(id: ScenarioId) {
@@ -401,7 +504,9 @@ export class GameLoop {
         // The map is part of the scenario, so the terrain is rebuilt with it.
         // Everything that samples terrain - sensors, the bomb predictor, the
         // renderer - is handed the new instance rather than caching heights.
-        const mapId = setup.map ?? DEFAULT_MAP;
+        const mapId = setup.allowMapChoice && this.mapChoice !== null
+            ? this.mapChoice
+            : setup.map ?? DEFAULT_MAP;
         if (this.terrain.profile.id !== mapId) {
             this.terrain = new TacticalTerrain(mapId);
         }
@@ -468,7 +573,14 @@ export class GameLoop {
      * or the deck's default three packages).
      */
     private pacedThreat(threat: ThreatProfile, seedOverride?: number): ThreatProfile {
-        const paced: ThreatProfile = { ...threat, timing: deckTiming(this.pacing) };
+        const paced: ThreatProfile = {
+            ...threat,
+            timing: deckTiming(this.pacing),
+            // The threat level moves the scenario along the escalation curve
+            // that wave generation already implements, rather than adding a
+            // second set of difficulty numbers to keep in sync with it.
+            startWave: startWaveFor(threat.startWave ?? 0, this.threatLevel)
+        };
         if (seedOverride !== undefined) paced.seed = seedOverride;
         const opening = threat.openingTimeline ?? DeckManager.defaultOpeningTimeline();
         paced.openingTimeline = opening.map(p => ({
@@ -731,6 +843,12 @@ export class GameLoop {
      */
     private applyTouchDefaults() {
         if (storedAssistLevel() === null) this.assistLevel = 'AUTO';
+        // On a phone the trap is the one thing the thumb controls cannot
+        // really do: a virtual stick, a lens the size of a fingernail and no
+        // altimeter that is not under a thumb. The recovery assist flies the
+        // approach and still hands the landing back at short final, so a
+        // handset player gets to finish a sortie rather than ditching.
+        if (storedApproachAssist() === null) this.approachAssist = true;
         if (storedDisplayMode() === null) {
             this.displayMode = 'CLEAN';
             this.applyDisplayMode();
@@ -865,7 +983,9 @@ export class GameLoop {
         if (k['q']) this.physics.applyYawInput(-1.0, dt);
         if (k['e']) this.physics.applyYawInput(1.0, dt);
 
-        if (demand.throttle !== 0) {
+        // A thumb on the throttle track has already set the power for this
+        // frame; the autopilot's speed hold does not get to argue with it.
+        if (demand.throttle !== 0 && !this.touchThrottleHeld) {
             this.physics.throttle = Math.min(1.5, Math.max(0,
                 this.physics.throttle + demand.throttle * 0.5 * dt));
         }
@@ -938,6 +1058,7 @@ export class GameLoop {
             ? { pitch: demand.pitch, roll: demand.roll }
             : null;
 
+        this.touchThrottleHeld = airborne && demand.throttle !== null;
         if (airborne && demand.throttle !== null) {
             this.physics.throttle = Math.min(1.5, Math.max(0, demand.throttle));
             this.training.progress.throttleChanged = true;
@@ -974,6 +1095,10 @@ export class GameLoop {
                 return;
             case 'MENU':
                 this.helpVisible = !this.helpVisible;
+                soundFX.playUiMove();
+                return;
+            case 'RECOVER':
+                this.toggleApproachAssist();
                 soundFX.playUiMove();
                 return;
             case 'LAUNCH':
@@ -1080,18 +1205,171 @@ export class GameLoop {
      * stabilise the jet and take stock.
      */
     private navTarget(): NavTarget | null {
+        const recovery = this.recoveryNav();
+        if (recovery) return recovery;
+
         const designated = this.tracker.designated();
         if (designated) {
             const p = designated.target.position;
-            return pursuitNav(designated, this.terrain.getElevation(p.x, p.z));
+            const nav = pursuitNav(designated, this.terrain.getElevation(p.x, p.z));
+            return this.applyTerrainFollowing(nav, designated.target.kind === 'AIR');
         }
 
-        return {
+        return this.applyTerrainFollowing({
             bearing: this.physics.yaw,
             altitudeAgl: 900,
             airSpeed: 240,
             maxBank: 0.6
+        }, false);
+    }
+
+    /**
+     * Rewrite the autopilot's altitude to hug the terrain.
+     *
+     * The rule differs by what is being flown, and the difference is the
+     * point of the feature rather than a special case:
+     *
+     *  - Going after something on the ground, or holding a heading with
+     *    nothing designated, the follower REPLACES the commanded altitude.
+     *    Cruising the fjord at 520 m to bomb a pen is how the autopilot used
+     *    to get you locked.
+     *  - Intercepting an aeroplane, it is only a FLOOR. You have to go where
+     *    the bandit is, and it is not obliged to be low - but a co-altitude
+     *    intercept must still not fly the jet into the ridge in between.
+     *
+     * `terrainFollowing` is also ignored on an approach, where the deck is
+     * twenty metres above the water and a two-hundred-metre floor would
+     * simply be a go-around.
+     */
+    private applyTerrainFollowing(nav: NavTarget, isIntercept: boolean): NavTarget {
+        this.terrainFollowClimbing = false;
+        if (!this.terrainFollowing || HUD.isOnApproach(this.physics)) return nav;
+
+        const p = this.physics.position;
+        const samples = sampleGroundTrack(
+            p,
+            this.physics.yaw,
+            this.physics.airSpeed,
+            (x, z) => this.terrain.getElevation(x, z)
+        );
+        const followed = terrainFollowingAltitude(
+            samples,
+            this.terrain.getElevation(p.x, p.z),
+            this.physics.airSpeed
+        );
+        this.terrainFollowClimbing = followed.climbing;
+
+        return {
+            ...nav,
+            altitudeAgl: isIntercept
+                ? Math.max(nav.altitudeAgl, followed.altitudeAgl)
+                : followed.altitudeAgl
         };
+    }
+
+    /**
+     * The recovery assist's nav target, or null when it is not flying.
+     *
+     * It outranks a designation: asking to be taken home is unambiguous, and
+     * a pilot who wants to go back to fighting turns it off. It stops of its
+     * own accord at short final - `HANDOVER` returns null, so the ordinary
+     * assists have the aeroplane again with the deck in the windscreen.
+     */
+    private recoveryNav(): NavTarget | null {
+        this.approachPhase = null;
+        if (!this.approachAssist) return null;
+        if (this.assistLevel !== 'AUTO') return null;
+        if (this.deck.aircraftState !== 'AIRBORNE') return null;
+
+        const guidance = approachGuidance(this.physics.position, {
+            bank: this.physics.roll,
+            lateralSpeed: this.physics.velocity.x
+        });
+        this.approachPhase = guidance.phase;
+        // The assist flies the APPROACH, not the transit and not the landing.
+        // JOIN is a cue, not a hand-over: see `ApproachGuidance`.
+        if (guidance.phase !== 'FINAL') return null;
+
+        // The recovery owns the altitude; the terrain follower's 200 m floor
+        // would be a permanent go-around over a deck twenty metres up.
+        this.terrainFollowClimbing = false;
+
+        // Boards out. The only drag device this airframe has is the weapons
+        // bay, and without it an idle descent on the glideslope stabilises
+        // far too fast for the wires - see APPROACH_TUNING.boardsOutAbove.
+        this.physics.bayOpen =
+            this.physics.airSpeed > APPROACH_TUNING.approachSpeed + APPROACH_TUNING.boardsOutAbove;
+
+        const p = this.physics.position;
+        const ground = this.terrain.getElevation(p.x, p.z);
+        // The guidance works in altitude above the water; the autopilot flies
+        // above the ground below, which over the sea is the same datum and
+        // near a coast is not.
+        const altitudeAgl = Math.max(0, guidance.altitudeMsl - ground);
+
+        return {
+            /**
+             * The CURRENT heading, deliberately - not the guidance's course.
+             *
+             * The assist holds the ball and the speed; lineup is the player's,
+             * and an autopilot quietly steering underneath them would fight
+             * every correction they made. With no heading error the autopilot
+             * levels the wings when the stick is centred and gets out of the
+             * way the moment it is not, which is exactly the division of
+             * labour this is meant to be.
+             */
+            bearing: this.physics.yaw,
+            altitudeAgl,
+            airSpeed: guidance.airSpeed,
+            maxBank: guidance.maxBank,
+            overridesApproach: true
+        };
+    }
+
+    /** Cycle the threat level, and remember the choice. */
+    public cycleThreatLevel(): ThreatLevelId {
+        this.threatLevel = nextThreatLevel(this.threatLevel);
+        saveThreatLevel(this.threatLevel);
+        soundFX.playUiMove();
+        return this.threatLevel;
+    }
+
+    /** Cycle the colour palette, and remember the choice. */
+    public cyclePalette(): PaletteId {
+        this.palette = nextPalette(this.palette);
+        applyPalette(this.palette);
+        savePalette(this.palette);
+        this.callouts.push(`PALETTE — ${paletteSpec(this.palette).label}`, 'MODE');
+        soundFX.playUiMove();
+        return this.palette;
+    }
+
+    /** Toggle the recovery assist, and remember the choice. */
+    public toggleApproachAssist(): boolean {
+        this.approachAssist = !this.approachAssist;
+        saveApproachAssist(this.approachAssist);
+        if (this.approachAssist && this.assistLevel !== 'AUTO') {
+            // Asking to be taken home and not being taken home is the kind of
+            // dead key a player never presses twice.
+            this.assistLevel = 'AUTO';
+            saveAssistLevel(this.assistLevel);
+        }
+        this.callouts.push(
+            this.approachAssist ? 'RECOVERY — TAKING YOU HOME' : 'RECOVERY — OFF',
+            'MODE'
+        );
+        return this.approachAssist;
+    }
+
+    /** Toggle terrain following, and remember the choice. */
+    public toggleTerrainFollowing(): boolean {
+        this.terrainFollowing = !this.terrainFollowing;
+        saveTerrainFollowing(this.terrainFollowing);
+        this.callouts.push(
+            this.terrainFollowing ? 'TERRAIN FOLLOW — ON' : 'TERRAIN FOLLOW — OFF',
+            'MODE'
+        );
+        return this.terrainFollowing;
     }
 
     /**
@@ -1148,6 +1426,9 @@ export class GameLoop {
         this.dailyCard = null;
         this.dailyCopied = false;
         this.pacing = 'ARCADE';
+        // ...and at the standard threat level, for the same reason: the daily
+        // is only worth sharing if everybody flew the same fight.
+        this.threatLevel = 'REGULAR';
         this.phase = 'BRIEFING';
         this.confirmBriefing(dailySeed(now));
     }
@@ -1259,7 +1540,8 @@ export class GameLoop {
             this.weapons.fireSidewinder(
                 this.physics,
                 this.airborneTargets,
-                designated?.target.kind === 'AIR' ? designated.target.id : null
+                designated?.target.kind === 'AIR' ? designated.target.id : null,
+                (target) => this.visibility.isVisible(target.id)
             );
             if (this.weapons.missiles.length > before) this.shake(SHAKE_SOURCES.missileLaunch);
         } else if (this.selectedWeapon === 'BOMB') {
@@ -1659,8 +1941,13 @@ export class GameLoop {
             this.briefing.drawBriefing(
                 this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords,
                 `${pacingSpec(this.pacing).label} pacing`,
+                `${threatLevelSpec(this.threatLevel).label} threat`,
                 { number: this.dailyNumberToday(), result: this.todaysDaily() },
-                this.controlScheme === 'TOUCH'
+                this.controlScheme === 'TOUCH',
+                {
+                    id: this.selectedMap(),
+                    changeable: this.scenario.setup.allowMapChoice === true
+                }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
@@ -1766,7 +2053,8 @@ export class GameLoop {
             ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
-            fireArmed: this.deck.aircraftState === 'AIRBORNE'
+            fireArmed: this.deck.aircraftState === 'AIRBORNE',
+            recoveryOn: this.approachAssist
         });
     }
 
@@ -1875,7 +2163,12 @@ export class GameLoop {
                 touchMode: this.controlScheme === 'TOUCH',
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
                 motion: this.motion,
-                visibleContacts: this.visibility
+                visibleContacts: this.visibility,
+                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO',
+                recovery: this.approachPhase === null ? null : {
+                    text: approachCaption(approachGuidance(this.physics.position)),
+                    handover: this.approachPhase === 'HANDOVER'
+                }
             }
         );
     }

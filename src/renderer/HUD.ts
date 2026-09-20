@@ -125,6 +125,16 @@ export interface HudContext {
      * same information leak as being able to designate it.
      */
     visibleContacts?: { isVisible(id: string): boolean };
+    /** Whether the autopilot is hugging the terrain, for the annunciator. */
+    terrainFollowing?: boolean;
+    /**
+     * What the recovery assist is doing, when it is doing anything. It takes
+     * the assist band over the ordinary autopilot caption: while the assist is
+     * flying you home, that IS what the autopilot is doing, and the handover
+     * line is the single most important thing on the glass at the moment it
+     * appears.
+     */
+    recovery?: { text: string; handover: boolean } | null;
 }
 
 /**
@@ -138,17 +148,24 @@ export interface HudContext {
  */
 export function assistCaption(
     override: ControlDemand['override'],
-    hasDesignation = false
+    hasDesignation = false,
+    terrainFollowing = false
 ): { text: string; tone: 'ALERT' | 'CAUTION' | 'INFO' } | null {
     switch (override) {
         case 'TERRAIN':
             return { text: 'TERRAIN — AUTO PULL-UP', tone: 'ALERT' };
         case 'STALL':
             return { text: 'ALPHA LIMIT', tone: 'CAUTION' };
-        case 'AUTOPILOT':
+        case 'AUTOPILOT': {
+            // The suffix, not a separate line: the player needs to know the
+            // autopilot is deliberately down in the valley rather than failing
+            // to climb, and a second caption competing for the same band is
+            // how the one that matters gets ignored.
+            const tf = terrainFollowing ? ' · TF' : '';
             return hasDesignation
-                ? { text: 'AUTOPILOT — FLYING THE INTERCEPT', tone: 'INFO' }
-                : { text: 'AUTOPILOT FLYING — PRESS T TO PICK A TARGET', tone: 'INFO' };
+                ? { text: `AUTOPILOT — FLYING THE INTERCEPT${tf}`, tone: 'INFO' }
+                : { text: `AUTOPILOT FLYING — PRESS T TO PICK A TARGET${tf}`, tone: 'INFO' };
+        }
         default:
             return null;
     }
@@ -159,6 +176,19 @@ export function assistCaption(
  * (right) and symmetry (left).
  */
 const OBJECTIVE_SIDE_RESERVE = 150;
+
+/**
+ * Half-width kept clear for the assist annunciator. Generous: the longest
+ * caption it draws is the recovery's, and a tag clipping its end is as bad as
+ * a tag through its middle.
+ */
+const ASSIST_BAND_HALF_W = 210;
+
+/**
+ * Width kept clear on each side of the objective strip in touch mode: the two
+ * top-corner buttons (menu, and the recovery assist) plus their edge gaps.
+ */
+const TOUCH_TOP_RIGHT_RESERVE = 104;
 
 /** Vertical anchors, so no two overlays can be given the same band. */
 const BAND = {
@@ -240,7 +270,8 @@ export class HUD {
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
-            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
+            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
+            context.terrainFollowing ?? false, context.recovery ?? null
         );
         if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
@@ -286,6 +317,21 @@ export class HUD {
         // gun pipper all live here, and a range tag through them is a tag
         // over the three symbols you fly by.
         boxes.push({ x: layout.cx - 54, y: layout.cy - 26, w: 108, h: 52 });
+
+        /**
+         * The assist annunciator band, across the bottom centre.
+         *
+         * It used to be a line that appeared rarely, so nothing reserved space
+         * for it. The recovery assist made it a line that is up for most of the
+         * way home, and a contact tag landed straight through "RECOVERY - GET
+         * ASTERN OF THE BOAT" the first time it was looked at on a phone.
+         */
+        boxes.push({
+            x: layout.cx - ASSIST_BAND_HALF_W,
+            y: this.height - 56,
+            w: ASSIST_BAND_HALF_W * 2,
+            h: 30
+        });
 
         if (layout.touchMode) {
             // The touch systems line, which sits where a tag would otherwise
@@ -362,9 +408,12 @@ export class HUD {
         // under the chip on anything narrower than about 1000px.
         //
         // In touch mode the chip is not there - the score rides in the systems
-        // line - so the strip gets that width back, which is what lets a phone
-        // read the whole objective instead of "descend...".
-        const sideReserve = touchMode ? 52 : OBJECTIVE_SIDE_RESERVE;
+        // line - so the strip gets most of that width back, which is what lets
+        // a phone read the whole objective instead of "descend...". It cannot
+        // have all of it: the menu and the recovery button live in that corner,
+        // and 52 px covered one of them. Adding the second put the strip
+        // straight under RCVY on the smallest handset.
+        const sideReserve = touchMode ? TOUCH_TOP_RIGHT_RESERVE : OBJECTIVE_SIDE_RESERVE;
         const w = Math.min(
             this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
@@ -825,7 +874,8 @@ export class HUD {
             const alpha = progress < 0.66 ? 1 : Math.max(0, 1 - (progress - 0.66) / 0.34);
             const color = c.tone === 'LOSS' ? THEME.alert
                 : c.tone === 'PRAISE' ? THEME.caution
-                    : THEME.phosphor;
+                    : c.tone === 'MODE' ? THEME.muted
+                        : THEME.phosphor;
 
             ctx.globalAlpha = alpha;
             ctx.font = font(c.tone === 'PRAISE' ? 22 : 18, 700);
@@ -880,9 +930,13 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         override: ControlDemand['override'],
         hasDesignation: boolean,
-        cx: number
+        cx: number,
+        terrainFollowing: boolean,
+        recovery: { text: string; handover: boolean } | null
     ) {
-        const caption = assistCaption(override, hasDesignation);
+        const caption = recovery
+            ? { text: recovery.text, tone: recovery.handover ? 'CAUTION' as const : 'INFO' as const }
+            : assistCaption(override, hasDesignation, terrainFollowing);
         if (!caption) return;
 
         const color = caption.tone === 'ALERT' ? THEME.alert

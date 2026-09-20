@@ -108,6 +108,16 @@ export interface ScenarioSetup {
     threat: ThreatProfile;
     /** Which map to fly. Defaults to the fjord. */
     map?: MapId;
+    /**
+     * Whether the player may fly this scenario on a map of their choosing.
+     *
+     * Only the endless mode. A canyon strike is about ITS canyon - the
+     * briefing, the hardened target and the ingress corridor all belong to one
+     * piece of terrain - but "hold the boat against whatever comes" is about
+     * the fight, and holding it in a fjord, over open water and in a ridge
+     * field are three different problems.
+     */
+    allowMapChoice?: boolean;
     /** Skip the deck and start over the canyon. */
     startAirborne?: boolean;
     /** Remove the SAM belt entirely (used by carrier qualification). */
@@ -260,6 +270,7 @@ const CARRIER_DEFENSE: ScenarioDef = {
         // mask. Open water would have silently broken the lesson.
         threat: { endlessWaves: true },
         map: 'FJORD',
+        allowMapChoice: true,
         showTrainingChecklist: true
     },
     cards: [

@@ -53,6 +53,15 @@ export interface TouchLayout {
     weapons: TouchRect[];
     /** Menu / pause, top corner, deliberately small and out of the way. */
     menu: TouchRect;
+    /**
+     * Recovery assist toggle, inboard of the menu.
+     *
+     * A mode switch rather than a combat control, so it sits in the top band
+     * with the menu instead of under a resting thumb - it is pressed once a
+     * sortie, and pressing it by accident in a turn would be worse than
+     * reaching for it.
+     */
+    recover: TouchRect;
     /** Deck-screen launch button, shown instead of the flight controls. */
     launch: TouchRect;
     /** Half-width of the centre band no control may enter. */
@@ -168,6 +177,13 @@ export function solveTouchLayout(
         h: m.minTarget
     };
 
+    const recover: TouchRect = {
+        x: menu.x - m.minTarget - edge * 0.5,
+        y: menu.y,
+        w: m.minTarget,
+        h: m.minTarget
+    };
+
     // The deck screen has one job, so it gets one big button in the middle
     // bottom, where both thumbs can reach it.
     const launchW = Math.min(safe.w * 0.5, 260 * scale);
@@ -187,6 +203,7 @@ export function solveTouchLayout(
         target,
         weapons,
         menu,
+        recover,
         launch,
         centreKeepout: m.keepoutHalf * scale
     };
@@ -195,7 +212,7 @@ export function solveTouchLayout(
 export type TouchControlId =
     | 'STICK' | 'THROTTLE' | 'FIRE' | 'TARGET'
     | 'WEAPON_GUN' | 'WEAPON_MISSILE' | 'WEAPON_BOMB'
-    | 'MENU' | 'LAUNCH' | 'WORLD';
+    | 'MENU' | 'RECOVER' | 'LAUNCH' | 'WORLD';
 
 const inRect = (r: TouchRect, x: number, y: number) =>
     x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
@@ -223,6 +240,8 @@ export function hitTest(
     if (context === 'DECK') {
         return inRect(layout.launch, x, y) ? 'LAUNCH' : 'WORLD';
     }
+
+    if (inRect(layout.recover, x, y)) return 'RECOVER';
 
     if (inCircle(layout.fire, x, y, slop)) return 'FIRE';
     if (inCircle(layout.target, x, y, slop)) return 'TARGET';

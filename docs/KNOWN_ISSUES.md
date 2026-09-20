@@ -199,25 +199,33 @@ takes over (see the README). What a mouse still cannot do is fly: there is no
 mouse-as-joystick mode, because a pointer-driven flight model is a different
 game rather than a port.
 
-## 19. The autopilot flies a bearing, not a route
+## 19. The autopilot cannot ferry the aeroplane home
 
-`AUTOPILOT` holds the bearing, altitude and speed that `pursuitNav()` gives it.
-It has no path planner and no forward-looking terrain sampling: the terrain
-floor in `FlightAssist` is what keeps it out of the ground, and the floor works
-by pulling up.
+`AUTOPILOT` now looks ahead. `flight/TerrainFollowing.ts` samples the ground
+along the track and asks, for each sample, how high the jet must be *now* to
+clear that point by its set clearance when it arrives, and flies the highest
+answer - so it climbs a ridge early, crosses with clearance, and sinks back
+into the valley behind it rather than cruising at ridge height in plain view.
+`G` turns it off.
 
-**Consequence:** in a fjord or a ridge field the autopilot will climb *over*
-terrain rather than thread it — which is safe but is exactly the thing the SAM
-belt is watching for. On `CANYON_STRIKE` in particular, handing the jet to the
-autopilot on the ingress will get you locked. That is arguably correct (the
-low-level run is the mission's skill, and it should not be automatable), but it
-is a limitation rather than a decision, and a terrain-following mode would be
-the honest fix.
+**What it still cannot do is a large heading change.** Heading in this flight
+model comes from the rudder, and the velocity vector does not follow the nose
+without a pull the altitude hold will not command; the hold also bleeds its
+demand off as bank increases, so a sustained turn is a descending spiral. Push
+the autopilot through a hundred and forty degrees at speed and the nose leaves
+the velocity vector, alpha departs, and the terrain floor ends up pulling to the
+vertical. The recovery assist was built on top of this and had to be narrowed
+twice because of it (see §29).
 
-## 20. The Sidewinder's fallback seeker ignores line of sight
+**Consequence:** the autopilot is a good wingman on a bearing and a bad one on
+a route. Fixing it properly means an altitude hold with an integral term and a
+bank-to-turn law that commands the pull a turn needs - a real rework, with the
+whole game's feel downstream of it, so it is recorded rather than rushed.
 
-Designation itself is now gated. `src/tactics/Visibility.ts` filters the
-candidate list `TargetTracker` ranks, by contact class:
+## 20. Designation is gated on visibility **[Resolved]**
+
+`src/tactics/Visibility.ts` filters the candidate list `TargetTracker` ranks,
+by contact class:
 
 | Class | Rule | Why |
 | --- | --- | --- |
@@ -226,19 +234,15 @@ candidate list `TargetTracker` ranks, by contact class:
 | Launcher | line of sight **or** previously discovered | it does not move, and painting you gives it away |
 
 Line of sight is `SensorTacticsManager.checkLOS()`, re-marched at most every
-120 ms — with the exception that a contact the tracker has never evaluated is
+120 ms - with the exception that a contact the tracker has never evaluated is
 resolved on the tick it appears, so a newly spawned package is designatable
-immediately.
+immediately. The Sidewinder's no-designation fallback takes the same gate; a
+deliberate designation is still honoured whatever the terrain does next,
+because losing the shot to a hill sliding in at the moment of pressing the
+button would read as a broken trigger.
 
-**What is left:** `Weapons.fireSidewinder()` falls back to "closest live
-contact inside the seeker cone" when *nothing* is designated, and that fallback
-does not check line of sight. **Consequence:** with no designation you can put
-a missile onto a contact behind a ridge if it happens to be within 8 km and 30°
-of the nose. The missile then usually flies into the hill, so this costs you a
-round rather than gaining you a kill, and every path the player actually uses —
-the scope, the brackets, the lead pipper — is gated. Threading the visibility
-predicate into the weapons world is the remaining fix.
-
+Measured in Chromium on BJORNFJORD: one of three launchers is designatable at
+100 m AGL, three of three at 5 km.
 
 ## 21. The daily sortie is local-only **[By design]**
 
@@ -275,17 +279,18 @@ numbers are `WeaponsSystem.GUN_DAMAGE` and `GUN_HIT_RADIUS`, with the
 bomber multiplier in `toughnessFactor()`.
 
 
-## 24. Landing on a phone is hard **[By design, but noted]**
+## 24. Landing on a phone is still the hard part **[By design, but assisted]**
 
-The autopilot deliberately hands the aeroplane back on final, and the trap
-envelope is unchanged: under 90 m/s, 18-30 m, within 190 m of the boat, flown
-on a virtual stick.
+The recovery assist (`L`, or `RCVY` on a phone, on by default in touch mode)
+holds the glideslope and the approach speed on final and hands the aeroplane
+back at short final. Lineup is the player's throughout, and so is the trap.
 
-**Consequence:** a touch player can fly, fight and designate comfortably, and
-will find the trap considerably harder than a keyboard player does. That is the
-honest trade. Flying the trap for them would remove the best thing in the game;
-an assisted approach mode that flies the glideslope and hands over at short
-final is the fix worth building, and is not built yet.
+**Consequence:** a touch player now arrives on the slope at the right speed
+with the deck in the windscreen, and still has to fly the last seven hundred
+metres and catch a wire on a virtual stick. That is the honest trade: the
+assist removes the part touch controls cannot do (holding a three and a half
+degree slope with a thumb over the altimeter) and keeps the part that is the
+game.
 
 ## 25. Touch mode is landscape only
 
@@ -320,15 +325,46 @@ contact disappears, but you may have to designate one (`T`, or tap it) to read
 its range. That is the intended trade: a readable tag on the nearest threat
 beats four unreadable ones.
 
-## 28. Red and green are load-bearing
+## 28. Red and green are load-bearing **[Resolved, with a caveat]**
 
-The palette uses green for your own symbology and red for hostiles, which is
-the worst possible pair for deuteranopia and protanopia — together the most
-common forms of colour blindness.
+`C` cycles the palette. The alternative moves the whole conversation onto the
+blue-yellow axis, which deuteranopia and protanopia leave intact: cyan
+instruments, amber hostiles, violet keycaps, and the two warning tones
+separated by lightness as well as hue. Every colour in every palette clears
+4.5:1 on the ground, and a crude deuteranopia simulation in the tests pins the
+friendly/hostile separation so a future palette cannot quietly become another
+red-green pair.
 
-**Consequence:** a red-green colour-blind player has to rely on shape and
-position, which the HUD does provide (corner brackets for air contacts, a
-diamond for strike targets, a solid box for the designated target, a distinct
-band for each instrument) but which has never been designed against a
-simulation of those conditions. A palette option is the fix, and the tokens in
-`Theme.ts` are already the single place it would go.
+**The caveat:** the classic palette is still the default and still fails that
+test, deliberately - it is the game's identity, and it is no longer the only
+option. There is no in-game prompt offering the alternative to a player who
+needs it; they have to find `C` in the control reference.
+
+## 29. The recovery assist flies the ball, not the recovery
+
+`L` engages an assist that holds the glideslope and the approach speed on
+final. It deliberately does NOT fly the pattern join, and it deliberately does
+not fly the last seven hundred metres.
+
+The handover at short final is a design decision - the trap is the game. The
+missing join is not: an earlier version flew the whole recovery from anywhere
+and put the jet in the sea with great consistency, for the reasons in §19.
+Out of the approach corridor the assist is now a cue (`RECOVERY - GET ASTERN
+OF THE BOAT`, and a steer call on final) rather than a hand-over.
+
+**Consequence:** a player who presses it abeam the boat gets directions, not a
+lift. Closing this properly means the autopilot rework in §19.
+
+## 30. Boards out is the weapons bay
+
+This airframe has no speedbrake. At idle on a three and a half degree slope it
+stabilises at about 170 m/s, which the arresting gear will not take at any
+price, because gravity down the flight path cancels the drag. The only drag
+device modelled is the weapons bay (`cd0` 0.024 → 0.059), so the recovery
+assist opens it above approach speed exactly as a real aeroplane's boards would
+be - and closes nothing else.
+
+**Consequence:** the assist overrides the bay state while it is flying, and the
+RCS penalty that comes with an open bay applies. Three miles behind your own
+boat that does not matter; if a modelled speedbrake is ever added, this should
+move to it.

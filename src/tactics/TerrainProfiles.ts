@@ -216,3 +216,42 @@ export const DEFAULT_MAP: MapId = 'FJORD';
 export function mapById(id: MapId): TerrainProfile {
     return MAPS.find(m => m.id === id) ?? MAPS[0];
 }
+
+/** Step through the map list, wrapping at both ends. */
+export function nextMap(id: MapId, delta = 1): MapId {
+    const i = MAPS.findIndex(m => m.id === id);
+    const from = i < 0 ? 0 : i;
+    const n = MAPS.length;
+    return MAPS[(((from + delta) % n) + n) % n].id;
+}
+
+const MAP_STORAGE_KEY = 'carrier-vector-1988.mapChoice';
+
+function isMapId(value: unknown): value is MapId {
+    return typeof value === 'string' && MAPS.some(m => m.id === value);
+}
+
+/**
+ * The map the player last chose for a scenario that lets them choose.
+ *
+ * Endless carrier defence is the mission people replay, and it was welded to
+ * the fjord while two perfectly good maps sat unused behind the scenarios
+ * nobody replays. Null means "whatever the scenario says", which is what every
+ * other mission gets - a canyon strike is about ITS canyon.
+ */
+export function loadMapChoice(): MapId | null {
+    try {
+        const raw = globalThis.localStorage?.getItem(MAP_STORAGE_KEY);
+        return isMapId(raw) ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
+export function saveMapChoice(id: MapId) {
+    try {
+        globalThis.localStorage?.setItem(MAP_STORAGE_KEY, id);
+    } catch {
+        // The setting still holds for this session.
+    }
+}

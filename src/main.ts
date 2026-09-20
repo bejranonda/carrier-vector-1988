@@ -96,6 +96,18 @@ document.addEventListener('DOMContentLoaded', () => {
             game.cyclePacing();
             return;
         }
+        // C is the debrief's "copy the daily card", so the palette only gets
+        // it everywhere else.
+        if (key === 'c' && game.phase !== 'DEBRIEF') {
+            e.preventDefault();
+            game.cyclePalette();
+            return;
+        }
+        if (key === 'v') {
+            e.preventDefault();
+            game.cycleThreatLevel();
+            return;
+        }
         if (key === 'k') {
             game.cycleControlScheme();
             return;
@@ -106,6 +118,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (key === 'enter') {
                 e.preventDefault();
                 game.confirmBriefing();
+            } else if (key === 'arrowup' || key === 'arrowdown') {
+                e.preventDefault();
+                game.cycleMapChoice(key === 'arrowup' ? -1 : 1);
             } else if (key === 'arrowleft' || key === 'arrowright') {
                 e.preventDefault();
                 game.selectScenario(key === 'arrowleft' ? -1 : 1);
@@ -153,6 +168,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === 'f') {
             e.preventDefault();
             game.cycleAssistLevel();
+            return;
+        }
+
+        // --- Autopilot terrain following ---
+        if (key === 'g') {
+            e.preventDefault();
+            game.toggleTerrainFollowing();
+            return;
+        }
+
+        // --- Recovery assist (fly me home) ---
+        if (key === 'l') {
+            e.preventDefault();
+            game.toggleApproachAssist();
             return;
         }
 
