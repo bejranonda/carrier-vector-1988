@@ -588,26 +588,49 @@ export class SoundFX {
         osc.stop(now + 0.04);
     }
 
-    /** Kill confirmation: a rising two-note figure, the reward sound. */
+    /** Mechanical relay click: crisp, tactile transient for desktop UI button clicks. */
+    public playRelayClick() {
+        const out = this.route(this.busUi);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1800, now);
+        osc.frequency.exponentialRampToValueAtTime(400, now + 0.025);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.003);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+
+        osc.connect(gain);
+        gain.connect(out);
+        osc.start(now);
+        osc.stop(now + 0.035);
+    }
+
+    /** Kill confirmation: a triumphant three-note arcade arpeggio, the dopamine reward sound. */
     public playKillConfirm(place?: SoundPlacement) {
         const out = this.route(this.busImpacts, place);
         if (!this.ctx || !out) return;
         const now = this.ctx.currentTime;
 
-        for (const [i, freq] of [660, 990].entries()) {
+        // D5 (587Hz) -> A5 (880Hz) -> D6 (1174Hz) triumphant major triad
+        for (const [i, freq] of [587, 880, 1174].entries()) {
             const osc = this.ctx!.createOscillator();
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(freq, now + i * 0.07);
+            osc.frequency.setValueAtTime(freq, now + i * 0.065);
 
             const gain = this.ctx!.createGain();
-            gain.gain.setValueAtTime(0.0001, now + i * 0.07);
-            gain.gain.exponentialRampToValueAtTime(0.17, now + i * 0.07 + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.07 + 0.16);
+            gain.gain.setValueAtTime(0.0001, now + i * 0.065);
+            gain.gain.exponentialRampToValueAtTime(0.18, now + i * 0.065 + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.065 + 0.18);
 
             osc.connect(gain);
             gain.connect(out);
-            osc.start(now + i * 0.07);
-            osc.stop(now + i * 0.07 + 0.18);
+            osc.start(now + i * 0.065);
+            osc.stop(now + i * 0.065 + 0.20);
         }
     }
 

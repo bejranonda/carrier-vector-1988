@@ -175,6 +175,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Pitch inversion toggle (I) ---
+        if (key === 'i') {
+            e.preventDefault();
+            game.togglePitchInversion();
+            return;
+        }
+
+        // --- HUD density toggle (U) ---
+        if (key === 'u') {
+            e.preventDefault();
+            game.toggleHudDensity();
+            return;
+        }
+
         // --- Autopilot terrain following ---
         if (key === 'g') {
             e.preventDefault();
@@ -304,13 +318,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Keyboard players still get click-to-designate, which costs nothing
         // and is the obvious thing to try with a mouse in hand.
+        // Desktop button clicks (deck & HUD) take priority over designation.
+        if (game.handleDesktopClick(x, y)) return;
         if (game.currentView === 'MICRO_FLIGHT') game.designateAtPoint(x, y);
     });
 
     canvas.addEventListener('pointermove', (e) => {
-        if (game.controlScheme !== 'TOUCH') return;
         const { x, y } = pointAt(e);
-        game.touch.move({ id: e.pointerId, x, y });
+        if (game.controlScheme === 'TOUCH') {
+            game.touch.move({ id: e.pointerId, x, y });
+            return;
+        }
+        // Desktop: show pointer cursor when hovering clickable areas
+        if (game.phase === 'ACTIVE') {
+            canvas.style.cursor = 'default';
+            // A cheap proxy: just set pointer if in the bottom HUD strip or top-right button zone
+            if (game.currentView === 'MICRO_FLIGHT') {
+                const nearBottom = y > game.viewHeight - 60;
+                const topRight = y < 55 && x > game.viewWidth - 320;
+                if (nearBottom || topRight) canvas.style.cursor = 'pointer';
+            } else if (game.currentView === 'MACRO_DECK') {
+                canvas.style.cursor = 'pointer';
+            }
+        }
     });
 
     const releasePointer = (e: PointerEvent) => {

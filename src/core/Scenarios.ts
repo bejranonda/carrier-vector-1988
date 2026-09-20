@@ -135,6 +135,8 @@ export interface ScenarioSetup {
     timeLimitActive?: (s: MissionSnapshot) => boolean;
     /** Run the six-step flight checkout. Only the intro mode wants it. */
     showTrainingChecklist?: boolean;
+    /** Enforces absolute combat shielding: zero hostile fire and no SAM launches */
+    combatShielded?: boolean;
     /** Payload the deck crew has already hung on the jet. */
     loadout?: AircraftLoadout;
 }
@@ -581,7 +583,8 @@ const TRAINING_SORTIE: ScenarioDef = {
         },
         map: 'FJORD',
         noSamSites: true,
-        showTrainingChecklist: false
+        showTrainingChecklist: false,
+        combatShielded: true
     },
     cards: [
         {

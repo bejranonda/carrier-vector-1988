@@ -137,6 +137,9 @@ export interface HudContext {
     recovery?: { text: string; handover: boolean } | null;
     /** True when padlock camera is slaved to designated target */
     isPadlocked?: boolean;
+    padlockActive?: boolean;
+    hudDensity?: 'ARCADE' | 'PRO';
+    pitchInverted?: boolean;
     /** Remaining arcade 5-second time rewinds */
     rewindsRemaining?: number;
 }
@@ -194,9 +197,10 @@ const ASSIST_BAND_HALF_W = 210;
  */
 const TOUCH_TOP_RIGHT_RESERVE = 104;
 
-/** Vertical anchors, so no two overlays can be given the same band. */
+/** Vertical instrument bands, in CSS px from top of screen. */
 const BAND = {
-    objective: 18,
+    top: 20,
+    objective: 54,
     compass: 96,
     warning: 132,
     coach: 168
@@ -205,6 +209,7 @@ const BAND = {
 export class HUD {
     public width: number;
     public height: number;
+    public hudDensity: 'ARCADE' | 'PRO' = 'ARCADE';
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
     /** Flash and motion limits for this frame. */
@@ -213,6 +218,11 @@ export class HUD {
     constructor(width: number, height: number) {
         this.width = width;
         this.height = height;
+    }
+
+    public toggleHudDensity(): 'ARCADE' | 'PRO' {
+        this.hudDensity = this.hudDensity === 'ARCADE' ? 'PRO' : 'ARCADE';
+        return this.hudDensity;
     }
 
     public resize(width: number, height: number) {
@@ -229,6 +239,8 @@ export class HUD {
         renderer: VectorRenderer,
         context: HudContext
     ) {
+        if (context.hudDensity) this.hudDensity = context.hudDensity;
+
         const layout = this.solveLayout(
             physics, context.checklist.length > 0, context.touchReserve, context.touchMode
         );
@@ -256,7 +268,7 @@ export class HUD {
         this.drawSpeedBlock(ctx, physics, layout);
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
         this.touchScore = layout.touchMode ? context.score : undefined;
-        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout);
+        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context);
         if (layout.showRwr) this.drawRWR(ctx, sensors, layout);
         if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
         const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
@@ -278,6 +290,7 @@ export class HUD {
             context.terrainFollowing ?? false, context.recovery ?? null
         );
         if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
+        this.drawTopRightControls(ctx, layout, context);
 
         ctx.restore();
     }
@@ -351,7 +364,7 @@ export class HUD {
     }
 
     /** Solve instrument placement for the current viewport. */
-    private solveLayout(
+    public solveLayout(
         physics: AircraftPhysics,
         hasChecklist: boolean,
         reserve?: HudReserve,
@@ -621,10 +634,15 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
-        layout: HudLayout
+        layout: HudLayout,
+        context: HudContext
     ) {
         if (layout.touchMode) {
             this.drawTouchSystemsLine(ctx, physics, layout, this.touchScore);
+            return;
+        }
+        if (this.hudDensity === 'ARCADE') {
+            this.drawArcadeBottomBar(ctx, physics, selectedWeapon, context);
             return;
         }
         if (layout.compactSystems) {
@@ -792,13 +810,156 @@ export class HUD {
         ctx.restore();
     }
 
+    private drawArcadeBottomBar(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        context: HudContext
+    ) {
+        const barY = this.height - 52;
+        const pillH = 34;
+        let curX = 24;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+
+        // 1. Weapon Pills
+        const wpns: [string, 'GUN' | 'AIM9' | 'BOMB'][] = [
+            [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
+            [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
+            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB']
+        ];
+        for (const [text, id] of wpns) {
+            const w = 78;
+            const selected = selectedWeapon === id;
+            plate(ctx, { x: curX, y: barY, w, h: pillH }, {
+                fill: selected ? 'rgba(95,216,255,0.22)' : 'rgba(9,19,25,0.7)',
+                border: selected ? THEME.key : THEME.edgeSoft,
+                radius: 4
+            });
+            if (selected) glow(ctx, THEME.key, 6);
+            ctx.font = font(11, 700);
+            ctx.fillStyle = selected ? THEME.ink : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(text, curX + w / 2, barY + pillH / 2);
+            noGlow(ctx);
+            curX += w + 8;
+        }
+
+        // 2. Assist Mode Pill
+        curX += 8;
+        const assistW = 110;
+        const assistText = `ASSIST: ${context.assistLabel ?? 'AUTO'}`.toUpperCase();
+        plate(ctx, { x: curX, y: barY, w: assistW, h: pillH }, {
+            fill: 'rgba(9,19,25,0.7)',
+            border: THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = THEME.phosphor;
+        ctx.textAlign = 'center';
+        ctx.fillText(assistText, curX + assistW / 2, barY + pillH / 2);
+        curX += assistW + 8;
+
+        // 3. Rewind Pill
+        const rewindW = 84;
+        plate(ctx, { x: curX, y: barY, w: rewindW, h: pillH }, {
+            fill: 'rgba(9,19,25,0.7)',
+            border: THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = THEME.caution;
+        ctx.textAlign = 'center';
+        ctx.fillText('REWIND 5S', curX + rewindW / 2, barY + pillH / 2);
+        curX += rewindW + 8;
+
+        // 4. Padlock Pill
+        const padlockW = 80;
+        const lockOn = context.padlockActive === true || context.isPadlocked === true;
+        plate(ctx, { x: curX, y: barY, w: padlockW, h: pillH }, {
+            fill: lockOn ? 'rgba(255,180,50,0.2)' : 'rgba(9,19,25,0.7)',
+            border: lockOn ? THEME.caution : THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = lockOn ? THEME.caution : THEME.muted;
+        ctx.textAlign = 'center';
+        ctx.fillText(lockOn ? 'LOCK: ON' : 'PADLOCK', curX + padlockW / 2, barY + pillH / 2);
+        curX += padlockW + 16;
+
+        // 5. Status Telemetry Pill (Throttle, Fuel, Hull)
+        const ab = physics.throttle > 1.0;
+        const hull = Math.max(0, Math.round(100 - physics.damage));
+        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${Math.floor(physics.fuel)}L  ·  HULL ${hull}%`;
+        ctx.font = font(11, 600);
+        const statusW = ctx.measureText(statusText).width + 24;
+        if (curX + statusW < this.width - 24) {
+            plate(ctx, { x: curX, y: barY, w: statusW, h: pillH }, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.fillStyle = hull < 30 || physics.fuel < 800 ? THEME.caution : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(statusText, curX + statusW / 2, barY + pillH / 2);
+        }
+
+        ctx.restore();
+    }
+
+    private drawTopRightControls(ctx: CanvasRenderingContext2D, layout: HudLayout, context?: HudContext) {
+        if (layout.touchMode) return;
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        const btnW = 100;
+        const btnH = 28;
+        const y = 16;
+
+        // [DECK (TAB)]
+        const deckX = this.width - btnW - 20;
+        plate(ctx, { x: deckX, y, w: btnW, h: btnH }, {
+            fill: 'rgba(9,19,25,0.75)',
+            border: THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText('DECK (TAB)', deckX + btnW / 2, y + btnH / 2);
+
+        // [HUD: ARCADE / PRO]
+        const modeX = deckX - btnW - 8;
+        const isArcade = this.hudDensity === 'ARCADE';
+        plate(ctx, { x: modeX, y, w: btnW, h: btnH }, {
+            fill: isArcade ? 'rgba(95,216,255,0.18)' : 'rgba(255,180,50,0.18)',
+            border: isArcade ? THEME.key : THEME.caution,
+            radius: 4
+        });
+        ctx.font = font(10, 700);
+        ctx.fillStyle = isArcade ? THEME.key : THEME.caution;
+        ctx.fillText(isArcade ? 'HUD: ARCADE' : 'HUD: PRO', modeX + btnW / 2, y + btnH / 2);
+
+        // [STICK: REAL (I) / STICK: DIR (I)]
+        const stickBtnW = 104;
+        const stickX = modeX - stickBtnW - 8;
+        const isInverted = context?.pitchInverted ?? false;
+        plate(ctx, { x: stickX, y, w: stickBtnW, h: btnH }, {
+            fill: isInverted ? 'rgba(95,216,255,0.18)' : 'rgba(9,19,25,0.75)',
+            border: isInverted ? THEME.key : THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = isInverted ? THEME.key : THEME.ink;
+        ctx.fillText(isInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)', stickX + stickBtnW / 2, y + btnH / 2);
+
+        ctx.restore();
+    }
+
     /** Bottom key bar so the flight controls are never more than a glance away. */
-    /**
-     * Bottom cheat strip. Ordered most-useful-first and truncated to what
-     * actually fits, because two more bindings (designation and the assist
-     * level) would otherwise run off the right-hand edge of a narrow window
-     * and the player would simply never learn about them.
-     */
     private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string, assistLabel?: string) {
         ctx.save();
         noGlow(ctx);
@@ -812,6 +973,8 @@ export class HUD {
             ['V', 'padlock'],
             ['SPACE', 'fire'],
             ['F', assistLabel ?? 'assist'],
+            ['U', 'hud density'],
+            ['I', 'invert pitch'],
             ['TAB', 'deck'],
             ['H', 'controls'],
             ['P', displayModeLabel]
@@ -1198,18 +1361,19 @@ export class HUD {
 
         const rwrBanner = sensors.masterRwrState === 'LAUNCH' || sensors.masterRwrState === 'TRACK';
         if (sensors.masterRwrState === 'LAUNCH') {
-            banner('MISSILE LAUNCH — GET LOW', THEME.alert, 520);
+            banner('▼ MISSILE INBOUND! DIVE BELOW MOUNTAIN RIDGE TO MASK ▼', THEME.alert, 400);
         } else if (sensors.masterRwrState === 'TRACK') {
-            banner('RADAR LOCK — DESCEND TO MASK', THEME.caution, 0);
+            banner('▼ RADAR LOCK: DIVE INTO VALLEYS TO BREAK LOCK ▼', THEME.caution, 0);
         } else {
             const masked = sensors.activeThreats.some(t => t.isTerrainMasked);
             if (masked && physics.position.y < 350) {
                 ctx.save();
                 noGlow(ctx);
-                ctx.font = font(11, 600);
+                ctx.font = font(11, 700);
                 ctx.fillStyle = THEME.phosphor;
+                glow(ctx, THEME.phosphor, 4);
                 ctx.textAlign = 'center';
-                ctx.fillText('TERRAIN MASKED', cx, BAND.warning + 18);
+                ctx.fillText('✓ TERRAIN MASKED · RADAR LINE-OF-SIGHT BROKEN', cx, BAND.warning + 18);
                 ctx.restore();
             }
         }
@@ -1616,6 +1780,9 @@ export class HUD {
         renderer: VectorRenderer,
         layout: HudLayout
     ) {
+        // In Arcade mode, keep the center of the screen clean and uncluttered!
+        if (this.hudDensity === 'ARCADE') return;
+
         const { cx, cy, symScale } = layout;
 
         ctx.save();

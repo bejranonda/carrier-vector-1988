@@ -64,6 +64,10 @@ import {
     scenarioById
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
+import { loadPitchInversion, savePitchInversion } from './Controls';
+
+import { hitTestDeck, hitTestHud } from '../renderer/PointerInteractivity';
+import type { DeckStateSnapshot, HudStateSnapshot } from '../renderer/PointerInteractivity';
 import { StrikeTarget } from '../tactics/StrikeTarget';
 import {
     assistSpec,
@@ -209,6 +213,13 @@ export class GameLoop {
 
     /** Raw key state, written by the input layer in main.ts. */
     public inputState: Record<string, boolean> = {};
+
+    /**
+     * Whether Up/W pitches the nose DOWN (real aviation stick: pull back to
+     * climb, push forward to dive). False = Direct (Up = climb, natural for
+     * most first-time players). Saved across sessions.
+     */
+    public pitchInverted: boolean = loadPitchInversion();
 
     // Combat Entities
     public airborneTargets: AirborneTarget[] = [];
@@ -993,10 +1004,11 @@ export class GameLoop {
         // A thumb gives an analog demand; a key gives ±1. Both arrive here as
         // the same PilotInput, so the assist laws and the flight model below
         // never learn which one the player used.
+        const rawPitch = this.analog
+            ? this.analog.pitch
+            : (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0);
         const pilot = {
-            pitch: this.analog
-                ? this.analog.pitch
-                : (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0),
+            pitch: this.pitchInverted ? -rawPitch : rawPitch,
             roll: this.analog
                 ? this.analog.roll
                 : (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
@@ -1428,6 +1440,107 @@ export class GameLoop {
     }
 
     /**
+     * Toggle pitch inversion. Real-aviation stick: pulling UP arrow / W makes
+     * the nose go DOWN (climb). False = Direct: Up arrow makes nose go UP.
+     * Persisted across sessions so the player never has to set it again.
+     */
+    public togglePitchInversion(): boolean {
+        this.pitchInverted = !this.pitchInverted;
+        savePitchInversion(this.pitchInverted);
+        soundFX.playRelayClick();
+        this.callouts.push(
+            this.pitchInverted ? 'STICK: REAL (UP = DIVE)' : 'STICK: DIRECT (UP = CLIMB)',
+            'MODE'
+        );
+        return this.pitchInverted;
+    }
+
+    /** Toggle HUD density between ARCADE and PRO. */
+    public toggleHudDensity(): 'ARCADE' | 'PRO' {
+        this.hud.toggleHudDensity();
+        soundFX.playRelayClick();
+        this.callouts.push(
+            this.hud.hudDensity === 'ARCADE' ? 'HUD: ARCADE MODE' : 'HUD: PRO MODE',
+            'MODE'
+        );
+        return this.hud.hudDensity;
+    }
+
+    /**
+     * Handle a mouse click on the active desktop view (deck or cockpit HUD).
+     * Returns true if the click was consumed so main.ts can skip designation.
+     */
+    public handleDesktopClick(x: number, y: number): boolean {
+        if (this.phase !== 'ACTIVE') return false;
+        if (this.controlScheme === 'TOUCH') return false;
+
+        if (this.currentView === 'MACRO_DECK') {
+            const deckSnap: DeckStateSnapshot = {
+                aircraftState: this.deck.aircraftState,
+                canRush: this.deck.canRush(),
+                plannedFuel: this.deck.plannedFuel,
+                sidewinders: this.deck.plannedLoadout.sidewinders,
+                ironBombs: this.deck.plannedLoadout.ironBombs
+            };
+            const action = hitTestDeck(x, y, this.viewWidth, this.viewHeight, deckSnap, this.deckView.lastPanels);
+            if (!action) return false;
+            soundFX.playRelayClick();
+            switch (action) {
+                case 'LAUNCH': this.requestCatapultLaunch(); break;
+                case 'RUSH': this.rushTurnaround(); break;
+                case 'FUEL_MINUS': this.deck.plannedFuel = Math.max(1000, this.deck.plannedFuel - 500); break;
+                case 'FUEL_PLUS': this.deck.plannedFuel = Math.min(this.physics.maxFuel, this.deck.plannedFuel + 500); break;
+                case 'AIM9_CYCLE': this.deck.plannedLoadout.sidewinders = (this.deck.plannedLoadout.sidewinders + 2) % 8; break;
+                case 'BOMB_CYCLE': this.deck.plannedLoadout.ironBombs = (this.deck.plannedLoadout.ironBombs + 1) % 5; break;
+                case 'SWITCH_COCKPIT':
+                    this.currentView = 'MICRO_FLIGHT';
+                    break;
+                case 'HELP': this.helpVisible = !this.helpVisible; break;
+                case 'STYLE': this.cycleDisplayMode(); break;
+            }
+            return true;
+        }
+
+        if (this.currentView === 'MICRO_FLIGHT') {
+            const hudSnap: HudStateSnapshot = {
+                selectedWeapon: this.selectedWeapon,
+                assistLabel: assistSpec(this.assistLevel).label,
+                hudDensity: this.hud.hudDensity,
+                padlockActive: this.padlock.isPadlocked,
+                pitchInverted: this.pitchInverted
+            };
+            // controlScheme is narrowed to KEYBOARD by the guard at the top of
+            // this method, so the touch reserve can never apply here.
+            const layout = this.hud.solveLayout(
+                this.physics,
+                this.training.checklist().length > 0,
+                undefined,
+                false
+            );
+            const action = hitTestHud(x, y, this.viewWidth, this.viewHeight, layout, hudSnap);
+            if (!action) return false;
+            soundFX.playRelayClick();
+            switch (action) {
+                case 'WEAPON_GUN': this.selectedWeapon = 'GUN'; break;
+                case 'WEAPON_AIM9': this.selectedWeapon = 'AIM9'; break;
+                case 'WEAPON_BOMB': this.selectedWeapon = 'BOMB'; break;
+                case 'ASSIST_CYCLE': this.cycleAssistLevel(); break;
+                case 'TIME_REWIND': this.triggerTimeRewind(); break;
+                case 'PADLOCK': this.togglePadlock(); break;
+                case 'HUD_MODE': this.toggleHudDensity(); break;
+                case 'PITCH_INVERT': this.togglePitchInversion(); break;
+                case 'SWITCH_DECK':
+                    this.currentView = 'MACRO_DECK';
+                    break;
+                case 'HELP': this.helpVisible = !this.helpVisible; break;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Refresh the designation list. Candidates are live airborne contacts,
      * surviving SAM sites and intact strike targets - exactly the things a
      * weapon can be employed against, so the cycle key never stops on wreckage.
@@ -1727,21 +1840,28 @@ export class GameLoop {
 
         // SAM missile impacts now actually hurt - previously missiles flew
         // straight through the player with no collision check at all.
+        // In combatShielded scenarios (training) impacts are suppressed so
+        // new players can explore without immediately dying to SAMs.
         for (const impact of this.sensors.missileImpacts) {
-            this.physics.applyDamage(impact.damage);
-            this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
-            this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
-            soundFX.playExplosion(this.placeAt(impact.position));
-            soundFX.playMasterCaution();
-            this.shake(SHAKE_SOURCES.damageTaken);
-            this.flash(THEME.alert, 0.5);
-            this.callouts.push('HIT', 'LOSS', `${Math.round(impact.damage)}% AIRFRAME DAMAGE`);
+            if (this.scenario.setup.combatShielded) {
+                this.deck.log(`[TRAINING] SAM from ${impact.samId} ghosted — no damage in combat-shielded sortie.`);
+            } else {
+                this.physics.applyDamage(impact.damage);
+                this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
+                this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
+                soundFX.playExplosion(this.placeAt(impact.position));
+                soundFX.playMasterCaution();
+                this.shake(SHAKE_SOURCES.damageTaken);
+                this.flash(THEME.alert, 0.5);
+                this.callouts.push('HIT', 'LOSS', `${Math.round(impact.damage)}% AIRFRAME DAMAGE`);
+            }
         }
 
         // Enemy aircraft behaviour (also integrates their positions)
         updateEnemyAI(dt, this.airborneTargets, this.physics, (enemy) => {
             // Simplified hit-scan cannon burst: the alignment/range gate in
             // EnemyAI has already established a valid guns solution.
+            if (this.scenario.setup.combatShielded) return; // ghost in training
             const dmg = 4 + Math.random() * 6;
             this.physics.applyDamage(dmg);
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
@@ -2242,6 +2362,7 @@ export class GameLoop {
                     : null,
                 designated: this.tracker.designated(),
                 isPadlocked: this.padlock.isPadlocked,
+                pitchInverted: this.pitchInverted,
                 rewindsRemaining: this.timeRewind.rewindsRemaining,
                 assistLabel: assistSpec(this.assistLevel).label,
                 assistOverride: this.assistOverride,

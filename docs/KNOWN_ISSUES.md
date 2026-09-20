@@ -392,9 +392,34 @@ player therefore cannot rush a turnaround, and does not lose anything they
 had before - but closing this gap fully means giving the deck screen real
 touch controls, not only this one.
 
-## 32. Onboarding overlaps with live combat **[Resolved in v1.4.0]**
+## 32. Onboarding overlaps with live combat **[REOPENED — not actually resolved]**
 
-Resolved via `TRAINING_SORTIE` in `src/core/Scenarios.ts`. New pilots are introduced via a dedicated non-lethal familiarization scenario off the coast with zero hostile SAM sites (`noSamSites: true`). Narrative wingman "Ghost-Lead" guides the player through pitch, roll, throttle, weapons arming, and the recovery pattern before any live enemy missiles are encountered.
+~~Resolved via `TRAINING_SORTIE` in `src/core/Scenarios.ts`.~~
+
+**Reopened 2026-09-20 during the v1.5.0-dev review.** `TRAINING_SORTIE` was
+built correctly (`noSamSites: true`, `combatShielded: true`, zero hostiles) —
+but **no player is ever routed to it.**
+
+`recommendScenario()` (`src/core/Scenarios.ts:691-699`) selects the first-flight
+mission by searching for `setup.showTrainingChecklist`:
+
+| Scenario | `showTrainingChecklist` | Hostiles | SAMs |
+| :--- | :---: | :---: | :---: |
+| `CARRIER_DEFENSE` | **`true`** (line 277) | endless waves | **yes** |
+| `TRAINING_SORTIE` | **`false`** (line 586) | none | none |
+
+So every first-time pilot is still sent into the endless-waves combat mission,
+exactly as this issue originally described. The tutorial exists and is
+unreachable.
+
+**Fix:** add an explicit `isFirstFlight` flag to `TRAINING_SORTIE` and match on
+it, plus a regression test asserting
+`recommendScenario(emptyRecords()).id === 'TRAINING_SORTIE'`. See
+[`docs/reviews/v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md`](reviews/v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) T0-1.
+
+**Process note:** this issue was closed on the basis that the feature was
+*built*, not that it was *reachable*. Verify user-facing outcomes, not
+implementation existence, before closing.
 
 ## 33. Mute cockpit audio and visual attention split **[Resolved in v1.4.0]**
 
@@ -407,3 +432,103 @@ Resolved via `PadlockCamera` in `src/renderer/PadlockCamera.ts`. Pressing `V` in
 ## 35. Sterile target destruction feedback and lack of kinetic "Juice" **[Resolved in v1.4.0]**
 
 Resolved via `VectorDebrisSystem` in `src/renderer/VectorDebris.ts`. Exploding enemy aircraft, SAM radars, and player airframes shatter into 10–16 physics-driven wireframe line segments with outward blast velocity (15–40 m/s), gravity, drag, terrain collision bouncing, and 1.2s phosphor alpha decay. Memory allocation is completely zero-overhead through pre-allocated fragment pools.
+
+---
+
+# Defects Found in the v1.5.0-dev Review (2026-09-20)
+
+Full analysis: [`docs/reviews/v1.5.0-dev/`](reviews/v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)
+
+## 36. Tutorial teaches the wrong autopilot key **[P0 BLOCKER]**
+
+`TRAINING_SORTIE` instructs the player to press `[A]` for autopilot in four
+places (`src/core/Scenarios.ts:599, 600, 633, 634`). `[A]` is bound to **roll
+left** (`Controls.ts:33`); the flight-assist key is `[F]` (`Controls.ts:53`).
+
+**Consequence:** a new pilot who obeys the tutorial rolls into the fjord. The
+one mission designed to build confidence punishes obedience.
+
+**Root cause:** `Controls.ts` is the documented single source of truth for
+keybindings, but mission prose hardcodes key names as plain strings, outside
+that guarantee. **Fix the class, not just the instance:** resolve every
+user-facing key name from `CONTROL_SCHEMA`, and add a test asserting that every
+key string in `Scenarios.ts`, `Tutorial.ts` and `HUD.ts` exists in the schema
+for that context.
+
+## 37. Autopilot tutorial step validates nothing **[P0]**
+
+`src/core/Scenarios.ts:635` — `isComplete: (s) => s.airSpeed > 90 && s.missionSeconds > 20`.
+The step passes on a timer and then announces `"AUTOPILOT VERIFIED"` to a player
+who never engaged the autopilot. A tutorial that validates nothing teaches
+nothing, and a tutorial that lies destroys trust in every later instruction.
+
+## 38. No defensive counterplay against SAM missiles **[P0]**
+
+There are **zero countermeasures in the codebase** — no chaff, flare, ECM or
+decoy. `grep -rn "chaff|flare|countermeasure" src/` returns nothing.
+
+Worse, the SAM missile uses **pure pursuit with an unbounded turn rate**
+(`src/tactics/RadarLOS.ts:337-344`): its velocity is re-pointed directly at the
+aircraft every tick, with no lead, no G limit, no energy bleed and no seeker
+FOV. **It is mathematically undodgeable by manoeuvring.** The only escapes are
+breaking line-of-sight against terrain, or surviving the 10-second fuel burnout.
+
+**Consequence:** every defensive reflex a player brings from the genre — break
+turn, notch, split-S — is silently useless, and the peak-tension moment of the
+game resolves as a coin flip on terrain proximity.
+
+**Fix:** clamp the missile turn rate (~25 deg/s) and use lead pursuit (~30 lines);
+add chaff/flares on `[X]` with aspect-dependent break probability.
+
+## 39. The SEAD mission ships without SEAD weapons **[P1]**
+
+`IRON_HAND` (`src/core/Scenarios.ts:404`) asks the player to roll back a SAM
+belt. The entire anti-SAM arsenal is:
+
+* **20 mm Vulcan** — 40 hits inside an **8 m radius** (`Weapons.ts:337-348`)
+* **Mk.82 iron bomb** — 180 m splash (`Weapons.ts:437-446`)
+* **AIM-9** — cannot damage SAMs at all
+
+There is no anti-radiation missile, no standoff weapon, and no fire-support
+call. The player must enter the 5,000 m envelope of an undodgeable missile
+(issue 38) to deliver an unguided bomb. This is the game's core difficulty
+spike, and it is caused by missing equipment rather than intended challenge.
+
+**Fix:** add an AGM-88 HARM that locks only SAMs in `SEARCH`/`TRACK`/`LAUNCH`
+state and goes ballistic if the site goes `SILENT`. The four-state radar machine
+this requires already exists in `RadarLOS.ts:307-325`.
+
+## 40. Pitch axis defaults against genre convention **[P1]**
+
+`Controls.ts:31-32` binds `ArrowUp` to **pitch up**. The flight-sim convention
+(MSFS, X-Plane, DCS, IL-2, Ace Combat) is `ArrowUp` = stick forward = **nose
+down**. A toggle exists on `[I]` with excellent labelling
+(`STICK: REAL (UP = DIVE)` / `STICK: DIRECT (UP = CLIMB)`), but it defaults to
+the non-standard mode and is one of 40+ flat keybindings.
+
+**Fix:** ask once on the briefing screen in behavioural language
+("PULL BACK TO CLIMB" vs "PUSH UP TO CLIMB" — never the word "inverted"), and
+detect rapid pitch-axis reversals in the first 60 s to offer the fix in context.
+
+## 41. No key remapping **[P2]**
+
+`CONTROL_SCHEMA` is a `readonly` const consumed directly, with no override
+layer. **Consequence:** `WASD`+`QE` occupy different physical positions on
+AZERTY and QWERTZ keyboards, so the game is measurably harder outside
+QWERTY regions, and left-handed or limited-mobility players have no recourse.
+
+## 42. Incoming missiles are effectively invisible **[P1]**
+
+The SAM missile is drawn as a single 8-metre line segment
+(`src/core/GameLoop.ts:2310-2316`). At its 5,000 m launch range that is
+sub-pixel. There is no time-to-impact readout and no directional threat caret.
+
+**Consequence:** the player is told they are in danger without being shown the
+danger — anxiety without agency, which is the precise recipe for quitting.
+
+## 43. Death has no post-mortem **[P2]**
+
+On destruction the player is given no causal explanation: not the killer, the
+range, the mistake, nor what to do differently. Unexplained death is the leading
+rage-quit driver in combat games, and every number needed for the explanation is
+already present in the simulation state.

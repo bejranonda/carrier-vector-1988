@@ -78,8 +78,30 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['u'], display: 'U', label: 'Toggle HUD density (ARCADE vs. PRO)', context: 'FLIGHT', group: 'SYSTEM' },
+    { keys: ['i'], display: 'I', label: 'Toggle pitch inversion (Aviation stick vs. Direct)', context: 'FLIGHT', group: 'FLIGHT' }
 ];
+
+const PITCH_INVERT_KEY = 'carrier_vector_pitch_invert';
+
+export function loadPitchInversion(): boolean {
+    try {
+        const stored = globalThis.localStorage?.getItem(PITCH_INVERT_KEY);
+        if (stored !== null) return stored === 'true';
+    } catch {
+        // Storage unavailable
+    }
+    return false;
+}
+
+export function savePitchInversion(inverted: boolean): void {
+    try {
+        globalThis.localStorage?.setItem(PITCH_INVERT_KEY, String(inverted));
+    } catch {
+        // Ignore storage error
+    }
+}
 
 /** All bindings valid in a given context, including GLOBAL ones. */
 export function bindingsFor(context: ControlContext): Binding[] {
@@ -93,3 +115,4 @@ export function markdownControlTable(context: ControlContext): string {
         .join('\n');
     return `| Key | Action |\n| --- | --- |\n${rows}`;
 }
+

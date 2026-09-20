@@ -62,6 +62,8 @@ export interface DeckViewContext {
 export class DeckView {
     private carrierMesh = WireframeModels.createCarrier();
 
+    public lastPanels: Record<string, Rect> = {};
+
     public draw(
         ctx: CanvasRenderingContext2D,
         deck: DeckManager,
@@ -102,6 +104,12 @@ export class DeckView {
             // belongs to the launch button instead.
             footerH: context.touchMode ? (context.touchReserveBottom ?? 72) : undefined
         });
+
+        this.lastPanels = {
+            ...layout.panels,
+            header: layout.header,
+            footer: layout.footer
+        };
 
         ctx.save();
         ctx.textAlign = 'left';
