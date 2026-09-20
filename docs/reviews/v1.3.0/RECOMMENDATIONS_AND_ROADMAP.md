@@ -1,98 +1,118 @@
-# Carrier Vector 1988: Gameplay Recommendations & Development Roadmap
+# Carrier Vector 1988: Recommendations & Architectural Roadmap
 
-This document outlines the concrete architectural and design recommendations for transforming *Carrier Vector: 1988* into an accessible, attractive, and deeply engaging game. Each recommendation includes its design rationale and player psychology impact.
+This document outlines the concrete architectural and gameplay blueprints for evolving *Carrier Vector: 1988* from an aerodynamic simulation into an engaging, high-retention indie game.
 
 ---
 
 ## 1. How to Make the Game Easy to Understand and Play
 
 ### 1.1. Narrative-Driven, Isolated Onboarding (Fixing Known Issue #32)
-* **The Problem:** New players are currently presented with a technical checklist while launching directly into an active SAM engagement corridor.
+* **The Problem:** New players are presented with an engineering checklist while launching into an active SAM engagement corridor. At Second 12, climbing breaks terrain masking, causing an instant missile kill and tab closure.
 * **The Solution:** 
-  1. Create a dedicated `TRAINING_SORTIE` scenario located in a safe, non-combat sector (e.g., North Sea staging grounds).
-  2. Completely suppress hostile radar emitters and SAM batteries in this mission.
-  3. Replace the text checklist with scripted **Radio Callouts** from a flight instructor or wingman ("Ghost-Lead"):
-     * *"Good cat shot, 201. Pull back gently on the stick, level out at 2,500 feet."*
-     * *"Engage autopilot by pressing [A]. Notice how she holds attitude? Now arm your Sidewinders with [W]."*
+  1. Create scenario `TRAINING_SORTIE` set in peaceful waters off Scotland.
+  2. Suppress all hostile emitters, SAM sites, and enemy interceptors in this scenario.
+  3. Replace the text checklist with scripted **Radio Callouts** from a wingman ("Ghost-Lead"):
+     * *"Good launch, 201. Pull back gently to 2,500 ft."*
+     * *"Engage Autopilot with [A]. Notice how she holds altitude? Now arm your Sidewinders with [W]."*
      * *"Target drone detected at bearing 020. Lock with [SPACE] and take the shot."*
-* **Design Rationale:** Players learn mechanics exponentially faster through conversational, narrative prompts than through technical manuals. Learning must take place in an emotionally safe environment before testing skills under fire.
+* **Design Rationale:** Players absorb mechanics intuitively through conversational dialogue rather than technical manuals.
 
 ### 1.2. 3D Threat Dome & Radar Horizon HUD Symbology
-* **The Problem:** Terrain masking is mathematically modeled in the engine, but invisible to the player. Players don't know *why* they were detected or *where* the radar beam is coming from until a missile is already in the air.
+* **The Problem:** Terrain masking is mathematically modeled, but invisible to the player until a missile is already in flight.
 * **The Solution:** 
-  * Add a subtle vector dome or radar cone overlay on the tactical MFD (Multi-Function Display).
-  * When approaching a mountain ridge, render a visible "radar horizon line" on the HUD showing the altitude boundary where the aircraft becomes visible to enemy emitters.
-* **Design Rationale:** Transparency builds mastery. When players clearly see the invisible boundary of enemy radar, hugging the canyon floor becomes an intentional, thrilling stealth maneuver rather than blind luck.
+  * Add a subtle vector dome on the tactical MFD indicating enemy radar coverage.
+  * Render a dynamic "radar horizon line" on the HUD pitch ladder showing the maximum safe altitude before radar line-of-sight is established.
+* **Design Rationale:** Visualizing the invisible boundary of enemy radar makes terrain masking a deliberate, thrilling stealth maneuver.
 
-### 1.3. Arcade "Time-Rewind" (The "Oops" Mechanic)
-* **The Problem:** In `ARCADE` mode, a single instant-death missile strike ruins a 10-minute sortie, causing rage-quitting.
+### 1.3. Arcade "Time-Rewind" (The "Oops" Button)
+* **The Problem:** In `ARCADE` mode, a single missile kill ruins a 10-minute sortie, causing rage-quitting.
 * **The Solution:** 
-  * Implement a cyclic state buffer storing the last 5 seconds of flight telemetry.
-  * In `ARCADE` mode, pressing `[BACKSPACE]` or a dedicated rewind button steps the simulation backward 5 seconds, giving the player two chances per sortie to flare, chaff, or dive into a canyon.
-* **Design Rationale:** Lowers the barrier to entry for casual players while preserving the hardcore unforgiving nature of `SIM` and `MANUAL` modes.
+  * Store a rolling 5-second circular buffer of aircraft telemetry and projectile positions.
+  * In `ARCADE` mode, pressing `[BACKSPACE]` steps the simulation backward 5 seconds (up to 2 rewinds per sortie).
+* **Design Rationale:** Reduces the harsh failure penalty for casual players while preserving hardcore challenge in `SIM` and `MANUAL` modes.
 
 ---
 
 ## 2. How to Make the Game Visually & Acoustically Attractive
 
 ### 2.1. Vector Fragmentation Explosion Physics ("Game Feel" / Juice)
-* **The Problem:** Enemies currently vanish or collapse abruptly upon destruction, offering zero kinetic gratification.
+* **The Problem:** Exploding targets abruptly vanish or display a minimal circle, offering zero kinetic satisfaction.
 * **The Solution:** 
-  * In `src/renderer/VectorRenderer.ts`, upon target destruction, break the 3D wireframe line segments into 8–16 independent physical line debris objects.
-  * Impart each fragment with the parent aircraft's velocity plus an outward explosive radial impulse and random 3D angular rotation.
-  * Render decaying phosphor trails behind tumbling fragments as they arc toward the ocean surface.
-* **Design Rationale:** In retro-vector games, the visual destruction of geometric lines is the primary visceral payoff (reminiscent of arcade classics like *Battlezone* and *Star Wars*).
+  * In `src/renderer/VectorRenderer.ts`, upon target destruction, break the 3D wireframe line segments into 10–16 independent physical line fragments.
+  * Impart each fragment with parent aircraft momentum + outward radial explosion velocity (15–40 m/s) + random 3D angular tumble.
+  * Apply gravity and air drag so fragments arc toward the ocean, rendering decaying phosphor trails.
+  * In `src/renderer/Camera.ts`, trigger a 150ms screen-shake impulse proportional to distance.
+* **Design Rationale:** In retro-vector games, the shattering of geometric lines is the primary visceral dopamine payoff.
 
-### 2.2. Procedural Dynamic Synthwave Audio
-* **The Problem:** The current audio engine produces an impressive low-frequency ambient threat drone, but lacks musical momentum or emotional escalation.
+### 2.2. Synthesized Cockpit Voice Warning System ("Bitchin' Betty")
+* **The Problem:** The cockpit is completely mute, lacking the iconic audio alarms that define modern combat aviation.
 * **The Solution:** 
-  * In `src/audio/WebAudioSystem.ts`, introduce an arpeggiated 1980s bassline synthesized via procedural FM/subtractive synthesis (zero WAV assets).
-  * Bind bassline tempo and filter cutoff frequency to game state:
-    * **Deck/Cruising:** Low-tempo, filtered, atmospheric drone (60 BPM).
-    * **Radar Paint (`SPIKE`):** Urgent, rising arpeggiated sequence (110 BPM).
-    * **Missile Inbound (`THREAT`):** Fast, aggressive driving synth bassline (135 BPM) with intense sidechain compression.
-* **Design Rationale:** Music dictates physiological arousal. Dynamic music synchronizes the player's heart rate with the tactical danger on screen.
+  * In `src/audio/WebAudioSystem.ts` or via the zero-dependency native Web Speech API (`window.speechSynthesis`), synthesize robotic 1980s voice warnings:
+    * *"PULL UP, PULL UP"* (Altitude < 200m and descent rate > 30 m/s).
+    * *"WARNING: MISSILE LAUNCH"* (SAM guidance detected).
+    * *"STALL, STALL"* (|α| > 18°).
+    * *"BINGO FUEL"* (Fuel < 15%).
+* **Design Rationale:** Voice warnings provide instantaneous, high-priority telemetry without forcing the pilot's eyes away from the boresight.
 
-### 2.3. Cockpit Glass Distortions & Electronic Warfare Static
-* **The Problem:** Being locked or jammed has minimal visual presence beyond text warnings.
+### 2.3. Padlock / Target-Tracking Camera Mode (`V` Key)
+* **The Problem:** The 60° forward FOV blindfolds the player during dogfights when bandits circle outside the canopy.
 * **The Solution:** 
-  * Introduce procedural horizontal CRT scanline tearing and phosphor jitter when flying inside an enemy radar jamming cone or when taking nearby flak hits.
-  * Add camera-shake impulses proportional to cannon recoil and missile motor ignition.
-* **Design Rationale:** Physicalizing electronic warfare on the CRT display reinforces the gritty Cold War hardware aesthetic.
+  * Add a "Padlock" camera toggle (`V` key or mobile touch button).
+  * While active, smoothly interpolate the camera's orientation to look directly at the designated target, allowing the player to track the bandit visually while maneuvering.
+* **Design Rationale:** Eliminates the frustration of losing visual contact and brings the dogfighting experience in line with classic combat flight sims.
+
+### 2.4. Procedural Dynamic Synthwave Audio
+* **The Problem:** The current audio engine produces an impressive low-frequency ambient drone, but lacks musical adrenaline.
+* **The Solution:** 
+  * In `src/audio/WebAudioSystem.ts`, introduce an arpeggiated 1980s bassline synthesized via procedural FM/subtractive synthesis (zero audio files).
+  * Bind tempo and filter cutoff frequency to tactical threat levels:
+    * **Deck / Cruise:** Low-tempo, filtered, atmospheric drone (60 BPM).
+    * **Radar Spike (`SPIKE`):** Urgent, rising arpeggiated sequence (110 BPM).
+    * **Missile Threat (`THREAT`):** Fast, aggressive driving synth bassline (135 BPM).
+* **Design Rationale:** Music synchronizes player heart rate with on-screen tactical danger.
 
 ---
 
-## 3. The Core Macro Pivot: The Rogue-lite Fleet Campaign
+## 3. The 4-Tier Game Loop Architecture & Rogue-lite Campaign
 
-To permanently resolve the "shallow deck loop" and lack of stakes, the game should transition from isolated arcade missions into a **persistent Rogue-lite Campaign**:
+To solve the "passive deck loop" and lack of stakes, restructure the game into 4 distinct loop tiers:
 
 ```mermaid
 flowchart TD
-    A["Campaign Sector Map (Norwegian Sea)"] --> B["Fleet Command: Sector Selection & Loadout"]
-    B --> C["Carrier Deck Ops: Turnaround, Fuel & Armament Allocation"]
-    C --> D["Catapult Sortie: 3D Flight Combat"]
-    D -->|Aircraft Shot Down| E["Permanent Loss: Airframe Removed from Carrier Roster"]
-    D -->|Target Destroyed| F["Strategic Consequence: Enemy SAM Net Weakened in Adjacent Nodes"]
-    D -->|Successful Trap| G["Recovery & Pilot Debrief: Experience & Carrier Ammo Saved"]
-    E --> H{"Airframes Remaining > 0?"}
-    F --> A
-    G --> A
-    H -->|Yes| A
-    H -->|No| I["Campaign Defeat: Fleet Overwhelmed"]
+    subgraph Micro["Micro-Loop (0–5s)"]
+        A1["Aim Boresight"] --> A2["Lock & Fire"]
+        A2 --> A3["Vector Fragment Explosion & Screen Shake"]
+    end
+
+    subgraph Meso["Meso-Loop (30–90s)"]
+        B1["Bandit Intercept"] --> B2["Defensive Terrain Dive"]
+        B2 --> B3["Padlock Target Tracking & Evasion"]
+    end
+
+    subgraph Macro["Macro-Loop (5–15 min)"]
+        C1["Catapult Launch"] --> C2["Combat Sortie"]
+        C2 --> C3["Carrier Recovery & Trap"]
+        C3 --> C4["Deck Turnaround & Resource Allocation"]
+    end
+
+    subgraph Meta["Meta-Loop (Persistent Campaign)"]
+        D1["Node-Based Norwegian Sea Map"] --> D2["Strategic Sector Selection"]
+        D2 --> Macro
+        Macro -->|Aircraft Lost| D3["Permanent Airframe Attrition"]
+        Macro -->|Radar Destroyed| D4["Adjacent SAM Net Weakened"]
+        D3 --> D1
+        D4 --> D1
+    end
 ```
 
-### 3.1. Campaign Mechanics
+### 3.1. Persistent Rogue-lite Fleet Campaign Blueprint
 1. **The Carrier as a Living Base:**
-   * The carrier starts with a finite air wing: **24 F-14 Tomcat airframes** and **12 A-6 Intruder airframes**.
-   * Ammo (AIM-9, AIM-7, GBU-12) and aviation fuel (JP-5) are finite campaign reserves.
-   * If a plane crashes or is shot down, it is **permanently destroyed** and subtracted from the carrier's inventory.
+   * Finite air wing: **24 F-14 Tomcat** and **12 A-6 Intruder** airframes.
+   * Finite ordnance (AIM-9, AIM-7, GBU-12) and aviation fuel (JP-5).
+   * Airframes lost during sorties are **permanently removed** from the carrier's roster.
 2. **Node-Based Strategic Map:**
-   * The player charts a course across a node graph of the Norwegian Sea.
-   * Node types:
-     * **Early Warning Radar Stations:** Destroying these blinds enemy air defenses in adjacent sectors.
-     * **Airfields:** Neutralizing these stops enemy MiG-23 combat air patrols.
-     * **Surface Action Groups:** High-threat warships protecting choke points.
-     * **Underway Replenishment (UNREP):** Safe supply convoys to replenish fuel and airframes.
-3. **Mid-Mission Dynamic Objectives:**
-   * Evolve `src/core/Scenarios.ts` from static configs into a reactive event engine.
-   * Example: During a canyon strike, an emergency radio call arrives: *"Mayday! Badger strike inbound on the carrier bearing 180, abort strike or break intercept!"* The player must choose between finishing their primary objective or turning back to defend the carrier.
+   * The player charts a course across 7 interconnected sectors of the Norwegian Sea.
+   * **Cause & Effect:** Neutralizing an Early Warning Radar node reduces SAM detection range in adjacent sectors by 40%.
+3. **Mid-Sortie Dynamic Objectives:**
+   * Evolve `src/core/Scenarios.ts` from static configurations into a reactive event engine.
+   * Example: *"Mayday! Badger strike inbound on the carrier bearing 180, abort strike or break intercept!"*

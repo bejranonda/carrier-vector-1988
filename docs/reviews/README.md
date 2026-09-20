@@ -10,8 +10,8 @@ Future AI development agents and human contributors must consult this repository
 
 | Version | Evaluation Date | Status | Overall Score | Key Focus & Milestones | Review Files |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| **`v1.3.0`** | 2026-09-20 | **Active Baseline** | **6.35 / 10** | • 10-Pillar Comprehensive Evaluation (Flight, Deck, Juice, Churn, Thermals)<br>• Live GitHub Pages playtest & onboarding analysis<br>• Zero-dependency 6-DOF math engine review<br>• Identification of Issue #32 (SAM ambush during checklist)<br>• Blueprints for Rogue-lite Campaign & Vector Juice | • [10-Pillar Review](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
-| **`v1.4.0+`** | *Upcoming* | *Pending* | — | • Narrative Onboarding Sortie (Non-lethal)<br>• Vector Fragmentation Explosion Physics ("Juice")<br>• Rogue-lite Campaign State Machine scaffold | • *To be created using [Template](REVIEW_TEMPLATE.md)* |
+| **`v1.3.0`** | 2026-09-20 | **Active Baseline** | **5.71 / 10** | • **12-Dimensional Holistic Evaluation** (Loops, Voice, Padlock, Churn, Thermals)<br>• Live GitHub Pages playtest & onboarding failure analysis (Issue #32)<br>• Zero-dependency 6-DOF math engine review<br>• Blueprints for Bitchin' Betty Voice, Padlock Camera, Rogue-lite Campaign & Vector Juice | • [12-Dimension Review](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.4.0+`** | *Upcoming* | *Pending* | — | • Non-Lethal Narrative Onboarding (`TRAINING_SORTIE`)<br>• Synthesized Cockpit Voice Warnings ("Bitchin' Betty")<br>• Vector Fragmentation Explosion Physics ("Juice")<br>• Padlock Target-Tracking Camera Mode (`V` key)<br>• Rogue-lite Fleet Campaign State Machine | • *To be created using [Template](REVIEW_TEMPLATE.md)* |
 
 ---
 
@@ -20,12 +20,12 @@ Future AI development agents and human contributors must consult this repository
 ```
 docs/reviews/
 ├── README.md                                  # This master registry and SOP hub
-├── REVIEW_TEMPLATE.md                         # Standardized protocol for future version reviews
+├── REVIEW_TEMPLATE.md                         # Standardized 12-dimensional review protocol
 │
 └── v1.3.0/                                    # Version 1.3.0 Evaluation Suite (Baseline)
-    ├── COMPREHENSIVE_GAME_REVIEW.md           # 4-Dimensional evaluation, scores & Good vs. Bad
-    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Onboarding, visual juice & Rogue-lite campaign design
-    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Frank creator critique & AI master prompts
+    ├── COMPREHENSIVE_GAME_REVIEW.md           # 12-Dimensional critique, scores & Good vs. Bad
+    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Voice alerts, padlock view, juice & Rogue-lite design
+    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Creator critique & copy-paste AI master prompts
 ```
 
 ---

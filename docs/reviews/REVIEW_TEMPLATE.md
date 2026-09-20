@@ -1,90 +1,108 @@
-# Standardized Game Review & Evaluation Protocol
+# Standardized Game Review & Evaluation Protocol (12-Dimension Framework)
 
-> **Purpose:** Authoritative evaluation framework for assessing new versions and major milestones (e.g., `v1.4.0`, `v2.0.0`) of **Carrier Vector: 1988**.  
-> **Directory Convention:** Store evaluations in `docs/reviews/v<Version>/` (e.g., `docs/reviews/v1.4.0/COMPREHENSIVE_GAME_REVIEW.md`).  
-> **Applicability:** Used by human game reviewers, QA leads, and autonomous AI agents.
+> **Purpose:** Authoritative multi-dimensional evaluation framework for assessing new versions and major releases (e.g., `v1.4.0`, `v2.0.0`) of **Carrier Vector: 1988**.  
+> **Directory Convention:** Store version evaluations in `docs/reviews/v<Version>/` (e.g., `docs/reviews/v1.4.0/COMPREHENSIVE_GAME_REVIEW.md`).  
+> **Target Audience:** Game designers, product managers, QA testers, and autonomous AI development agents.
 
 ---
 
 ## Review Metadata
 * **Evaluated Version:** `vX.Y.Z`
 * **Evaluation Date:** `YYYY-MM-DD`
-* **Reviewer / Agent:** `[Human Name / AI Agent]`
+* **Reviewer / Agent:** `[Name / Agent ID]`
 * **Git Commit SHA:** `[Commit Hash]`
-* **Deployment URL Tested:** `https://bejranonda.github.io/carrier-vector-1988/` (or local build)
-* **Test Suite Status:** `[e.g., 758 tests passed / 0 failures]`
-* **Hardware & Browsers Tested:** `[e.g., Desktop Chrome 128 (144Hz), Mobile Safari iOS 17.5]`
+* **Live Deployment Tested:** `https://bejranonda.github.io/carrier-vector-1988/` (or local preview)
+* **Test Suite Pass Rate:** `[e.g., 758 tests passed / 0 failures]`
+* **Test Environments:** `[e.g., Desktop Chrome 128 (144Hz), Mobile Safari iOS 17.5, Firefox Linux]`
 
 ---
 
-## 1. Multi-Dimensional Evaluation
+## 1. The 12-Dimensional Evaluation Framework
 
-### 1.1. Live Web Build & Session Telemetry
-* **The First 60 Seconds:** What does a player see, hear, and feel immediately upon booting the game and launching off the catapult?
-* **Pacing & Friction Points:** Where do delays occur? Is deck turnaround interactive or a dead waiting room?
-* **Input Responsiveness:** Latency between input and control-surface response across keyboard, touch, and gamepad.
+### 1.1. Live Web Build, First 60 Seconds & Interaction Telemetry
+* **Boot-to-Cockpit Latency:** How many milliseconds elapsed from page load to sitting on the catapult?
+* **First 60s Psychological Impression:** Does the boot sequence, CRT curvature, and catapult stroke trigger immediate awe, or cognitive confusion?
+* **Interaction Latency:** Input-to-photon latency across mouse, keyboard, touch, and gamepad inputs.
 
-### 1.2. Source Code, Math Rigor & Architectural Health
-* **Zero-Dependency Compliance:** Is runtime npm dependency count strictly zero? (No Three.js, gl-matrix, or physics engines).
-* **Numerical Stability:** Fixed timestep (`FIXED_DT = 1/120s`) integrity, semi-implicit Euler integration, swept-volume collision detection.
-* **Separation of Concerns:** Is pure simulation logic (aerodynamics, deck state, scoring) 100% decoupled from Canvas2D and Web Audio, enabling headless unit tests?
+### 1.2. Aerodynamic Rigor, Flight Dynamics & Zero-Dependency Physics
+* **Zero-Dependency Compliance:** Confirm runtime npm dependency count is strictly zero.
+* **Physics Authenticity:** Evaluation of induced drag, symmetric stall envelopes, dynamic pressure (`q = ½ρv²`), and Mach drag rise.
+* **Numerical Integrity:** Fixed-timestep (`FIXED_DT = 1/120s`) stability, semi-implicit Euler integration, and swept-sphere missile proximity fuzing.
 
-### 1.3. Narrative, Cold War Atmosphere & Flow
-* **Atmospheric Immersion:** Does the 1988 North Atlantic Cold War premise resonate through visual styling, terminology, and audio?
-* **Storytelling Delivery:** Is lore delivered through dynamic radio comms / wingman chatter, or dry briefing modals?
-* **Mission Reactivity:** Are scenarios static configurations or dynamic event graphs (e.g., pop-up bogeys, scramble alerts, mid-mission updates)?
+### 1.3. Game Loop Cadence & Dopamine Architecture
+* **Micro-Loop (0–5s):** Aiming boresight, weapon lock-on, trigger squeeze, hit confirmation, and immediate visual feedback.
+* **Meso-Loop (30–90s):** Target designation, energy management, defensive terrain-masking dives, and evasion.
+* **Macro-Loop (5–15 min):** Catapult launch, strike execution, carrier approach/trap, rearm/repair turnaround.
+* **Meta-Loop (Long-Term):** Campaign progression, persistent airframe attrition, pilot rank, and unlockables.
 
-### 1.4. The Psychology of Fun & Kinetic "Game Feel" (Juice)
-* **Kinetic Payoff:** Do destroyed targets shatter into physical vector debris line segments, or do they sterilely vanish?
-* **Visceral Impact:** Presence of screen shake, camera recoil, CRT scanline tearing, and acoustic transients on cannon fire and missile hits.
-* **Flow State Channel:** Does the difficulty curve keep the player between anxiety and boredom (Csíkszentmihályi's Flow)?
+### 1.4. Spatial Awareness, Camera Dynamics & Situational Telemetry
+* **Cockpit Field of View (FOV):** Is the 60° forward FOV sufficient, or does the player feel blind during vertical scissors and high-G dogfights?
+* **Padlock / Target-Tracking View:** Can the player hold a key to slave the camera to the designated contact, or must they rely solely on 2D radar?
+* **HUD Telemetry Usability:** Does the pitch ladder, flight path marker (FPM), and AoA bracket scale correctly with `fov · tan(Δangle)`?
 
-### 1.5. Player Churn Analysis, Mastery Curve & Retention
-* **Drop-Off (Churn) Seconds:** At what exact timestamp is a newcomer most likely to close the browser tab? (e.g., Second 15 SAM strike).
-* **Skill Floor vs. Skill Ceiling:** How steep is the learning curve between beginner survival and ace carrier traps?
-* **Dopamine Cadence:** How many meaningful rewards or high-intensity micro-events occur per minute of play?
-* **"One More Run" Factor:** What psychological hooks compel the player to restart after a mission failure or success?
+### 1.5. Soundscape, Acoustic Dramaturgy & Cockpit Voice Alerts
+* **Procedural Synthesis Quality:** Fidelity of FM/subtractive synthesized jet engines, afterburner rumble, cannon cracks, and missile launches.
+* **3D Audio Spatialization:** Accuracy of stereo panning and distance attenuation for threats (e.g., SAM launches off the wing).
+* **Cockpit Voice Warning System ("Bitchin' Betty"):** Presence of synthesized audio warnings (*"PULL UP"*, *"WARNING: MISSILE"*, *"STALL"*, *"OVER-G"*).
+* **Tactical Radio Chatter & Brevity Codes:** Use of authentic Cold War radio comms (*"Fox Two"*, *"Spike"*, *"Mud"*, *"Splash"*).
 
-### 1.6. Ergonomics, Cognitive Load & Accessibility
-* **Ergonomics & Control Fatigue:** Key placement, finger travel, touch thumb positioning, and thumb occlusion over flight instruments.
-* **Cognitive Load & HUD Clutter:** Can the player parse airspeed, altitude, AoA, and radar warnings under high-G defensive maneuvering?
-* **Inclusive Accessibility:** Colorblind mode contrast compliance, photosensitive flash safety, and reduced-motion options.
+### 1.6. Kinetic "Game Feel", Juice & Visceral Destruction
+* **Destruction Payoff:** Do exploding targets shatter into independent physical vector line debris, or do they sterilely vanish?
+* **Haptic & Visual Punch:** Screen-shake intensity, camera recoil impulses, CRT scanline tearing, and bloom flare during detonations.
+* **Near-Miss Feedback:** Visual and acoustic shockwaves when supersonic missiles or flak burst close to the canopy.
 
-### 1.7. Performance, Frame Pacing & Mobile Thermals
-* **Refresh Rate Adaptability:** Consistency of physics and phosphor decay across 60Hz, 120Hz, and 144Hz monitors.
-* **Draw Call & Canvas Budget:** Per-frame render duration (target: <8ms). Performance impact of shadows, bloom, and vector counts.
-* **Garbage Collection (GC) Pressure:** Are vector objects, matrices, or telemetry strings allocated per frame causing GC stutter?
-* **Mobile Thermal & Battery Drain:** Heat generation and battery consumption during prolonged sorties on mobile devices.
+### 1.7. Narrative Immersion, Cold War Atmosphere & Dynamic Sortie Events
+* **Worldbuilding & Atmosphere:** Authenticity of the 1988 Norwegian Sea NATO/Soviet theater of operations.
+* **Narrative Delivery:** Is lore integrated through diegetic wingman comms and tactical briefings, or dry static text?
+* **Mid-Mission Reactive Drama:** Do sorties feature unexpected events (scramble alerts, pop-up SAMs, radar jamming, divert orders)?
 
-### 1.8. Marketability, Streamability & The "5-Second Hook"
-* **Social Clip-Worthiness:** Can a 5–10 second gameplay snippet immediately captivate viewers on TikTok, YouTube Shorts, or X?
-* **Visual Identity / USP:** What makes this game instantly recognizable compared to competitors (*Nuclear Option*, *Tiny Combat Arena*)?
-* **Viral Sharing Mechanisms:** Effectiveness and readability of the Daily Sortie score share card.
+### 1.8. Player Churn Analysis, Mastery Curve & Non-Lethal Onboarding
+* **Second-by-Second Churn Risk:** Timestamped identification of where new players quit (e.g., Second 12 SAM ambush, Minute 3 carrier crash).
+* **Onboarding Safety:** Is the tutorial isolated in safe airspace, or are players forced to learn flight controls under live fire?
+* **Skill Floor vs. Skill Ceiling:** How smoothly does a player transition from `AUTOPILOT` to `ASSIST` to `MANUAL` flight?
 
-### 1.9. AI-Maintainability & Autonomous Extensibility
-* **AI Safe-Modification Index:** Can an autonomous LLM agent implement features without breaking physics or rendering invariants?
-* **Headless Test Safety Net:** Percentage of codebase covered by automated headless tests.
-* **Clarity of Documentation:** Do `GUIDELINES.md`, `APPROACH_AND_METHOD.md`, and `KNOWLEDGE.md` provide unambiguous formulas?
+### 1.9. Strategic Agency, Risk/Reward Economy & Deck Operations
+* **Deck Decision Depth:** Does carrier turnaround offer high-stakes choices with tradeoffs, or is it a passive timer waiting room?
+* **Aircraft & Ordnance Triage:** Does payload weight penalize climb rate and fuel consumption?
+* **EMCON (Emissions Control) Stealth:** Can the player shut down radar to hide from SAMs at the cost of situational awareness?
+
+### 1.10. Performance, Frame Pacing, Memory & Mobile Thermals
+* **Display Ladder Stability:** Frame pacing consistency across 60Hz, 120Hz, and 144Hz monitors without physics drift.
+* **Canvas2D Render Duration:** Per-frame render time across `RETRO` (shadowBlur) and `MODERN` (bloom buffer) modes.
+* **Garbage Collection (GC) Footprint:** Zero-allocation verification in the hot simulation path.
+* **Mobile Thermals & Battery:** Thermal throttling and battery drain during extended multi-sortie sessions.
+
+### 1.11. Marketability, Social Currency & Streamability
+* **The "5-Second Hook":** Can a 5-second clip captivate viewers on TikTok, YouTube Shorts, or X?
+* **Unique Selling Proposition (USP):** How distinctly does the game stand out against competitors (*Tiny Combat Arena*, *Nuclear Option*)?
+* **Post-Mission Social Artifacts:** Shareability of the Daily Sortie card and potential for retro "Gun-Camera VHS Replay" exports.
+
+### 1.12. Architectural Health, Headless Testing & AI Safe-Extensibility
+* **AI Safe-Modification Index:** Can an autonomous LLM refactor mechanics without breaking visual or physics contracts?
+* **Automated Test Coverage:** Quantity and breadth of headless Vitest unit and integration tests.
+* **Purity of Logic:** Absolute decoupling of simulation state machines from rendering contexts.
 
 ---
 
-## 2. Standardized 10-Pillar Scoring Rubric
+## 2. Standardized 12-Pillar Scoring Rubric
 
 Compare current evaluation against the previous release baseline:
 
 | Pillar | Previous (`vPrev`) | Current (`vCurr`) | Delta (Δ) | Evaluation Summary & Rationale |
 | :--- | :---: | :---: | :---: | :--- |
-| **1. Flight Dynamics & Aerodynamics** | `/ 10` | `/ 10` | `+/-` | Aerodynamic depth, stall behavior, energy bleed, terrain masking. |
-| **2. Carrier Deck Operations & Strategy** | `/ 10` | `/ 10` | `+/-` | Turnaround choices, resource trade-offs, deck crew management. |
-| **3. UX, Controls & Ergonomics** | `/ 10` | `/ 10` | `+/-` | Autopilot assist, control schemes (Keyboard/Touch/Gamepad), ergonomics. |
-| **4. Audio, CRT Aesthetics & Immersion** | `/ 10` | `/ 10` | `+/-` | Procedural Web Audio, spatialization, CRT bloom, retro styling. |
-| **5. Visual "Game Feel" & Kinetic Juice** | `/ 10` | `/ 10` | `+/-` | Explosion debris physics, camera shake, visual hit feedback. |
-| **6. Onboarding, Pacing & Cognitive Load** | `/ 10` | `/ 10` | `+/-` | Learning curve, tutorial design, non-lethal onboarding. |
-| **7. Campaign Stakes & Replay Retention** | `/ 10` | `/ 10` | `+/-` | Persistent consequences, airframe loss, Rogue-lite map progression. |
-| **8. Performance, Frame Pacing & Thermals**| `/ 10` | `/ 10` | `+/-` | Fixed timestep stability, Canvas2D efficiency, battery impact. |
-| **9. Marketability & Social Streamability** | `/ 10` | `/ 10` | `+/-` | Viral clip appeal, visual hook, share card effectiveness. |
-| **10. Architectural Health & AI Extensibility**| `/ 10` | `/ 10` | `+/-` | Zero-dependency compliance, headless tests, modular purity. |
-| **COMPOSITE ENTERTAINMENT INDEX** | `/ 10` | `/ 10` | `+/-` | **Weighted holistic product score.** |
+| **1. Flight Dynamics & Aerodynamics** | `/ 10` | `/ 10` | `+/-` | 6-DOF model, induced drag, stall envelope, terrain masking. |
+| **2. Loop Cadence & Dopamine Architecture**| `/ 10` | `/ 10` | `+/-` | Micro, meso, macro, and meta-loop reward rhythms. |
+| **3. Spatial Awareness & Camera Dynamics** | `/ 10` | `/ 10` | `+/-` | Cockpit FOV, padlock tracking, situational awareness. |
+| **4. Soundscape & Cockpit Voice Alerts** | `/ 10` | `/ 10` | `+/-` | Procedural audio, Bitchin' Betty, brevity codes, 3D pan. |
+| **5. Visual "Game Feel" & Kinetic Juice** | `/ 10` | `/ 10` | `+/-` | Vector debris physics, camera shake, visual hit feedback. |
+| **6. Narrative Atmosphere & Dynamic Sorties**| `/ 10` | `/ 10` | `+/-` | Cold War immersion, radio chatter, reactive mid-mission events. |
+| **7. Onboarding, Pacing & Churn Prevention**| `/ 10` | `/ 10` | `+/-` | Non-lethal training, checklist removal, churn mitigation. |
+| **8. Strategic Agency & Deck Operations** | `/ 10` | `/ 10` | `+/-` | Carrier turnaround tradeoffs, resource triage, deck depth. |
+| **9. Campaign Stakes & Meta Retention** | `/ 10` | `/ 10` | `+/-` | Persistent airframe loss, node-based Rogue-lite campaign map. |
+| **10. Performance, Frame Pacing & Thermals**| `/ 10` | `/ 10` | `+/-` | Fixed timestep stability, Canvas2D budget, mobile thermals. |
+| **11. Marketability & Social Streamability**| `/ 10` | `/ 10` | `+/-` | 5-second hook, viral clip appeal, gun-camera export. |
+| **12. Architectural Health & AI Safety** | `/ 10` | `/ 10` | `+/-` | Zero dependencies, 750+ tests, pure logic decoupling. |
+| **COMPOSITE PLAYER ENTERTAINMENT INDEX** | `/ 10` | `/ 10` | `+/-` | **Holistic weighted score balancing fun and tech.** |
 
 ---
 
@@ -100,12 +118,12 @@ Compare current evaluation against the previous release baseline:
 
 ---
 
-## 4. Actionable Recommendations & Prioritized Roadmap
-* **P0 (Critical for Player Retention):** Immediate fixes for high-churn bottlenecks.
-* **P1 (High Impact - Game Feel & Audiovisuals):** Sensory upgrades and visceral juice.
-* **P2 (Strategic Architecture & Campaign):** Core progression and system depth.
+## 4. Prioritized Actionable Roadmap
+* **P0 (Critical for Player Retention):** Immediate fixes for high-churn bottlenecks and hostile onboarding.
+* **P1 (High Impact - Game Feel & Audiovisuals):** Sensory upgrades, voice warnings, and visceral explosion juice.
+* **P2 (Strategic Architecture & Meta-Game):** Rogue-lite persistent campaign and padlock camera dynamics.
 
 ---
 
 ## 5. Directives & Master Prompts for Future AI Tasks
-*(Include exact copy-paste prompts enforcing zero-dependency and mathematical guardrails for subsequent AI development iterations).*
+*(Include exact copy-paste prompts enforcing zero-dependency, test-driven, and mathematical guardrails).*
