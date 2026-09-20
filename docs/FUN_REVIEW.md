@@ -105,6 +105,13 @@ This is also what makes `AUTOPILOT` more than a novelty: with the flying handled
 and a scope you can step through, the loop becomes *designate → close →
 choose → shoot → break*, which is a complete game.
 
+**Later addition:** the scope only offers what the pilot can see. It had ranked
+everything within 20 km through solid rock, which meant the single most
+interesting decision in the game — how low to fly — was a decision with only a
+downside. Now the ridge that hides you from the launchers hides the launchers
+from you, and climbing to build a picture costs you your own masking. One filter
+turned an existing simulation feature into a choice.
+
 ---
 
 ## 4. Variety: three maps instead of one
@@ -194,12 +201,20 @@ What changed, and the reasoning that is worth keeping:
    stick. An assisted approach - the autopilot flying the glideslope and
    handing over at short final - is the missing piece, and is the one place
    where "the autopilot does not land" costs more than it buys.
-7. **Difficulty is fixed per scenario.** (A combo multiplier, medals and local
-   leaderboards were all considered and deliberately left out; the daily was
-   judged the one hook worth building first.)
-8. **Difficulty is fixed per scenario.** There is no way to ask for a harder
+7. **Difficulty is fixed per scenario.** There is no way to ask for a harder
    carrier defence or an easier canyon strike. With assist levels and ops tempo
    now in place, a threat-level selector would compose neatly with both.
+8. **Colour carries meaning on its own** (KNOWN_ISSUES §28). Red and green are
+   load-bearing across the HUD and the deck screen, and there is no
+   colour-blind palette option.
+
+A combo multiplier, medals and local leaderboards were all considered and
+deliberately left out; the daily sortie was judged the one retention hook worth
+building first.
+
+**Closed since this list was written:** designation ignored line of sight, so
+masking cut only one way. That was ranked highest value per unit of work and is
+now done — see the later addition at the end of §3.
 
 ---
 

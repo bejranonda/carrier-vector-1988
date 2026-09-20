@@ -1,7 +1,7 @@
 {
   "name": "carrier-vector-1988",
   "private": false,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "description": "A retro CRT vector flight simulator and aircraft carrier deck management game in pure TypeScript. Fixed-timestep 6-DOF flight dynamics, radar terrain masking, and 1980s wireframe phosphor graphics with zero 3D engine dependencies.",
   "keywords": [

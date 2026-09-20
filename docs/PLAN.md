@@ -407,3 +407,60 @@ Things that were checked and found **healthy**, and so left alone:
 - `npx tsc --noEmit`, `npm run test` (611), `npm run build`
 - Four emulated handsets end to end, plus the deck screen at 568x320, where the
   squeezed turnaround panel now fits inside its own border
+
+---
+
+## 13. Follow-up Pass — Designation Visibility (v1.1.2)
+
+**Status:** Complete
+**Trigger:** "then update docs and merge" — closing the highest-value item on
+the list the previous pass produced.
+**Result:** 626 tests across 35 suites, released as **v1.1.2**
+
+### The defect
+
+`TargetTracker` ranked every live contact, surviving launcher and intact strike
+target within 20 km regardless of what stood between it and the aeroplane. The
+whole game is built on terrain masking, and masking only cut one way: the ridge
+hid *you* from the SAM belt and hid nothing from you. Cycling the scope was free
+reconnaissance, and you could designate a launcher through a mountain.
+
+### Why the rule is per class, not uniform
+
+A single line-of-sight test would have been wrong in two directions. A hardened
+target is on the briefing card — not being able to designate the submarine pen
+while running the fjord toward it would be nonsense. A launcher does not move,
+so dropping it from the scope the moment you duck behind a ridge would punish
+the correct tactic, which is to mask and come back. An aircraft does move, so a
+remembered position is a lie within seconds. `tactics/Visibility.ts` encodes
+those three cases and nothing else; the ray marching stays in `checkLOS()`,
+which already existed and was already tested.
+
+### The bug inside the fix
+
+Line of sight is expensive enough to throttle (0.12 s), and the first version
+throttled unconditionally. Three smoke tests then failed, and they were right
+to: a contact the tracker had never evaluated waited out the window before it
+resolved. That is up to 120 ms of a newly spawned package being undesignatable —
+long enough for the designate key to feel broken. The throttle now only serves
+an answer it actually has.
+
+A fourth failure was the test's fault, not the code's: the autopilot intercept
+fixture put its bandit at 900 m and 9 km abeam, which is genuinely behind the
+ridge line. It flies high now, so the test measures the autopilot rather than
+terrain masking.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (626), `npm run build`
+- In Chromium: the scope cycles only over visible contacts, and 1 of 3
+  launchers is designatable at 100 m AGL against 3 of 3 at 5 km — the mechanic
+  reads as a real altitude decision
+- Zero console errors through a full launch, intercept and designation cycle
+
+### Left open
+
+`Weapons.fireSidewinder()`'s no-designation fallback still picks the closest
+contact inside the seeker cone without a line-of-sight check (KNOWN_ISSUES §20).
+It costs the player a round rather than gaining them a kill, and every path
+the player actually uses is gated, so it is recorded rather than rushed.

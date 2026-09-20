@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-233%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-626%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 611 headless Vitest tests
+npm run test     # 626 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -158,6 +158,14 @@ weapon its geometry actually supports — and then the rest of the game follows
 it: the Sidewinder guides on *that* contact instead of whichever one it liked,
 and the autopilot flies the intercept. If it is off the glass, a chevron on the
 boresight ring tells you which way to turn.
+
+The scope only offers what you can actually see. Hardened structures are on the
+briefing card, so they are always available; an aircraft needs line of sight,
+because it moves and a remembered position is a lie within seconds; a launcher
+needs line of sight *or* to have given itself away already — seen once, or
+having painted you — because it does not move. So terrain masking cuts both
+ways: the ridge that hides you from the SAM belt hides the SAM belt from you,
+and climbing to find the launchers is a decision with a price.
 
 ## Playing on a phone
 
@@ -327,6 +335,9 @@ exceeding the mode you picked.
 - **The designation drives everything downstream**: the HUD bracket, the recommended
   weapon for the current range and aspect, the Sidewinder's seeker, and the autopilot's
   intercept
+- **Gated on what the pilot can see** — structures are briefed, aircraft need live line
+  of sight, launchers need line of sight or to have been found already, so masking
+  hides the threat from you as well as you from it
 - **Off-boresight steering chevron** when the designated target is not on the glass
 - A lock drops itself the moment its target dies, so the HUD never brackets wreckage
 
@@ -340,7 +351,8 @@ exceeding the mode you picked.
 
 ### Sensors & Stealth
 - **Radar line-of-sight raycasting** against the terrain heightfield
-- **Terrain masking** — drop below a ridge and the lock breaks, killing missiles mid-flight
+- **Terrain masking, both ways** — drop below a ridge and the lock breaks, killing
+  missiles mid-flight; the same ray march decides what your own scope is allowed to offer
 - **Radar cross-section modelling**: `RCS_eff = RCS_base × AspectFactor × (BayOpen ? 4.0 : 1.0)`
 - **RWR** with `SEARCH` → `TRACK` → `LAUNCH` escalation and azimuth display
 - **Lethal SAMs** with swept-sphere proximity fuzing that cannot tunnel through you at Mach 1.5
@@ -452,6 +464,7 @@ src/
 │   ├── RadarLOS.ts        # Terrain, SAM sites, LOS raycasting, RCS, RWR
 │   ├── StrikeTarget.ts    # Hardened ground targets and their hit geometry
 │   ├── TargetDesignation.ts # Target ranking, weapon envelopes, pursuit nav (pure)
+│   ├── Visibility.ts        # What the pilot can see and has learned (pure)
 │   └── EnemyAI.ts         # INGRESS / ENGAGE / RTB behaviour
 ├── carrier/
 │   └── DeckManager.ts     # Inventory, crews, state machine, threat director
@@ -524,7 +537,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**611 headless tests** across 34 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**626 headless tests** across 35 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
