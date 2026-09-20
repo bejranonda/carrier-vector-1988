@@ -105,6 +105,14 @@ import {
 } from './Pacing';
 import type { PacingId } from './Pacing';
 import {
+    loadThreatLevel,
+    nextThreatLevel,
+    saveThreatLevel,
+    startWaveFor,
+    threatLevelSpec
+} from './ThreatLevel';
+import type { ThreatLevelId } from './ThreatLevel';
+import {
     loadSchemePreference,
     needsRotation,
     nextSchemePreference,
@@ -235,6 +243,11 @@ export class GameLoop {
      * scenario's own terrain.
      */
     public mapChoice: MapId | null = loadMapChoice();
+    /**
+     * How hard the fight is, as distinct from how much of the aeroplane you
+     * fly (assist level) or how long you wait (ops tempo).
+     */
+    public threatLevel: ThreatLevelId = loadThreatLevel();
 
     /**
      * How much of the aeroplane the player wants to fly. Restored between
@@ -560,7 +573,14 @@ export class GameLoop {
      * or the deck's default three packages).
      */
     private pacedThreat(threat: ThreatProfile, seedOverride?: number): ThreatProfile {
-        const paced: ThreatProfile = { ...threat, timing: deckTiming(this.pacing) };
+        const paced: ThreatProfile = {
+            ...threat,
+            timing: deckTiming(this.pacing),
+            // The threat level moves the scenario along the escalation curve
+            // that wave generation already implements, rather than adding a
+            // second set of difficulty numbers to keep in sync with it.
+            startWave: startWaveFor(threat.startWave ?? 0, this.threatLevel)
+        };
         if (seedOverride !== undefined) paced.seed = seedOverride;
         const opening = threat.openingTimeline ?? DeckManager.defaultOpeningTimeline();
         paced.openingTimeline = opening.map(p => ({
@@ -1306,6 +1326,14 @@ export class GameLoop {
         };
     }
 
+    /** Cycle the threat level, and remember the choice. */
+    public cycleThreatLevel(): ThreatLevelId {
+        this.threatLevel = nextThreatLevel(this.threatLevel);
+        saveThreatLevel(this.threatLevel);
+        soundFX.playUiMove();
+        return this.threatLevel;
+    }
+
     /** Cycle the colour palette, and remember the choice. */
     public cyclePalette(): PaletteId {
         this.palette = nextPalette(this.palette);
@@ -1398,6 +1426,9 @@ export class GameLoop {
         this.dailyCard = null;
         this.dailyCopied = false;
         this.pacing = 'ARCADE';
+        // ...and at the standard threat level, for the same reason: the daily
+        // is only worth sharing if everybody flew the same fight.
+        this.threatLevel = 'REGULAR';
         this.phase = 'BRIEFING';
         this.confirmBriefing(dailySeed(now));
     }
@@ -1910,6 +1941,7 @@ export class GameLoop {
             this.briefing.drawBriefing(
                 this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords,
                 `${pacingSpec(this.pacing).label} pacing`,
+                `${threatLevelSpec(this.threatLevel).label} threat`,
                 { number: this.dailyNumberToday(), result: this.todaysDaily() },
                 this.controlScheme === 'TOUCH',
                 {

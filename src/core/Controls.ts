@@ -72,6 +72,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['v'], display: 'V', label: 'Cycle threat level (CADET / REGULAR / VETERAN)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' }
 ];

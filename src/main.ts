@@ -103,6 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
             game.cyclePalette();
             return;
         }
+        if (key === 'v') {
+            e.preventDefault();
+            game.cycleThreatLevel();
+            return;
+        }
         if (key === 'k') {
             game.cycleControlScheme();
             return;

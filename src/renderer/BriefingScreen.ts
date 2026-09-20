@@ -72,6 +72,11 @@ export function briefingHitAreas(
     return { compact, selectorY, pills, daily, cta };
 }
 
+/** Gap between two options in the briefing's secondary row. */
+const SEC_GAP = 18;
+/** Vertical pitch when that row has to wrap. */
+const SEC_LINE_H = 19;
+
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
 
@@ -197,6 +202,7 @@ export class BriefingScreen {
         bestScore = 0,
         records: MissionRecords = {},
         pacingLabel = 'ops tempo',
+        threatLabel = 'threat level',
         daily: DailyPanel | null = null,
         touchMode = false,
         /**
@@ -358,7 +364,6 @@ export class BriefingScreen {
             return;
         }
         ctx.textBaseline = 'middle';
-        const secY = h - 30;
         const secs: [string, string][] = [
             ['←  →', 'change mission'],
             ...(mapChoice?.changeable
@@ -367,24 +372,60 @@ export class BriefingScreen {
             ['H', 'all controls'],
             ['S', 'skip to airborne'],
             ['O', pacingLabel],
+            ['V', threatLabel],
             ['P', 'screen style']
         ];
-        let secW = 0;
-        for (const [k, label] of secs) {
+
+        /**
+         * WRAPPED, not clipped.
+         *
+         * This was one centred line, and every setting added to the game added
+         * an item to it: at 800px the row ran off both edges at once and the
+         * first and last options - change mission, and the screen style - were
+         * the two that got cut. Packing it into as many lines as it needs
+         * keeps every option discoverable on every screen, which is the only
+         * reason the row exists.
+         */
+        const itemWidth = ([k, label]: [string, string]) => {
             ctx.font = font(11, 600);
-            secW += ctx.measureText(k).width + 14 + 5;
+            const capW = ctx.measureText(k).width + 14 + 5;
             ctx.font = font(11);
-            secW += ctx.measureText(label).width + 18;
+            return capW + ctx.measureText(label).width + SEC_GAP;
+        };
+
+        const maxRowW = w - 48;
+        const rows: { items: [string, string][]; width: number }[] = [];
+        for (const item of secs) {
+            const iw = itemWidth(item);
+            const last = rows[rows.length - 1];
+            if (last && last.width + iw <= maxRowW) {
+                last.items.push(item);
+                last.width += iw;
+            } else {
+                rows.push({ items: [item], width: iw });
+            }
         }
-        let sx = cx - secW / 2;
-        for (const [k, label] of secs) {
-            sx += keycap(ctx, sx, secY, k, { size: 11 }) + 5;
-            ctx.font = font(11);
-            ctx.fillStyle = THEME.muted;
-            ctx.textAlign = 'left';
-            ctx.fillText(label, sx, secY);
-            sx += ctx.measureText(label).width + 18;
-        }
+
+        /**
+         * Stack upward from the bottom edge. A wrapped block sits lower than a
+         * single row would: stacking upward from the usual line put the first
+         * of two rows straight through the FLY THIS MISSION button, which is
+         * the one thing on this screen that must never be obscured.
+         */
+        const baseY = rows.length > 1 ? h - 20 : h - 30;
+        rows.forEach((rowItems, i) => {
+            const y = baseY - (rows.length - 1 - i) * SEC_LINE_H;
+            // The trailing gap is not part of the visible width.
+            let sx = cx - (rowItems.width - SEC_GAP) / 2;
+            for (const [k, label] of rowItems.items) {
+                sx += keycap(ctx, sx, y, k, { size: 11 }) + 5;
+                ctx.font = font(11);
+                ctx.fillStyle = THEME.muted;
+                ctx.textAlign = 'left';
+                ctx.fillText(label, sx, y);
+                sx += ctx.measureText(label).width + SEC_GAP;
+            }
+        });
 
         ctx.restore();
     }

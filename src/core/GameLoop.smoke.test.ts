@@ -1599,6 +1599,48 @@ describe('GameLoop integration smoke test', () => {
         expect(game.selectedMap()).toBe(SCENARIOS.find(s => s.id === 'CANYON_STRIKE')!.setup.map);
     });
 
+    /**
+     * The threat level is a different request from either of the settings
+     * that already existed: assist changes how much of the AEROPLANE you fly,
+     * ops tempo how long you WAIT, and neither changes how hard the fight is.
+     */
+    it('starts a harder fight at a higher threat level', () => {
+        const waveAt = (level: 'CADET' | 'REGULAR' | 'VETERAN') => {
+            const game = new GameLoop(makeCanvasStub());
+            game.selectScenarioById('LAST_STAND');
+            game.threatLevel = level;
+            runFrames(game, 150);
+            game.confirmBriefing();
+            return game.deck.waveNumber;
+        };
+
+        expect(waveAt('VETERAN')).toBeGreaterThan(waveAt('REGULAR'));
+        expect(waveAt('CADET')).toBeLessThan(waveAt('REGULAR'));
+    });
+
+    it('cycles the threat level and remembers it across a scenario change', () => {
+        const game = new GameLoop(makeCanvasStub());
+        const first = game.threatLevel;
+        const next = game.cycleThreatLevel();
+        expect(next).not.toBe(first);
+        game.selectScenarioById('CANYON_STRIKE');
+        expect(game.threatLevel).toBe(next);
+    });
+
+    /**
+     * The daily is only worth sharing if everybody flew the same fight, so it
+     * forces the standard threat level exactly as it forces arcade pacing.
+     */
+    it('forces the standard threat level for the daily sortie', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.threatLevel = 'VETERAN';
+        game.pacing = 'SIM';
+        game.startDailySortie();
+        expect(game.threatLevel).toBe('REGULAR');
+        expect(game.pacing).toBe('ARCADE');
+    });
+
     it('cycles the colour palette and keeps the game drawing', () => {
         const game = new GameLoop(makeCanvasStub());
         airborne(game);
