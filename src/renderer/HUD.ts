@@ -37,6 +37,8 @@ import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
 import type { HudLayout, HudReserve } from './HudLayout';
+import { motionSettings, blinkVisible } from '../core/Accessibility';
+import type { MotionSettings } from '../core/Accessibility';
 import { placeLabels } from './LabelDeclutter';
 import type { LabelBox, LabelCandidate, PlacedLabel } from './LabelDeclutter';
 import {
@@ -112,6 +114,12 @@ export interface HudContext {
     /** Screen edges the thumb controls occupy, in touch mode. */
     touchReserve?: HudReserve;
     touchMode?: boolean;
+    /**
+     * Flash and motion limits. Supplied by the game loop; defaulted here so
+     * a caller that forgets still gets the WCAG-safe rate rather than the
+     * old 4.5 Hz one.
+     */
+    motion?: MotionSettings;
 }
 
 /**
@@ -160,6 +168,8 @@ export class HUD {
     public height: number;
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
+    /** Flash and motion limits for this frame. */
+    private motion: MotionSettings = motionSettings({ reducedMotion: false });
 
     constructor(width: number, height: number) {
         this.width = width;
@@ -183,6 +193,7 @@ export class HUD {
         const layout = this.solveLayout(
             physics, context.checklist.length > 0, context.touchReserve, context.touchMode
         );
+        this.motion = context.motion ?? motionSettings({ reducedMotion: false });
 
         ctx.save();
         ctx.lineWidth = 1.5;
@@ -385,7 +396,7 @@ export class HUD {
             ctx.textAlign = 'right';
             ctx.font = font(22, 700);
             ctx.fillStyle = clockColor;
-            if (countdown < 60 && Math.floor(Date.now() / 500) % 2 === 0) glow(ctx, clockColor, 8);
+            if (countdown < 60 && blinkVisible(Date.now(), this.motion, 500)) glow(ctx, clockColor, 8);
             ctx.fillText(clockText, x + w - 14, y + 28);
             noGlow(ctx);
             ctx.font = font(9, 600);
@@ -402,7 +413,8 @@ export class HUD {
                 : THEME.phosphor;
 
         // Critical cues blink so they can't be tuned out.
-        if (hint.severity === 'CRITICAL' && Math.floor(Date.now() / 300) % 2 !== 0) return;
+        // 300 ms was 3.3 flashes a second, over the WCAG limit.
+        if (hint.severity === 'CRITICAL' && !blinkVisible(Date.now(), this.motion, 400)) return;
 
         ctx.save();
         noGlow(ctx);
@@ -1105,7 +1117,7 @@ export class HUD {
         cy: number
     ): { rwr: boolean; stall: boolean } {
         const banner = (text: string, color: string, blinkMs: number) => {
-            if (blinkMs > 0 && Math.floor(Date.now() / blinkMs) % 2 !== 0) return;
+            if (blinkMs > 0 && !blinkVisible(Date.now(), this.motion, blinkMs)) return;
             ctx.save();
             noGlow(ctx);
             ctx.font = font(16, 700);
@@ -1122,7 +1134,7 @@ export class HUD {
 
         const rwrBanner = sensors.masterRwrState === 'LAUNCH' || sensors.masterRwrState === 'TRACK';
         if (sensors.masterRwrState === 'LAUNCH') {
-            banner('MISSILE LAUNCH — GET LOW', THEME.alert, 260);
+            banner('MISSILE LAUNCH — GET LOW', THEME.alert, 520);
         } else if (sensors.masterRwrState === 'TRACK') {
             banner('RADAR LOCK — DESCEND TO MASK', THEME.caution, 0);
         } else {
@@ -1140,7 +1152,7 @@ export class HUD {
 
         if (!physics.isStalled) return { rwr: rwrBanner, stall: false };
 
-        if (Math.floor(Date.now() / 220) % 2 === 0) {
+        if (blinkVisible(Date.now(), this.motion, 440)) {
             ctx.save();
             noGlow(ctx);
             ctx.font = font(20, 700);

@@ -295,14 +295,25 @@ export class DeckView {
         ctx.fillStyle = ready ? THEME.caution : THEME.ink;
         ctx.fillText(deck.aircraftState.replace(/_/g, ' '), inner.x, inner.y + 14);
 
-        ctx.font = font(11);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(STATE_BLURB[deck.aircraftState], inner.x, inner.y + 32);
+        /**
+         * Vertical budget, from the panel's real height.
+         *
+         * The layout solver squeezes an essential panel to fit a short
+         * screen, so this one can be forty pixels tall - at which point the
+         * plain-English blurb has to go, or the progress bar gets drawn
+         * straight through the state name.
+         */
+        const roomForBlurb = inner.h >= 58;
+        if (roomForBlurb) {
+            ctx.font = font(11);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(STATE_BLURB[deck.aircraftState], inner.x, inner.y + 32);
+        }
 
-        // Clamp the bar inside the panel: on a phone this panel is one row
-        // tall, and a fixed +46 put the progress bar and its percentage
-        // outside its own border.
-        const barY = Math.min(inner.y + 46, inner.y + inner.h - 10);
+        const barY = Math.max(
+            inner.y + (roomForBlurb ? 46 : 26),
+            inner.y + inner.h - 12
+        );
         bar(ctx, { x: inner.x, y: barY, w: inner.w, h: 8 }, deck.currentTaskProgress / 100, accent);
         if (barY + 22 <= inner.y + inner.h) {
             ctx.font = font(11, 600);

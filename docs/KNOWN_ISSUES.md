@@ -308,3 +308,16 @@ lose their range readout.
 contact disappears, but you may have to designate one (`T`, or tap it) to read
 its range. That is the intended trade: a readable tag on the nearest threat
 beats four unreadable ones.
+
+## 28. Red and green are load-bearing
+
+The palette uses green for your own symbology and red for hostiles, which is
+the worst possible pair for deuteranopia and protanopia — together the most
+common forms of colour blindness.
+
+**Consequence:** a red-green colour-blind player has to rely on shape and
+position, which the HUD does provide (corner brackets for air contacts, a
+diamond for strike targets, a solid box for the designated target, a distinct
+band for each instrument) but which has never been designed against a
+simulation of those conditions. A palette option is the fix, and the tokens in
+`Theme.ts` are already the single place it would go.

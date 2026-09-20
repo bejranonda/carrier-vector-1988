@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 595 headless Vitest tests
+npm run test     # 611 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -406,6 +406,9 @@ exceeding the mode you picked.
   same slice of the world vertically, and a wider one sees more to the sides
 - **Decluttered HUD labels** — contact range tags are placed nearest-first around
   their bracket, never stacking on each other or covering an instrument
+- **Flash-safe warnings** — nothing blinks faster than 2.5 Hz, inside the WCAG
+  2.3.1 limit, and `prefers-reduced-motion` turns off the camera shake and damps
+  the impact flash while leaving every warning lit
 - **Always-on objective line** in both loops, derived from a pure `Objectives.ts` module
 - Every HUD cluster sits on a translucent backplate, so legibility never depends on
   what part of the wireframe happens to be behind it
@@ -435,6 +438,7 @@ src/
 │   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
 │   ├── DailySortie.ts     # Date-seeded run, result merge, share card (pure)
 │   ├── Pacing.ts          # ARCADE / SIM deck timings and threat scaling (pure)
+│   ├── Accessibility.ts   # Flash-rate cap and reduced-motion settings (pure)
 │   ├── Platform.ts        # Control-scheme detection and override (pure)
 │   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
 │   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
@@ -520,7 +524,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**595 headless tests** across 33 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**611 headless tests** across 34 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor

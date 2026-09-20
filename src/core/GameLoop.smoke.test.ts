@@ -482,6 +482,49 @@ describe('GameLoop integration smoke test', () => {
     });
 
     // -----------------------------------------------------------------
+    // Motion and flash safety
+    // -----------------------------------------------------------------
+
+    it('shakes the camera by default', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.shake(1);
+        expect(game.trauma).toBeGreaterThan(0);
+    });
+
+    /**
+     * The shake and the full-screen flash are exactly what
+     * prefers-reduced-motion exists for, and the canvas was ignoring a
+     * preference the CSS already honoured for the CRT flicker.
+     */
+    it('does not shake at all when the player has asked for reduced motion', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.motion = { shakeScale: 0, flashScale: 0.25, allowBlink: false, blinkPeriodMs: 400 };
+
+        game.shake(1);
+        expect(game.trauma).toBe(0);
+
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.inputState[' '] = true;
+        runFrames(game, 60);
+        game.inputState[' '] = false;
+        expect(game.trauma).toBe(0);
+    });
+
+    it('still runs a full sortie with reduced motion on', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.motion = { shakeScale: 0, flashScale: 0.25, allowBlink: false, blinkPeriodMs: 400 };
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 240);
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+        expect(game.phase).toBe('DEBRIEF');
+    });
+
+    // -----------------------------------------------------------------
     // Touch mode
     // -----------------------------------------------------------------
 
