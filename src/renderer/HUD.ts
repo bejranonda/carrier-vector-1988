@@ -177,6 +177,13 @@ export function assistCaption(
  */
 const OBJECTIVE_SIDE_RESERVE = 150;
 
+/**
+ * Half-width kept clear for the assist annunciator. Generous: the longest
+ * caption it draws is the recovery's, and a tag clipping its end is as bad as
+ * a tag through its middle.
+ */
+const ASSIST_BAND_HALF_W = 210;
+
 /** Vertical anchors, so no two overlays can be given the same band. */
 const BAND = {
     objective: 18,
@@ -304,6 +311,21 @@ export class HUD {
         // gun pipper all live here, and a range tag through them is a tag
         // over the three symbols you fly by.
         boxes.push({ x: layout.cx - 54, y: layout.cy - 26, w: 108, h: 52 });
+
+        /**
+         * The assist annunciator band, across the bottom centre.
+         *
+         * It used to be a line that appeared rarely, so nothing reserved space
+         * for it. The recovery assist made it a line that is up for most of the
+         * way home, and a contact tag landed straight through "RECOVERY - GET
+         * ASTERN OF THE BOAT" the first time it was looked at on a phone.
+         */
+        boxes.push({
+            x: layout.cx - ASSIST_BAND_HALF_W,
+            y: this.height - 56,
+            w: ASSIST_BAND_HALF_W * 2,
+            h: 30
+        });
 
         if (layout.touchMode) {
             // The touch systems line, which sits where a tag would otherwise

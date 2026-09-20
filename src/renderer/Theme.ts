@@ -28,42 +28,192 @@
 export const MONO =
     'ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
 
-export const THEME = {
+export interface UiPalette {
     /** Page/canvas ground. Blue-tinted near-black reads as glass, not soot. */
-    ground: '#070d11',
+    ground: string;
     /** Slightly lifted ground used inside panels so they separate from the world. */
-    panelFill: 'rgba(9, 19, 25, 0.82)',
+    panelFill: string;
     /** Same, but for HUD backplates over a live 3D scene. */
-    plateFill: 'rgba(6, 13, 17, 0.62)',
-
+    plateFill: string;
     /** Headline values: altitude, speed, state names, prompts. */
-    ink: '#eafff5',
+    ink: string;
     /** Primary instrument colour. */
-    phosphor: '#57e39b',
-    /** Labels and secondary copy. Deliberately neutral, not green. */
-    muted: '#93a9a4',
+    phosphor: string;
+    /** Labels and secondary copy. Deliberately neutral. */
+    muted: string;
     /** Interactive affordances - ONLY used for key names. */
-    key: '#5fd8ff',
-    caution: '#ffc94d',
-    alert: '#ff6363',
+    key: string;
+    caution: string;
+    alert: string;
     /** Enemy / hostile symbology. */
-    hostile: '#ff6363',
-
-    edge: 'rgba(87, 227, 155, 0.34)',
-    edgeSoft: 'rgba(147, 169, 164, 0.22)',
-    grid: 'rgba(87, 227, 155, 0.14)'
-} as const;
+    hostile: string;
+    edge: string;
+    edgeSoft: string;
+    grid: string;
+}
 
 /** World-layer (3D wireframe) colours, kept separate from UI chrome. */
-export const WORLD = {
-    horizon: '#2f9e63',
-    sea: '#14603a',
-    terrain: '#3fb97a',
-    valley: '#0f4a2c',
-    carrier: '#7df0b4',
-    hostile: '#ff5b4a',
-    missile: '#ff2d2d'
-} as const;
+export interface WorldPalette {
+    horizon: string;
+    sea: string;
+    terrain: string;
+    valley: string;
+    carrier: string;
+    hostile: string;
+    missile: string;
+}
+
+export type PaletteId = 'CLASSIC' | 'DEUTERAN';
+
+export interface PaletteSpec {
+    id: PaletteId;
+    label: string;
+    blurb: string;
+    ui: UiPalette;
+    world: WorldPalette;
+}
+
+/**
+ * COLOUR IS NOT ALLOWED TO BE THE ONLY SIGNAL, but it is the fastest one,
+ * and the classic palette spends it on the worst possible pair.
+ *
+ * Green for your own symbology and red for hostiles is the canonical
+ * red-green confusion: to a deuteranope or a protanope - together the most
+ * common forms of colour blindness, and about one man in twelve - those two
+ * are the same muddy yellow-brown. The HUD does carry shape and position cues
+ * (corner brackets for air contacts, a diamond for strike targets, a solid box
+ * for the designated target), but "which of these two boxes is trying to kill
+ * me" should not be a reading-comprehension exercise.
+ *
+ * The alternative palette moves the whole conversation onto the blue-yellow
+ * axis, which both of those conditions leave intact: friendly instruments go
+ * cyan, hostiles go amber, and the two warning tones separate by lightness as
+ * well as hue. Every colour in both palettes clears 4.5:1 on the ground, and a
+ * test enforces it for each of them rather than for whichever happens to be
+ * loaded.
+ */
+export const PALETTES: readonly PaletteSpec[] = [
+    {
+        id: 'CLASSIC',
+        label: 'CLASSIC PHOSPHOR',
+        blurb: 'Green instruments, red hostiles',
+        ui: {
+            ground: '#070d11',
+            panelFill: 'rgba(9, 19, 25, 0.82)',
+            plateFill: 'rgba(6, 13, 17, 0.62)',
+            ink: '#eafff5',
+            phosphor: '#57e39b',
+            muted: '#93a9a4',
+            key: '#5fd8ff',
+            caution: '#ffc94d',
+            alert: '#ff6363',
+            hostile: '#ff6363',
+            edge: 'rgba(87, 227, 155, 0.34)',
+            edgeSoft: 'rgba(147, 169, 164, 0.22)',
+            grid: 'rgba(87, 227, 155, 0.14)'
+        },
+        world: {
+            horizon: '#2f9e63',
+            sea: '#14603a',
+            terrain: '#3fb97a',
+            valley: '#0f4a2c',
+            carrier: '#7df0b4',
+            hostile: '#ff5b4a',
+            missile: '#ff2d2d'
+        }
+    },
+    {
+        id: 'DEUTERAN',
+        label: 'BLUE / AMBER',
+        blurb: 'For red-green colour blindness',
+        ui: {
+            ground: '#070d11',
+            panelFill: 'rgba(9, 19, 25, 0.82)',
+            plateFill: 'rgba(6, 13, 17, 0.62)',
+            ink: '#eafff5',
+            phosphor: '#5ad1ff',
+            muted: '#a8b6bd',
+            // Violet, not cyan: cyan is the instrument colour here, and a
+            // keycap that looks like an instrument is not an affordance.
+            key: '#c6a6ff',
+            caution: '#ffe066',
+            alert: '#ff8a1f',
+            hostile: '#ff8a1f',
+            edge: 'rgba(90, 209, 255, 0.34)',
+            edgeSoft: 'rgba(168, 182, 189, 0.22)',
+            grid: 'rgba(90, 209, 255, 0.14)'
+        },
+        world: {
+            horizon: '#2f87ae',
+            sea: '#144b60',
+            terrain: '#3fa5c9',
+            valley: '#0f3846',
+            carrier: '#8fe6ff',
+            hostile: '#ffae3a',
+            missile: '#ff7a1f'
+        }
+    }
+];
+
+export const DEFAULT_PALETTE: PaletteId = 'CLASSIC';
+
+export function paletteSpec(id: PaletteId): PaletteSpec {
+    return PALETTES.find(p => p.id === id) ?? PALETTES[0];
+}
+
+export function nextPalette(id: PaletteId): PaletteId {
+    const i = PALETTES.findIndex(p => p.id === id);
+    return PALETTES[(i + 1) % PALETTES.length].id;
+}
+
+/**
+ * The live palettes.
+ *
+ * Mutable on purpose. Two hundred and sixty call sites read `THEME.x` at draw
+ * time, and threading a palette argument through every one of them would be a
+ * far bigger change than the feature deserves - so the palette is swapped in
+ * place and the next frame picks it up. Nothing caches a colour between
+ * frames, which is what makes that safe.
+ */
+export const THEME: UiPalette = { ...PALETTES[0].ui };
+export const WORLD: WorldPalette = { ...PALETTES[0].world };
+
+let activePalette: PaletteId = DEFAULT_PALETTE;
+
+export function currentPalette(): PaletteId {
+    return activePalette;
+}
+
+export function applyPalette(id: PaletteId) {
+    const spec = paletteSpec(id);
+    activePalette = spec.id;
+    Object.assign(THEME, spec.ui);
+    Object.assign(WORLD, spec.world);
+}
+
+const PALETTE_STORAGE_KEY = 'carrier-vector-1988.palette';
+
+function isPaletteId(value: unknown): value is PaletteId {
+    return typeof value === 'string' && PALETTES.some(p => p.id === value);
+}
+
+/** Best-effort restore; storage can throw or be blocked and the game must boot. */
+export function loadPalette(): PaletteId {
+    try {
+        const raw = globalThis.localStorage?.getItem(PALETTE_STORAGE_KEY);
+        return isPaletteId(raw) ? raw : DEFAULT_PALETTE;
+    } catch {
+        return DEFAULT_PALETTE;
+    }
+}
+
+export function savePalette(id: PaletteId) {
+    try {
+        globalThis.localStorage?.setItem(PALETTE_STORAGE_KEY, id);
+    } catch {
+        // The setting still holds for this session.
+    }
+}
 
 export function font(size: number, weight: 400 | 500 | 600 | 700 = 400): string {
     return `${weight} ${size}px ${MONO}`;

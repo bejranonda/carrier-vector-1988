@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_MAP, MAPS, mapById } from './TerrainProfiles';
+import { DEFAULT_MAP, MAPS, loadMapChoice, mapById, nextMap, saveMapChoice } from './TerrainProfiles';
 import { TacticalTerrain, SensorTacticsManager } from './RadarLOS';
 
 describe('map catalogue', () => {
@@ -140,5 +140,62 @@ describe('terrain masking is possible on every map that claims cover', () => {
         // Straight down the middle at 200m, every launcher should see you.
         const exposed = { x: 0, y: 200, z: 6000 };
         expect(sensors.samSites.every(s => sensors.checkLOS(s.position, exposed))).toBe(true);
+    });
+});
+
+describe('map choice', () => {
+    const store = () => {
+        const map = new Map<string, string>();
+        return {
+            getItem: (k: string) => map.get(k) ?? null,
+            setItem: (k: string, v: string) => { map.set(k, v); }
+        };
+    };
+
+    it('steps forward through every map and wraps', () => {
+        let id = MAPS[0].id;
+        const seen = new Set([id]);
+        for (let i = 0; i < MAPS.length; i++) {
+            id = nextMap(id);
+            seen.add(id);
+        }
+        expect(seen.size).toBe(MAPS.length);
+        expect(id).toBe(MAPS[0].id);
+    });
+
+    it('steps backward too, without falling off the front', () => {
+        expect(nextMap(MAPS[0].id, -1)).toBe(MAPS[MAPS.length - 1].id);
+    });
+
+    /**
+     * Null, not the fjord: "no choice made" and "chose the fjord" are
+     * different answers, and only the first one lets a scripted mission keep
+     * its own terrain.
+     */
+    it('has no choice stored until one is made', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = store();
+        expect(loadMapChoice()).toBe(null);
+    });
+
+    it('round-trips a choice', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = store();
+        saveMapChoice('OPEN_SEA');
+        expect(loadMapChoice()).toBe('OPEN_SEA');
+    });
+
+    it('ignores a stored map that no longer exists', () => {
+        const s = store();
+        s.setItem('carrier-vector-1988.mapChoice', 'ATLANTIS');
+        (globalThis as { localStorage?: unknown }).localStorage = s;
+        expect(loadMapChoice()).toBe(null);
+    });
+
+    it('survives storage that throws', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = {
+            getItem: () => { throw new Error('blocked'); },
+            setItem: () => { throw new Error('blocked'); }
+        };
+        expect(loadMapChoice()).toBe(null);
+        expect(() => saveMapChoice('FJORD')).not.toThrow();
     });
 });

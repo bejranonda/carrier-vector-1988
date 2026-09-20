@@ -16,6 +16,7 @@ import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { SCENARIOS } from './Scenarios';
+import { MAPS } from '../tactics/TerrainProfiles';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -1539,6 +1540,73 @@ describe('GameLoop integration smoke test', () => {
         game.physics.position = { x: 0, y: 400, z: APPROACH.touchdownZ - 3000 };
         runFrames(game, 5);
         expect(game.approachPhase).toBe(null);
+    });
+
+    /**
+     * Endless carrier defence is the mission people replay, and it was welded
+     * to the fjord while two perfectly good maps sat behind the missions
+     * nobody replays twice.
+     */
+    it('flies endless carrier defence on a map of the player choosing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        const first = game.selectedMap();
+
+        const chosen = game.cycleMapChoice(1);
+        expect(chosen).not.toBe(null);
+        expect(chosen).not.toBe(first);
+
+        runFrames(game, 150);
+        game.confirmBriefing();
+        expect(game.terrain.profile.id).toBe(chosen);
+    });
+
+    it('comes back to where it started after a full cycle of the maps', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        const first = game.selectedMap();
+        const seen = new Set([first]);
+        for (let i = 0; i < MAPS.length; i++) seen.add(game.cycleMapChoice(1)!);
+        expect(seen.size).toBe(MAPS.length);
+        expect(game.selectedMap()).toBe(first);
+    });
+
+    /**
+     * ...but a canyon strike is about ITS canyon: the briefing, the hardened
+     * target and the ingress corridor all belong to one piece of terrain.
+     */
+    it('will not let a scripted mission be flown somewhere else', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CANYON_STRIKE');
+        const own = game.selectedMap();
+
+        expect(game.cycleMapChoice(1)).toBe(null);
+        expect(game.selectedMap()).toBe(own);
+
+        runFrames(game, 150);
+        game.confirmBriefing();
+        expect(game.terrain.profile.id).toBe(own);
+    });
+
+    it('keeps a map choice from leaking into the missions that own their map', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CARRIER_DEFENSE');
+        game.cycleMapChoice(1);
+        const chosen = game.selectedMap();
+
+        game.selectScenarioById('CANYON_STRIKE');
+        expect(game.selectedMap()).not.toBe(chosen);
+        expect(game.selectedMap()).toBe(SCENARIOS.find(s => s.id === 'CANYON_STRIKE')!.setup.map);
+    });
+
+    it('cycles the colour palette and keeps the game drawing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        const first = game.palette;
+        const next = game.cyclePalette();
+        expect(next).not.toBe(first);
+        expect(() => runFrames(game, 30)).not.toThrow();
+        expect(game.phase).toBe('ACTIVE');
     });
 
     it('cycles the display mode without throwing', () => {

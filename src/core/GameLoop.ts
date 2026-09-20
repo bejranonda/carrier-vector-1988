@@ -30,7 +30,16 @@ import { PostProcess } from '../renderer/PostProcess';
 import type { PostQuality } from '../renderer/PostProcess';
 import { DeckView } from '../renderer/DeckView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
-import { THEME, WORLD } from '../renderer/Theme';
+import {
+    THEME,
+    WORLD,
+    applyPalette,
+    loadPalette,
+    nextPalette,
+    paletteSpec,
+    savePalette
+} from '../renderer/Theme';
+import type { PaletteId } from '../renderer/Theme';
 import {
     applyDisplayModeToDocument,
     displayModeSpec,
@@ -78,7 +87,13 @@ import {
 import type { ApproachPhase } from '../flight/ApproachGuidance';
 import { VisibilityTracker } from '../tactics/Visibility';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
-import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
+import {
+    DEFAULT_MAP,
+    loadMapChoice,
+    nextMap,
+    saveMapChoice
+} from '../tactics/TerrainProfiles';
+import type { MapId } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
 import {
     deckTiming,
@@ -210,6 +225,16 @@ export class GameLoop {
      * the scanline mask and the vignette. Restored from the last session.
      */
     public displayMode: DisplayModeId = loadDisplayMode();
+    /**
+     * Colour palette. Green-for-us / red-for-them is the one pairing a
+     * red-green colour-blind player cannot read, so it is a setting.
+     */
+    public palette: PaletteId = loadPalette();
+    /**
+     * Chosen map, for the scenarios that let one be chosen. Null means the
+     * scenario's own terrain.
+     */
+    public mapChoice: MapId | null = loadMapChoice();
 
     /**
      * How much of the aeroplane the player wants to fly. Restored between
@@ -402,6 +427,7 @@ export class GameLoop {
         this.deckView = new DeckView();
         this.briefing = new BriefingScreen();
 
+        applyPalette(this.palette);
         this.applyDisplayMode();
         this.applyScenario(this.scenario);
     }
@@ -417,6 +443,29 @@ export class GameLoop {
         // Normalise rather than letting the index drift off into the negatives
         // over a long browse; scenarioAt() wraps the value, not the field.
         this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === this.scenario.id);
+    }
+
+    /**
+     * Step the map for a scenario that allows one to be chosen.
+     *
+     * Returns the map now selected, or null when this scenario owns its
+     * terrain - which is most of them, and is not a failure.
+     */
+    public cycleMapChoice(delta = 1): MapId | null {
+        if (!this.scenario.setup.allowMapChoice) return null;
+        const current = this.mapChoice ?? this.scenario.setup.map ?? DEFAULT_MAP;
+        this.mapChoice = nextMap(current, delta);
+        saveMapChoice(this.mapChoice);
+        soundFX.playUiMove();
+        return this.mapChoice;
+    }
+
+    /** The map the selected scenario would be flown on right now. */
+    public selectedMap(): MapId {
+        const setup = this.scenario.setup;
+        return setup.allowMapChoice && this.mapChoice !== null
+            ? this.mapChoice
+            : setup.map ?? DEFAULT_MAP;
     }
 
     public selectScenarioById(id: ScenarioId) {
@@ -442,7 +491,9 @@ export class GameLoop {
         // The map is part of the scenario, so the terrain is rebuilt with it.
         // Everything that samples terrain - sensors, the bomb predictor, the
         // renderer - is handed the new instance rather than caching heights.
-        const mapId = setup.map ?? DEFAULT_MAP;
+        const mapId = setup.allowMapChoice && this.mapChoice !== null
+            ? this.mapChoice
+            : setup.map ?? DEFAULT_MAP;
         if (this.terrain.profile.id !== mapId) {
             this.terrain = new TacticalTerrain(mapId);
         }
@@ -1255,6 +1306,16 @@ export class GameLoop {
         };
     }
 
+    /** Cycle the colour palette, and remember the choice. */
+    public cyclePalette(): PaletteId {
+        this.palette = nextPalette(this.palette);
+        applyPalette(this.palette);
+        savePalette(this.palette);
+        this.callouts.push(`PALETTE — ${paletteSpec(this.palette).label}`, 'MODE');
+        soundFX.playUiMove();
+        return this.palette;
+    }
+
     /** Toggle the recovery assist, and remember the choice. */
     public toggleApproachAssist(): boolean {
         this.approachAssist = !this.approachAssist;
@@ -1850,7 +1911,11 @@ export class GameLoop {
                 this.ctx, w, h, this.elapsedSeconds, this.scenario, this.bestScore, this.missionRecords,
                 `${pacingSpec(this.pacing).label} pacing`,
                 { number: this.dailyNumberToday(), result: this.todaysDaily() },
-                this.controlScheme === 'TOUCH'
+                this.controlScheme === 'TOUCH',
+                {
+                    id: this.selectedMap(),
+                    changeable: this.scenario.setup.allowMapChoice === true
+                }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;

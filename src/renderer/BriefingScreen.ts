@@ -19,6 +19,7 @@ import type { Rect } from './Theme';
 import { SCENARIOS, clearedCount, recommendScenario } from '../core/Scenarios';
 import type { ScenarioCard, ScenarioDef } from '../core/Scenarios';
 import { DEFAULT_MAP, mapById } from '../tactics/TerrainProfiles';
+import type { MapId } from '../tactics/TerrainProfiles';
 import { isCleared, recordFor } from '../core/MissionRecords';
 import type { MissionRecords } from '../core/MissionRecords';
 import type { DailyResult } from '../core/DailySortie';
@@ -197,7 +198,13 @@ export class BriefingScreen {
         records: MissionRecords = {},
         pacingLabel = 'ops tempo',
         daily: DailyPanel | null = null,
-        touchMode = false
+        touchMode = false,
+        /**
+         * The map this mission would be flown on, and whether the player is
+         * allowed to change it. Only the endless mode is - see
+         * `ScenarioSetup.allowMapChoice`.
+         */
+        mapChoice: { id: MapId; changeable: boolean } | null = null
     ) {
         ctx.save();
         noGlow(ctx);
@@ -253,7 +260,8 @@ export class BriefingScreen {
         ctx.fillStyle = THEME.caution;
         ctx.fillText(scenario.name, cx, headY);
 
-        const map = mapById(scenario.setup.map ?? DEFAULT_MAP);
+        // The chosen map when this scenario allows one, its own otherwise.
+        const map = mapById(mapChoice?.id ?? scenario.setup.map ?? DEFAULT_MAP);
         ctx.font = font(12);
         ctx.fillStyle = THEME.muted;
         ctx.fillText(
@@ -353,6 +361,9 @@ export class BriefingScreen {
         const secY = h - 30;
         const secs: [string, string][] = [
             ['←  →', 'change mission'],
+            ...(mapChoice?.changeable
+                ? [['↑  ↓', 'change map'] as [string, string]]
+                : []),
             ['H', 'all controls'],
             ['S', 'skip to airborne'],
             ['O', pacingLabel],
