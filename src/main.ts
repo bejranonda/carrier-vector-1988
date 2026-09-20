@@ -13,6 +13,7 @@
 import './style.css';
 import { GameLoop } from './core/GameLoop';
 import { soundFX } from './audio/SoundFX';
+import { SCENARIOS } from './core/Scenarios';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -128,8 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'arrowleft' || key === 'arrowright') {
                 e.preventDefault();
                 game.selectScenario(key === 'arrowleft' ? -1 : 1);
-            } else if (key >= '1' && key <= '9') {
-                // Direct scenario pick by the number shown on its pill.
+            } else if (key >= '1' && key <= String(SCENARIOS.length)) {
+                // Direct scenario pick by the number shown on its pill. Bounded
+                // by the real scenario count - this accepted 1-9 while the
+                // control schema documented 1-5, so four of the keys the help
+                // overlay never mentioned silently did nothing.
                 game.selectScenarioByIndex(Number(key) - 1);
             } else if (key === 'd') {
                 // Today's daily sortie: the same seeded run for everyone.

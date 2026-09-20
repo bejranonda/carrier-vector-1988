@@ -651,7 +651,8 @@ export class GameLoop {
             traps: this.score.breakdown.traps,
             perfectTraps: this.score.breakdown.perfectTraps,
             bombsRemaining: this.physics.loadout.ironBombs,
-            rwrState: this.sensors.masterRwrState
+            rwrState: this.sensors.masterRwrState,
+            flightAssistMode: this.assistLevel
         };
     }
 

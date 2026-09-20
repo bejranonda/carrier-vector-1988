@@ -23,6 +23,7 @@
  */
 
 import type { AircraftLoadout } from '../flight/AircraftPhysics';
+import type { AssistLevel } from '../flight/FlightAssist';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import type { StrikeTargetSpec } from '../tactics/StrikeTarget';
 import type { MapId } from '../tactics/TerrainProfiles';
@@ -74,6 +75,8 @@ export interface MissionSnapshot {
     perfectTraps: number;
     bombsRemaining: number;
     rwrState: 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
+    /** Which control law is flying the aeroplane right now. */
+    flightAssistMode: AssistLevel;
 }
 
 export interface MissionPhase {
@@ -135,6 +138,17 @@ export interface ScenarioSetup {
     timeLimitActive?: (s: MissionSnapshot) => boolean;
     /** Run the six-step flight checkout. Only the intro mode wants it. */
     showTrainingChecklist?: boolean;
+    /**
+     * The mission a pilot who has never flown anything is sent to.
+     *
+     * Deliberately NOT `showTrainingChecklist`. The checkout is a six-step
+     * "press these keys" overlay that CARRIER_DEFENSE runs; the first flight
+     * is a guided sortie with no hostiles. Keying the first-run recommendation
+     * off the checklist flag is what sent every new pilot into the endless
+     * wave mode with a live SAM belt - the tutorial existed and nothing ever
+     * routed anybody to it.
+     */
+    isFirstFlight?: boolean;
     /** Enforces absolute combat shielding: zero hostile fire and no SAM launches */
     combatShielded?: boolean;
     /** Payload the deck crew has already hung on the jet. */
@@ -576,7 +590,18 @@ const TRAINING_SORTIE: ScenarioDef = {
     duration: '~4 min',
     setup: {
         threat: {
-            openingTimeline: [],
+            // One contact, and it has to be REAL. This timeline was empty, so
+            // `contactsAlive` was always zero and the DRONE_SPLASH phase
+            // self-completed on a thirty-second timer while the prose told the
+            // pilot a drone had spawned. The tutorial's only combat lesson was
+            // a lie, and TrainingSortie.test.ts asserted the lie.
+            //
+            // A MiG-23 rather than a new aircraft type: `combatShielded`
+            // already ghosts every round it fires (GameLoop.updateSortie), so
+            // it is a target drone in everything but name, and a genuinely new
+            // type would need a mesh, an AI profile and a score class for one
+            // tutorial beat.
+            openingTimeline: [pkg('DRONE-1', 'MiG-23', 1, 45, 55)],
             endlessWaves: false,
             inventory: { ironBombs: 0, sidewinders: 4 },
             plannedFuel: 5000
@@ -584,6 +609,7 @@ const TRAINING_SORTIE: ScenarioDef = {
         map: 'FJORD',
         noSamSites: true,
         showTrainingChecklist: false,
+        isFirstFlight: true,
         combatShielded: true
     },
     cards: [
@@ -596,8 +622,8 @@ const TRAINING_SORTIE: ScenarioDef = {
         {
             n: '2',
             title: 'AUTOPILOT & WEAPONS',
-            body: 'Engage Autopilot with [A] to maintain wings level. Arm Sidewinders with [2] and lock the training drone.',
-            keys: [['A', 'autopilot'], ['2', 'aim-9'], ['SPACE', 'fire']]
+            body: 'Engage Autopilot with [F] to maintain wings level. Arm Sidewinders with [2] and lock the training drone.',
+            keys: [['F', 'autopilot'], ['2', 'aim-9'], ['SPACE', 'fire']]
         },
         {
             n: '3',
@@ -630,21 +656,28 @@ const TRAINING_SORTIE: ScenarioDef = {
         {
             id: 'AUTOPILOT_CHECK',
             title: 'ENGAGE AUTOPILOT',
-            detail: () => 'Ghost-Lead: "Tap [A] to engage Autopilot. She will hold wings level and manage pitch."',
-            key: 'A',
+            detail: (s) => s.flightAssistMode === 'AUTO'
+                ? 'Ghost-Lead: "Autopilot has her. Watch how she holds the wings."'
+                : 'Ghost-Lead: "Tap [F] until the annunciator reads AUTOPILOT. She will hold wings level and manage pitch."',
+            key: 'F',
             urgency: 'ACTION',
-            isComplete: (s) => s.airSpeed > 90 && s.missionSeconds > 20,
+            // Checks the actual control law. This used to complete on a timer
+            // and then announce AUTOPILOT VERIFIED to a pilot who had never
+            // touched it - a step that validated nothing and taught nothing.
+            isComplete: (s) => s.flightAssistMode === 'AUTO',
             callout: 'GHOST-LEAD: AUTOPILOT VERIFIED. ARM WEAPONS FOR DRONE PRACTICE.'
         },
         {
             id: 'DRONE_SPLASH',
             title: 'SPLASH THE DRONE',
             detail: (s) => s.contactsAlive > 0
-                ? 'Ghost-Lead: "Drone spawned bearing 045. Select [2] AIM-9 and press [SPACE] to fire."'
+                ? 'Ghost-Lead: "Target drone bearing 045. Press [T] to lock it, [2] for the AIM-9, then [SPACE]."'
                 : 'Ghost-Lead: "Clean hit! Splash one target drone."',
             key: 'SPACE',
             urgency: 'ACTION',
-            isComplete: (s) => s.contactsAlive === 0 && s.missionSeconds > 30,
+            // Requires a real kill. The drone now genuinely spawns, so this no
+            // longer completes for a pilot who never fired.
+            isComplete: (s) => s.hasLaunched && s.contactsAlive === 0,
             callout: 'GHOST-LEAD: DRONE SPLASHED! TURN TO 180 AND HEAD FOR THE BOAT.'
         },
         recoverPhase()
@@ -695,8 +728,8 @@ export function recommendScenario(records: MissionRecords): ScenarioDef {
     // carrier qualification - which has no tutorial and consists entirely of
     // the hardest skill in the game.
     const neverFlown = SCENARIOS.every(s => recordFor(records, s.id).attempts === 0);
-    const checkout = SCENARIOS.find(s => s.setup.showTrainingChecklist);
-    if (neverFlown && checkout) return checkout;
+    const firstFlight = SCENARIOS.find(s => s.setup.isFirstFlight);
+    if (neverFlown && firstFlight) return firstFlight;
 
     const uncleared = SCENARIOS.filter(s => !isCleared(records, s.id));
     if (uncleared.length === 0) {

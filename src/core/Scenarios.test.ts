@@ -11,6 +11,7 @@ import {
 import type { MissionRecords } from './MissionRecords';
 import type { MissionSnapshot, ScenarioDef } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
+import { CONTROL_SCHEMA } from './Controls';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 
 /** A quiet world: nothing has happened yet, nothing is wrong. */
@@ -42,6 +43,7 @@ function snapshot(over: Partial<MissionSnapshot> = {}): MissionSnapshot {
         perfectTraps: 0,
         bombsRemaining: 2,
         rwrState: 'SILENT',
+        flightAssistMode: 'ASSIST',
         ...over
     };
 }
@@ -426,10 +428,125 @@ describe('MissionDirector', () => {
     });
 });
 
+/**
+ * Mission prose names keys as plain strings, which sits OUTSIDE the
+ * `Controls.ts` single-source-of-truth guarantee. That guarantee was built to
+ * stop the README drifting from the code, and it worked - but it stopped at
+ * the README, and mission cards kept their own hardcoded copies.
+ *
+ * That is how TRAINING_SORTIE came to instruct a brand-new pilot to press [A]
+ * for autopilot, in four separate places. [A] is roll left. The assist key is
+ * [F]. The one mission built to teach beginners told them to roll into the
+ * fjord, and nothing in 809 tests noticed.
+ *
+ * These two suites extend the boundary to cover every key the game shows a
+ * player inside a mission.
+ */
+describe('mission prose cannot drift from the control schema', () => {
+    /** 'W / UP' -> ['W','UP']; 'SPACE' -> ['SPACE']. */
+    function schemaTokens(display: string): string[] {
+        return display.split('/').map(t => t.trim().toUpperCase()).filter(Boolean);
+    }
+
+    /** Every key token the schema knows about, in any context. */
+    const KNOWN = new Set<string>(
+        CONTROL_SCHEMA.flatMap(b => schemaTokens(b.display))
+    );
+
+    /**
+     * Prose shorthands that stand for a group of real bindings rather than one
+     * key. Listed explicitly so a typo cannot hide behind "probably a group".
+     */
+    const GROUPS: Record<string, string[]> = {
+        WASD: ['W', 'A', 'S', 'D'],
+        '1-4': ['1', '2', '3', '4'],
+        '1-5': ['1', '2', '3', '4', '5']
+    };
+
+    function expand(promptKey: string): string[] {
+        const group = GROUPS[promptKey.toUpperCase()];
+        if (group) return group;
+        return promptKey.split('/').map(t => t.trim().toUpperCase()).filter(Boolean);
+    }
+
+    it('names only keys the control schema actually binds', () => {
+        for (const scenario of SCENARIOS) {
+            const named: [string, string][] = [
+                ...scenario.cards.flatMap(c => c.keys.map(k => [k[0], `card "${c.title}"`] as [string, string])),
+                ...scenario.phases
+                    .filter(p => p.key)
+                    .map(p => [p.key as string, `phase "${p.id}"`] as [string, string])
+            ];
+
+            for (const [promptKey, where] of named) {
+                for (const token of expand(promptKey)) {
+                    expect(
+                        KNOWN.has(token),
+                        `${scenario.id} ${where} names "${token}", which no CONTROL_SCHEMA binding provides`
+                    ).toBe(true);
+                }
+            }
+        }
+    });
+
+    /**
+     * The structural check above would NOT have caught the [A] bug, because
+     * [A] is a perfectly real binding - it is just the wrong one. So this
+     * check reads the card's own description of what the key does and asserts
+     * the key matches the binding that actually does it.
+     *
+     * Both sides are derived from CONTROL_SCHEMA; nothing here hardcodes a key.
+     */
+    const CONCEPTS: { prose: RegExp; schemaLabel: RegExp }[] = [
+        { prose: /autopilot|flight assist/i, schemaLabel: /cycle flight assist/i },
+        { prose: /recovery assist/i, schemaLabel: /recovery assist/i },
+        { prose: /^launch/i, schemaLabel: /launch from catapult/i },
+        { prose: /rush/i, schemaLabel: /rush the turnaround/i },
+        { prose: /padlock/i, schemaLabel: /padlock camera/i },
+        { prose: /designat/i, schemaLabel: /designate next target/i }
+    ];
+
+    it('uses the key that actually performs the action the prose describes', () => {
+        for (const scenario of SCENARIOS) {
+            for (const card of scenario.cards) {
+                for (const [promptKey, label] of card.keys) {
+                    for (const { prose, schemaLabel } of CONCEPTS) {
+                        if (!prose.test(label)) continue;
+
+                        const binding = CONTROL_SCHEMA.find(b => schemaLabel.test(b.label));
+                        expect(binding, `no binding matches ${schemaLabel}`).toBeDefined();
+
+                        const valid = schemaTokens(binding!.display);
+                        const used = expand(promptKey);
+                        expect(
+                            used.some(t => valid.includes(t)),
+                            `${scenario.id} card "${card.title}" says "${promptKey}" does "${label}", `
+                            + `but that action is bound to "${binding!.display}"`
+                        ).toBe(true);
+                    }
+                }
+            }
+        }
+    });
+});
+
 describe('progression guidance', () => {
-    it('sends a brand-new player to the mission that teaches them to fly', () => {
+    // REGRESSION: this asserted `showTrainingChecklist`, which is the
+    // six-step key checkout and belongs to CARRIER_DEFENSE - the endless wave
+    // mode, with a live SAM belt. So the assertion passed while every
+    // first-time pilot was being routed into combat, and the guided
+    // TRAINING_SORTIE built for exactly this purpose was unreachable.
+    // Assert the mission, not the flag.
+    it('sends a brand-new player to the guided sortie, not into combat', () => {
         const first = recommendScenario({});
-        expect(first.setup.showTrainingChecklist).toBe(true);
+        expect(first.id).toBe('TRAINING_SORTIE');
+        expect(first.setup.isFirstFlight).toBe(true);
+        expect(first.setup.noSamSites).toBe(true);
+        expect(first.setup.combatShielded).toBe(true);
+    });
+
+    it('marks exactly one scenario as the first flight', () => {
+        expect(SCENARIOS.filter(s => s.setup.isFirstFlight)).toHaveLength(1);
     });
 
     it('falls back to the gentlest uncleared mission once anything has been flown', () => {
