@@ -769,6 +769,25 @@ export class GameLoop {
     }
 
     /**
+     * Push the deck crew past their ordinary pace, at the cost of the
+     * stamina that pace depends on - see `DeckManager.rushTurnaround()`. The
+     * deck's only real decision was made once, in the seconds it takes to set
+     * fuel and ordnance; this gives the rest of the turnaround one too.
+     */
+    public rushTurnaround(): boolean {
+        const outcome = this.deck.rushTurnaround();
+        if (outcome.applied) {
+            soundFX.playUiSelect();
+        } else if (outcome.refusal === 'CREW_EXHAUSTED') {
+            // A refusal the player can act on (wait) is worth a sound, unlike
+            // NO_ACTIVE_TASK, which just means the key was pressed at a time
+            // it never does anything - not worth commenting on.
+            soundFX.playMasterCaution();
+        }
+        return outcome.applied;
+    }
+
+    /**
      * Request a catapult launch. Applies the player's planned payload, which
      * previously was discarded because the old code called a reset routine
      * that hardcoded fuel to 4500 and force-set state to AIRBORNE.

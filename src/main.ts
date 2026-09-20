@@ -218,6 +218,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Rush the turnaround ---
+        if (key === 'r') {
+            if (game.currentView === 'MACRO_DECK') {
+                e.preventDefault();
+                game.rushTurnaround();
+            }
+            return;
+        }
+
         // --- Weapon release (edge-triggered; held fire is handled in the
         //     fixed update so the cannon rate is frame-rate independent) ---
         if (e.key === ' ' || e.code === 'Space') {

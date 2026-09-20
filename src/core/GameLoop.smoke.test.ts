@@ -161,6 +161,36 @@ describe('GameLoop integration smoke test', () => {
         expect(game.isCatapultLaunching).toBe(false);
     });
 
+    /**
+     * The deck's only real decision was made once, in the seconds it takes to
+     * set fuel and ordnance. This gives the rest of the turnaround one too: a
+     * choice with a cost, wired through GameLoop the same way any other deck
+     * command is.
+     */
+    it('rushes a turnaround through the game loop, at the cost of crew stamina', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.currentView = 'MACRO_DECK';
+        game.deck.aircraftState = 'ARMING_REFUELING';
+        game.deck.currentTaskProgress = 10;
+        const fuelCrew = game.deck.crews.find(c => c.role === 'FUEL')!;
+        const before = fuelCrew.stamina;
+
+        expect(game.rushTurnaround()).toBe(true);
+
+        expect(game.deck.currentTaskProgress).toBeGreaterThan(10);
+        expect(fuelCrew.stamina).toBeLessThan(before);
+    });
+
+    it('refuses to rush a turnaround with nothing to rush', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.deck.aircraftState = 'CATAPULT_READY';
+        expect(game.rushTurnaround()).toBe(false);
+    });
+
     it('flies a sortie for several seconds with input applied, without throwing', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);

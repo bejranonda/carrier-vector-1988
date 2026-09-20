@@ -628,3 +628,87 @@ and disappears without touching a canvas.
 
 Unchanged from pass 14: the deck loop's second axis, a second act for the
 strike missions, campaign memory, and the autopilot rework.
+
+---
+
+## 16. The Deck Loop's Second Axis (v1.3.0)
+
+**Status:** Complete
+**Trigger:** "Continue all to finish" — closing item 1 of the open list,
+named in FUN_REVIEW as "the largest remaining gap between the game's
+structure and its fun."
+**Result:** 758 tests across 38 suites, released as **v1.3.0**
+
+### The gap
+
+The macro layer's one interesting decision — fuel versus ordnance — was made
+once, in about four seconds on the deck screen, before every sortie. Every
+second after that was spent watching a progress bar with nothing left to
+choose. FUN_REVIEW had already named the fix precisely: "a choice with a
+cost, such as a rushed turnaround that risks a crew-fatigue penalty."
+
+### The design
+
+Two options were on the table: a rushed turnaround (crew-fatigue cost) or
+holding a jet back as alert-five cover. The rushed turnaround was chosen
+because it composes directly with a mechanic that already exists — crew
+stamina already scales task speed by up to 60%, so "spend stamina now, pay
+for it in speed later" needed no new subsystem, only a new way to spend the
+existing resource on purpose instead of only by attrition.
+
+`DeckManager.rushTurnaround()` pushes whichever crews are driving the current
+task (mechanic; or fuel and ordnance together) past their ordinary pace: a
+flat `+20` task progress for `-30` stamina from each. The interesting design
+decision was how to gate repeated use. A per-task "already rushed" flag was
+the obvious first idea, and was rejected once the state machine's real shape
+became clear: `aircraftState` enters a task-bearing state from half a dozen
+call sites — a clean trap, a battle-damaged trap, a lost airframe with or
+without a spare, the arcade fast-respawn path — and a flag needs resetting at
+every one of them. Miss one and rushing either never works again or never
+stops working. Gating on stamina *headroom* instead ("a crew at or below the
+floor cannot be pushed, whatever pushed them there") is the same rule stated
+once, is impossible to reset because it never needs resetting, and it
+composes for free with stamina's own regeneration.
+
+The deck screen's `AIRCRAFT TURNAROUND` panel gained a `R  RUSH IT` hint,
+placed exactly where the existing `ENTER  CAT SHOT` hint sits when the jet is
+ready — the same segment-drawing call, the same offset, shown in the other
+branch of the same `if`. It is hidden rather than greyed out once the crew is
+exhausted: an action that would silently fail is worse advertised than not
+shown, and the crew stamina bars already visible in the panel below say why.
+
+### A layout lesson, found by screenshot
+
+The first version of the hint added an extra bounds check
+(`barY + 22 <= inner.y + inner.h`) that the existing `CAT SHOT` hint does not
+have. On a generously-tall panel — which this one usually is, since the
+layout solver gives it more room than its content needs — that check failed
+and the hint silently never rendered, while `CAT SHOT` (no such check)
+rendered fine in the identical layout. Removed to match the established
+precedent exactly rather than being more "correct" than the pattern it was
+copying.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (758), `npm run build`
+- 15 new unit tests on `DeckManager.rushTurnaround()` / `canRush()`: refused
+  with no task running, refused in the air or on the catapult, advances
+  progress and burns exactly the crews driving the current task (not the
+  others), caps at 100, refuses a crew at or below the floor, allows a second
+  rush once stamina has recovered past it, logs to the alert panel, never
+  drives stamina negative
+- A `GameLoop` smoke test drives the same call through the public API
+- In Chromium at 1440, 1024, 900 and 800 px: the hint appears, rushing visibly
+  advances the bar and drops the crew stamina bars, the log line appears, and
+  the hint disappears once stamina crosses the floor — checked in both the
+  wide two-column layout and the narrow single-column one
+- Touch mode checked separately: the hint correctly never appears there (it
+  is keyboard-only, same as the fuel/loadout keys), and nothing regressed
+
+### Left open
+
+A second act for the strike missions, campaign memory, and the autopilot
+rework. Recorded honestly rather than attempted: touch parity for the deck
+screen (KNOWN_ISSUES §31) was pre-existing and out of scope for this item,
+since fixing it means giving the whole deck screen real touch controls, not
+only this one.

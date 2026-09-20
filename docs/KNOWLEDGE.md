@@ -306,6 +306,44 @@ HANGAR_MAINTENANCE  (18 s, MECHANIC)
 Crew stamina scales task speed by up to 60%. `DeckManager.catapultTimer` is the
 single authoritative launch clock.
 
+### Rushing a turnaround
+
+The deck's one real decision was made once, in the seconds it takes to set
+fuel and ordnance, and everything after that was watching a progress bar with
+nothing left to choose. `DeckManager.rushTurnaround()` gives the rest of the
+turnaround a second axis: a choice with a cost, paid in the currency the deck
+already spends.
+
+```
+crewsWorking(HANGAR_MAINTENANCE | DAMAGED_REPAIR) = { MECHANIC }
+crewsWorking(ARMING_REFUELING)                    = { FUEL, ORDNANCE }
+crewsWorking(anything else)                       = {}   -> NO_ACTIVE_TASK
+
+rush, all crews above minStaminaToRush (20):
+    progress += 20   (capped at 100)
+    each crew.stamina -= 30
+rush, any crew at or below the floor:
+    refused: CREW_EXHAUSTED, nothing changes
+```
+
+Gated on stamina **headroom**, not a per-task "already rushed" flag.
+`aircraftState` enters a task-bearing state from half a dozen call sites (a
+clean trap, a damaged trap, a lost airframe with or without a spare, the
+arcade fast-respawn path in `GameLoop.replaceAirframe()`), and a flag would
+need resetting at every one - miss one and rushing either never works or
+never stops working. "Can this crew's stamina absorb it right now" is the
+same rule stated once instead of six times, and it composes for free with
+stamina's own regeneration: a crew that has recovered past the floor can be
+pushed again with no separate bookkeeping about which task it was pushed for.
+
+The immediate `+20` is close to a free win on its own; the real cost is that
+the same crews keep working the task afterward at their now-lower stamina, so
+a rush trades a burst of progress now for slower throughput for the rest of
+that task and the one after it. `canRush()` is the read-only half, used to
+show or hide the `R  RUSH IT` hint on the deck screen - hidden rather than
+greyed out once the crew is spent, since an action that would silently fail
+is worse advertised than not shown at all.
+
 ### Consequence accounting
 
 | Event | Effect |

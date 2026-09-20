@@ -5,6 +5,30 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-09-20
+
+### Added
+
+- **Rush the turnaround** (`R`, on the deck screen). The deck's one real
+  decision was made once, in the seconds it takes to set fuel and ordnance,
+  and everything after that was watching a progress bar with nothing left to
+  choose. Rushing pushes the crew currently working the aircraft — the
+  mechanic during maintenance and repair, fuel and ordnance crews during
+  arming — past their ordinary pace: an immediate +20 task progress for -30
+  stamina from each crew member, gated on their stamina being above a floor
+  rather than a per-task lockout. The cost is real: the same crews keep
+  working the task afterward at their now-lower stamina, and a rush also
+  slows the *next* turnaround. A `R  RUSH IT` hint appears on the deck screen
+  only while it would do something and disappears once the crew is spent —
+  the stamina bars already say why.
+
+### Known limitation
+
+- The deck screen has never had full touch parity — the fuel/loadout keys
+  (`1`-`4`) and the new rush key are keyboard-only, and a touch player loses
+  nothing they had before. Recorded honestly in KNOWN_ISSUES §31 rather than
+  left implicit.
+
 ## [1.2.1] — 2026-09-20
 
 ### Fixed

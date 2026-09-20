@@ -56,6 +56,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['2'], display: '2', label: 'Increase planned fuel (+500 L)', context: 'DECK', group: 'DECK OPS' },
     { keys: ['3'], display: '3', label: 'Cycle AIM-9 Sidewinder loadout', context: 'DECK', group: 'DECK OPS' },
     { keys: ['4'], display: '4', label: 'Cycle Mk.82 bomb loadout', context: 'DECK', group: 'DECK OPS' },
+    { keys: ['r'], display: 'R', label: 'Rush the turnaround (costs crew stamina)', context: 'DECK', group: 'DECK OPS' },
 
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
