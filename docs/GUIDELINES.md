@@ -273,6 +273,23 @@ Rules:
   cache has never seen must be resolved on the spot: a cache that returns "not
   visible" for something it never looked at is not a cache, it is a wrong
   answer with a timer on it.
+- **A recovery law has to know which way it is recovering.** The stall limiter
+  answered every stall with a push, which is right for a positive-alpha stall
+  and is the accelerator pedal for a negative-alpha one. Any law that "unloads",
+  "centres" or "returns to neutral" should be checked on both sides of zero.
+- **Scope a feature to what the simulation will actually do, then say so.** The
+  recovery assist was going to fly the whole recovery. It could not - heading
+  changes here come from the rudder and the velocity vector does not follow -
+  and the honest answer was to narrow it to the ball and the speed and write
+  down why, not to keep tuning until a test passed on one starting state.
+- **Ask what the SETTING changes, not just what it sets.** Assist level changes
+  how much of the aeroplane you fly; ops tempo changes how long you wait; threat
+  level changes how hard the fight is. Three settings that each answer a
+  different question are a menu. Three that all make it "easier" are a mess.
+- **Every option added to a row is a pixel taken from the row.** The briefing's
+  secondary line was a single centred row, and it silently started clipping its
+  first and last item once there were enough settings to matter. A row that can
+  grow has to wrap, shed by priority, or be measured by a test.
 - **A hardened target is not killed by a near miss.** That single number
   (`hitRadius`) is what makes a bombing run a skill, so any cue that helps aim
   it — the CCIP cross, the designator diamond — must be computed from the same

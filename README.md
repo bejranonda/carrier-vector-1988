@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-626%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-738%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 626 headless Vitest tests
+npm run test     # 738 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -184,10 +184,14 @@ a phone player is a weapons officer rather than a pilot short of eight fingers.
 | **Tap a contact** | Designates it. Pointing at the thing you want is the natural gesture; the `TGT` button still cycles anything off the glass. |
 | `FIRE` | Releases the armed weapon, or holds the trigger on the cannon. |
 | Weapon pills | Gun / AIM-9 / Mk.82, with rounds remaining. |
+| `RCVY` | Recovery assist. It flies the ball and the speed on final and hands back at short final — the trap is still yours. |
 | ☰ | Pause and the full control reference. |
 
-A phone starts on `AUTOPILOT` with the cheapest display mode unless you have
-already chosen otherwise, and asks you to turn the device if you are holding it
+A phone starts on `AUTOPILOT` with the recovery assist on and the cheapest
+display mode, unless you have already chosen otherwise — a three and a half
+degree slope to a moving deck, on a virtual stick, with a thumb over the
+altimeter, is the one part of the game touch controls could not do — and asks
+you to turn the device if you are holding it
 upright — the cockpit needs a landscape screen to hold its instruments.
 
 Detection is a heuristic, so press `K` to cycle `AUTO` / `TOUCH` / `KEYBOARD`
@@ -269,7 +273,11 @@ exceeding the mode you picked.
 | `T` | Designate next target (`SHIFT`+`T` steps back) |
 | `Y` | Release the designation |
 | `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
+| `G` | Autopilot terrain following (hug the valleys; on by default) |
+| `L` | Recovery assist — flies the ball and the speed, hands back at short final |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
+| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
+| `C` | Cycle colour palette — classic phosphor / blue-amber |
 | `K` | Cycle controls — `AUTO` / `TOUCH` / `KEYBOARD` |
 
 ### Flight Deck
@@ -287,6 +295,7 @@ exceeding the mode you picked.
 | `←` / `→` | Change selected mission |
 | `1`–`5` | Pick a mission directly |
 | `ENTER` | Fly the selected mission |
+| `↑` / `↓` | Change map (endless carrier defence only) |
 | `S` | Skip the deck and start airborne |
 | `D` | Fly today's daily sortie |
 
@@ -299,6 +308,8 @@ exceeding the mode you picked.
 | `ESC` | Close overlay |
 | `M` | Mute / unmute |
 | `P` | Cycle display mode — `CLEAN` / `MODERN` / `RETRO CRT` |
+| `C` | Cycle colour palette — classic phosphor / blue-amber |
+| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
 
 > Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
 
@@ -324,9 +335,33 @@ exceeding the mode you picked.
 - **Terrain floor measured in seconds to impact**, not in metres — a height-only floor
   cannot save a jet descending at 60 m/s, because it engages with one second left
 - **Coordinated autopilot turns**: this flight model has no bank-to-turn yaw coupling,
-  so the autopilot flies bank *and* rudder, and captures the bearing it is given
+  so the autopilot flies bank *and* rudder — capped, and led by the bank rather than by
+  the heading error, because full rudder held at 220 m/s departs the aeroplane instead
+  of turning it
+- **Symmetric stall recovery**: the wing can let go at negative alpha too, and unloading
+  means moving alpha toward *zero*, not pushing regardless
+- **Terrain following** (`G`, on by default): the autopilot samples the ground ahead and
+  asks how high it must be *now* to clear each point by its set clearance when it gets
+  there — so it climbs the face of a ridge early, crosses it with clearance, and sinks
+  back into the valley instead of cruising in plain view of the SAM belt
+- **Recovery assist** (`L`): on final it flies the ball and the speed and hands the
+  aeroplane back at short final. Lineup stays yours, and so does the trap
 - **Protections stand down on the approach**, and the autopilot hands the aeroplane back
   when you turn final
+
+### Difficulty & Accessibility
+- **Threat level** (`V`) — `CADET` / `REGULAR` / `VETERAN`, which move a scenario along
+  the escalation curve wave generation already implements, rather than a second set of
+  difficulty numbers to keep in sync with the first
+- **Map choice on the endless mode** (`↑` / `↓` at the briefing): holding the boat in a
+  fjord, over open water and in a ridge field are three different problems. The scripted
+  missions keep their own terrain, because each is about *its* canyon
+- **Colour-blind palette** (`C`): green-for-us against red-for-them is the one pairing a
+  deuteranope or protanope cannot separate, so the alternative moves onto the
+  blue-yellow axis — cyan instruments, amber hostiles, violet keycaps
+- **Flash rate capped at 2.5 Hz** for every blinking warning, under the WCAG 2.3.1 limit
+- **`prefers-reduced-motion` honoured on the canvas**, not just in the CSS: camera shake
+  off, impact flash damped, warnings lit rather than blinking
 
 ### Target Designation
 - **One key cycles a priority-ordered scope** — air contacts, SAM sites and hardened
@@ -450,6 +485,7 @@ src/
 │   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
 │   ├── DailySortie.ts     # Date-seeded run, result merge, share card (pure)
 │   ├── Pacing.ts          # ARCADE / SIM deck timings and threat scaling (pure)
+│   ├── ThreatLevel.ts     # CADET / REGULAR / VETERAN escalation offset (pure)
 │   ├── Accessibility.ts   # Flash-rate cap and reduced-motion settings (pure)
 │   ├── Platform.ts        # Control-scheme detection and override (pure)
 │   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
@@ -458,6 +494,8 @@ src/
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
 │   ├── FlightAssist.ts    # MANUAL / ASSIST / AUTOPILOT control laws (pure)
+│   ├── TerrainFollowing.ts # Look-ahead ground clearance for the autopilot (pure)
+│   ├── ApproachGuidance.ts # Glideslope, lineup and the handover point (pure)
 │   └── Weapons.ts         # Ballistics, homing, explosions
 ├── tactics/
 │   ├── TerrainProfiles.ts # The three maps: height functions + SAM order of battle
@@ -537,7 +575,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**626 headless tests** across 35 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**738 headless tests** across 38 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor

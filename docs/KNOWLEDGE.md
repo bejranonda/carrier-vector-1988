@@ -420,10 +420,13 @@ the keyboard into a `PilotInput`, resolves it, and feeds the result to the same
 `applyPitchInput` / `applyRollInput` / `applyYawInput` the player was using.
 
 ```
-stall limiter   gate = 0.6 × αlimit (αlimit = 0.26 rad)
-                α ≤ gate            -> pass through
-                α > gate            -> demand × (αlimit − α)/(αlimit − gate)
-                stalled             -> min(demand, −0.6)   (push, always)
+stall limiter   gate = 0.6 × αlimit (αlimit = 0.26 rad)     SYMMETRIC
+                pull, α ≤  gate     -> pass through
+                pull, α >  gate     -> demand × (αlimit − α)/(αlimit − gate)
+                push, α ≥ −gate     -> pass through
+                push, α < −gate     -> demand × (αlimit + α)/(αlimit − gate)
+                stalled, α ≥ 0      -> min(demand, −0.6)   (push to unload)
+                stalled, α <  0     -> max(demand, +0.6)   (pull to unload)
 
 terrain floor   onApproach          -> pass through
                 agl ≤ 70            -> max(demand, 1)
@@ -434,12 +437,13 @@ terrain floor   onApproach          -> pass through
                 demand × (1 − urgency) + urgency
 
 autopilot       bank    = clamp(Δψ × 1.5, ±maxBank);  roll = clamp((bank − φ) × 2.2)
-                rudder  = clamp(Δψ × 1.1)
+                progress= 0.3 + 0.7 × min(1, |φ| / maxBank)
+                rudder  = clamp(Δψ × 1.1, ±0.55) × progress
                 pitch   = clamp(Δh × 0.0016 × max(0.25, cos φ), −0.8..0.9) − 0.8 θ
                 throttle= clamp(ΔV × 0.05)
 ```
 
-Two facts the laws are built around:
+Three facts the laws are built around:
 
 - **Time, not height, is what saves a dive.** A floor engaging at 180 m AGL has
   one second to work with at 60 m/s and a 1.35 rad/s pitch rate, which is not
@@ -448,10 +452,117 @@ Two facts the laws are built around:
   changes `yaw` only through `applyYawInput`; banking tilts the lift vector and
   curves the flight path while the nose keeps pointing where it pointed. A
   bank-only autopilot therefore never captures a bearing, so the autopilot flies
-  bank *and* rudder.
+  bank *and* rudder - but capped at 0.55 and led by the bank, because full
+  deflection held for seconds at 220 m/s does not turn the aeroplane, it departs
+  it: the nose leaves the velocity vector, α runs to π/2, and the wing lets go.
+- **A stall has two signs.** `isStalled` is `|α| > αcritical`, so the wing can
+  let go nose-low and unloaded just as readily as nose-high. Unloading means
+  moving α toward *zero*; answering a negative-α stall with a push drives α
+  further negative and flies the aeroplane into the ground with its own recovery
+  law. Both halves of the limiter are therefore mirrored.
 
 Order of authority: terrain floor > stall limiter > autopilot or pilot. A stall
 at 2000 m is survivable; a controlled descent into a ridge is not.
+
+**What the altitude hold does NOT do, and why.** It bleeds the pitch demand off
+as bank increases, which looks backwards - a hard bank is where more back
+pressure is needed to hold a flight path. It was replaced with a vertical-speed
+loop that pulls whenever the jet is sinking faster than asked, and that version
+flew into the sea far more reliably: in a sustained bank the pull rotates the
+lift vector sideways rather than up, the sink does not stop, the loop pulls
+harder, and α departs. The proportional law spirals gently instead, which the
+terrain floor can catch. Bank is the variable that has to yield in a turning
+descent, and it yields in whatever sets `maxBank`.
+
+## 7d-i. Terrain following
+
+`flight/TerrainFollowing.ts`. Ground clearance from `terrainFloor()` is
+reactive - it works by pulling up once the ground is close - and a reactive law
+can only ever climb OVER terrain. In a fjord that is the wrong answer: the ridge
+it climbs is the one the SA-6 belt is watching.
+
+The anticipatory half samples the track ahead and, for each sample, asks how
+high the jet must be now:
+
+```
+reach        = clamp(V × 14 s, 1200 m, 7000 m)       14 samples along the heading
+required_msl = elevation + clearance − climbRate × (distance / max(V, 60))
+command_msl  = max(elevation_below + clearance, max over samples of required_msl)
+clearance    = 200 m     climbRate = 22 m/s (assumed)
+```
+
+Near samples subtract almost nothing and dominate; far ones subtract a lot and
+fall below the flat-ground answer, which is why the jet does not start climbing
+for a mountain six kilometres out - and why the command collapses back to the
+set clearance the moment a ridge is behind it.
+
+Two details that are load-bearing:
+
+- **The track is the heading, not the velocity vector.** In a banked turn the
+  velocity vector is already swinging, and sampling along it makes the commanded
+  altitude oscillate with the roll.
+- **The assumed climb rate is below what the aeroplane can do.** A planner that
+  assumes a climb rate it does not have is a crash, not a near miss. A test pins
+  the relationship.
+
+Applied as a REPLACEMENT for the commanded altitude against a ground target,
+and only as a FLOOR on an air intercept - the bandit is where it is. Off
+entirely on an approach, where a 200 m floor over a deck 20 m above the water is
+a permanent go-around. `setClearance` sits just above `ASSIST_TUNING.floorAgl`
+(180) so the follower and the floor are never arguing through the elevator.
+
+## 7d-ii. The recovery assist
+
+`flight/ApproachGuidance.ts`. Pure geometry; the carrier is at the world origin
+with its deck along +Z, so the final approach course is a heading of zero, up
+the wake from negative Z, and the wires are at Z −95..−115
+(`ScoreKeeper.gradeTrap`).
+
+```
+rangeToWires  = touchdownZ − z            touchdownZ = −100 (the 3 wire)
+glideslope(r) = 20 + tan(3.5°) × max(0, r)
+phase         = outside corridor          -> JOIN      (a cue, not a hand-over)
+                r ≤ 700                   -> HANDOVER  (the pilot lands it)
+                otherwise                 -> FINAL
+target_msl    = min(glideslope(r), 300)   then stepped: ≥ y − 160, or ≥ y in a turn
+speed         = y > 300 + 250 ? 200 : 70
+```
+
+What the assist flies is the **ball and the speed** and nothing else: the
+commanded heading is the jet's CURRENT heading, so the autopilot levels the
+wings when the stick is centred and gets out of the way when it is not. Lineup
+is the player's, with a `STEER LEFT` / `STEER RIGHT` call on the glass.
+
+Four things this shape exists to avoid, each of which was observed:
+
+1. **Levelling off at pattern altitude** rather than descending along the slope
+   from wherever the jet started. A jet cannot descend steeply and decelerate at
+   once - gravity down the flight path cancels the drag - so an assist that
+   tried delivered the aeroplane to short final beautifully positioned and a
+   hundred knots too fast for the wires. Levelling first turns one impossible
+   task into two easy ones, and the slope is intercepted from below at ~4.6 km.
+2. **Boards out.** The airframe has no speedbrake and settles near 170 m/s at
+   idle on the slope; the weapons bay is the only drag device modelled, so the
+   assist opens it above approach speed.
+3. **The stepped descent**, and no descent at all beyond 0.3 rad of bank: turn,
+   or come down, not both.
+4. **No pattern join.** It was built, and it flew the jet into the sea from
+   eight kilometres out with great consistency, for the reasons in §7d. Out of
+   the corridor the assist gives directions instead.
+
+## 7d-iii. Threat level
+
+`core/ThreatLevel.ts`. Three settings, and the lever is where a scenario starts
+on the escalation curve that wave generation already implements:
+
+| | CADET | REGULAR | VETERAN |
+| --- | --- | --- | --- |
+| Wave offset | −2 | 0 | +4 |
+
+Floored at wave 0, which is the hand-curated opening act. Deliberately not a
+score multiplier - per-mission records stop meaning anything the moment the same
+number can be earned three ways - and the daily sortie forces REGULAR for the
+same reason it forces arcade pacing.
 
 ## 7e. Target designation
 
@@ -677,6 +788,39 @@ blink now goes through `blinkVisible()`, which floors the period at
 
 A warning that vanishes is worse than one that fails to flash, so switching
 blinking off leaves the element visible rather than hiding it.
+
+## 7l. Colour palettes
+
+`renderer/Theme.ts`. Green for your own symbology against red for hostiles is
+the canonical red-green confusion: to a deuteranope or a protanope - together
+the most common forms of colour blindness - those two are the same muddy
+yellow-brown.
+
+| Token | CLASSIC | BLUE / AMBER |
+| --- | --- | --- |
+| phosphor (instruments) | `#57e39b` | `#5ad1ff` |
+| hostile / alert | `#ff6363` | `#ff8a1f` |
+| caution | `#ffc94d` | `#ffe066` |
+| key (keycaps) | `#5fd8ff` | `#c6a6ff` |
+| muted | `#93a9a4` | `#a8b6bd` |
+
+The alternative moves the whole conversation onto the blue-yellow axis, which
+both conditions leave intact, and separates the two warning tones by lightness
+(8.3:1 against 15.0:1 on the ground) as well as by hue. Keycaps go violet
+because cyan is the instrument colour there, and a keycap that looks like an
+instrument is not an affordance.
+
+`THEME` and `WORLD` are mutable objects swapped in place by `applyPalette()`.
+Two hundred and sixty call sites read them at draw time and nothing caches a
+colour between frames, so the next frame simply picks the new one up; threading
+a palette argument through all of them would be a far bigger change than the
+feature deserves.
+
+Two properties are enforced per palette rather than for whichever one happens
+to be loaded: every colour clears 4.5:1 on its own ground, and friendly against
+hostile survives a crude deuteranopia simulation (collapse R and G toward their
+mean, leave B). The classic palette is expected to fail the second one - it is
+the game's identity, and it is no longer the only option.
 
 ## 8. Scoring
 
