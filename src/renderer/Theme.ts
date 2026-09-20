@@ -207,6 +207,26 @@ export function loadPalette(): PaletteId {
     }
 }
 
+/**
+ * The stored choice, or null when the player has never made one.
+ *
+ * `loadPalette()` collapses "never chosen" into `DEFAULT_PALETTE`, which is
+ * right for booting the game but wrong for deciding whether to mention the
+ * setting exists: the colour-blind palette was built and then left entirely
+ * behind a key in the control reference, discoverable only by a player who
+ * already knew to look for it. The briefing surfaces a one-line hint for as
+ * long as this returns null, and the hint retires itself the moment the
+ * player touches the setting - even to confirm CLASSIC is what they want.
+ */
+export function storedPalette(): PaletteId | null {
+    try {
+        const raw = globalThis.localStorage?.getItem(PALETTE_STORAGE_KEY);
+        return isPaletteId(raw) ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
 export function savePalette(id: PaletteId) {
     try {
         globalThis.localStorage?.setItem(PALETTE_STORAGE_KEY, id);

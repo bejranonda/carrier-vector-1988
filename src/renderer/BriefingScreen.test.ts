@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { briefingHitAreas } from './BriefingScreen';
+import { briefingHitAreas, briefingSecondaryOptions } from './BriefingScreen';
 
 
 describe('briefingHitAreas', () => {
@@ -59,5 +59,46 @@ describe('briefingHitAreas', () => {
             const { pills, cta } = briefingHitAreas(w, h, 5, true);
             expect(cta.y, `${w}x${h}`).toBeGreaterThan(pills[0].y + pills[0].h);
         }
+    });
+});
+
+describe('briefingSecondaryOptions', () => {
+    const base = { pacingLabel: 'ARCADE pacing', threatLabel: 'REGULAR threat' };
+
+    it('always leads with changing the mission and ends with the screen style', () => {
+        const opts = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
+        expect(opts[0]).toEqual(['←  →', 'change mission']);
+        expect(opts[opts.length - 1]).toEqual(['P', 'screen style']);
+    });
+
+    it('only offers the map change on a scenario that allows it', () => {
+        const without = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
+        const withIt = briefingSecondaryOptions({ ...base, mapChangeable: true, showPaletteHint: false });
+        expect(without.some(([k]) => k === '↑  ↓')).toBe(false);
+        expect(withIt.some(([k]) => k === '↑  ↓')).toBe(true);
+    });
+
+    /**
+     * The colour-blind palette shipped fully working and entirely
+     * undiscoverable, reachable only through the full control reference. This
+     * hint is the fix, and it has to actually disappear once seen or it is
+     * just a permanent line of nagging.
+     */
+    it('hints at the colour-blind palette only until it has been touched', () => {
+        const hinted = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: true });
+        const notHinted = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
+        expect(hinted.some(([k, label]) => k === 'C' && label.includes('colour-blind'))).toBe(true);
+        expect(notHinted.some(([k]) => k === 'C')).toBe(false);
+    });
+
+    it('carries the live pacing and threat labels through unchanged', () => {
+        const opts = briefingSecondaryOptions({
+            pacingLabel: 'SIM pacing',
+            threatLabel: 'VETERAN threat',
+            mapChangeable: false,
+            showPaletteHint: false
+        });
+        expect(opts.find(([k]) => k === 'O')?.[1]).toBe('SIM pacing');
+        expect(opts.find(([k]) => k === 'V')?.[1]).toBe('VETERAN threat');
     });
 });

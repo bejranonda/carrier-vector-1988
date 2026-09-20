@@ -822,6 +822,19 @@ hostile survives a crude deuteranopia simulation (collapse R and G toward their
 mean, leave B). The classic palette is expected to fail the second one - it is
 the game's identity, and it is no longer the only option.
 
+**Discoverability.** A working, tested, invisible feature is not a shipped
+feature. The palette existed for a full release behind `C` in the control
+reference with nothing pointing at it. `Theme.storedPalette()` distinguishes
+"never chosen" from "chose the default", which `loadPalette()` deliberately
+cannot (it has to collapse both into a bootable value). The briefing's
+secondary options row - `renderer/BriefingScreen.briefingSecondaryOptions()`,
+a pure function so this rule is testable without a canvas - adds a `C  try
+colour-blind palette` entry for as long as `storedPalette()` is `null`, and
+drops it the instant a choice is made, even a re-confirmation of CLASSIC. The
+same pattern already existed for the assist level (`storedAssistLevel()`,
+touch-mode default) and the approach assist (`storedApproachAssist()`); this
+is its third use.
+
 ## 8. Scoring
 
 | Event | Points |

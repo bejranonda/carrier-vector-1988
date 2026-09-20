@@ -15,6 +15,7 @@ import { APPROACH_TUNING as APPROACH, glideslopeAltitude } from '../flight/Appro
 import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
+import { storedPalette } from '../renderer/Theme';
 import { SCENARIOS } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
 
@@ -1649,6 +1650,45 @@ describe('GameLoop integration smoke test', () => {
         expect(next).not.toBe(first);
         expect(() => runFrames(game, 30)).not.toThrow();
         expect(game.phase).toBe('ACTIVE');
+    });
+
+    /**
+     * The colour-blind palette shipped fully working and entirely
+     * undiscoverable, reachable only through the full control reference. A
+     * one-line hint on the briefing is the fix, and it has to retire the
+     * moment the player has ever touched the setting - even to confirm the
+     * default is what they want - or it just nags forever.
+     */
+    it('offers the palette hint only until the palette has been touched', () => {
+        const withStorage = (store: Map<string, string> | null, run: () => void) => {
+            const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+            Object.defineProperty(globalThis, 'localStorage', {
+                configurable: true,
+                value: store === null ? undefined : {
+                    getItem: (k: string) => store.get(k) ?? null,
+                    setItem: (k: string, v: string) => { store.set(k, v); }
+                }
+            });
+            try {
+                run();
+            } finally {
+                if (original) Object.defineProperty(globalThis, 'localStorage', original);
+                else delete (globalThis as Record<string, unknown>).localStorage;
+            }
+        };
+
+        withStorage(new Map(), () => {
+            expect(storedPalette()).toBe(null);
+            const game = new GameLoop(makeCanvasStub());
+            // Past the CRT warm-up and onto the briefing screen, where the
+            // hint actually renders.
+            expect(() => runFrames(game, 150)).not.toThrow();
+            expect(game.phase).toBe('BRIEFING');
+
+            game.cyclePalette();
+            expect(storedPalette()).not.toBe(null);
+            expect(() => runFrames(game, 5)).not.toThrow();
+        });
     });
 
     it('cycles the display mode without throwing', () => {
