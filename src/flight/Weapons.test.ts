@@ -148,6 +148,37 @@ describe('WeaponsSystem ballistics', () => {
         expect(destroyed).toBe(target);
     });
 
+    /**
+     * Designation is gated on visibility upstream, but the no-designation
+     * fallback swept the seeker cone blind, which was the last path where
+     * terrain masking cut only one way.
+     */
+    it('will not auto-acquire a contact the pilot cannot see', () => {
+        const hidden = fighterAt(2000);
+        physics.loadout.sidewinders = 2;
+        weapons.fireSidewinder(physics, [hidden], null, () => false);
+        expect(weapons.missiles[weapons.missiles.length - 1].targetId).toBe(null);
+    });
+
+    it('still auto-acquires a contact that is in the clear', () => {
+        const seen = fighterAt(2000);
+        physics.loadout.sidewinders = 2;
+        weapons.fireSidewinder(physics, [seen], null, () => true);
+        expect(weapons.missiles[weapons.missiles.length - 1].targetId).toBe('T1');
+    });
+
+    /**
+     * A designation the pilot made deliberately survives a ridge sliding
+     * between them at the moment of the shot - otherwise the trigger reads as
+     * broken. The missile's own masking rules still decide the outcome.
+     */
+    it('honours a designation even with the visibility gate shut', () => {
+        const target = fighterAt(2000);
+        physics.loadout.sidewinders = 2;
+        weapons.fireSidewinder(physics, [target], 'T1', () => false);
+        expect(weapons.missiles[weapons.missiles.length - 1].targetId).toBe('T1');
+    });
+
     it('lets sustained cannon fire damage and eventually destroy a SAM site (strafing runs now work)', () => {
         const site = new SAMSite('SAM-TEST', 'Test SAM', 0, 40, terrain);
         physics.position = { x: 0, y: site.position.y, z: 0 };

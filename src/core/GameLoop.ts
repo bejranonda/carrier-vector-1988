@@ -61,6 +61,12 @@ import {
 } from '../flight/FlightAssist';
 import type { AssistLevel, ControlDemand, FlightState, NavTarget } from '../flight/FlightAssist';
 import { TargetTracker, pursuitNav } from '../tactics/TargetDesignation';
+import {
+    loadTerrainFollowing,
+    sampleGroundTrack,
+    saveTerrainFollowing,
+    terrainFollowingAltitude
+} from '../flight/TerrainFollowing';
 import { VisibilityTracker } from '../tactics/Visibility';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
 import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
@@ -220,10 +226,26 @@ export class GameLoop {
     private safeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
     /** Analog stick demand, which overrides the keyboard axes when present. */
     private analog: { pitch: number; roll: number } | null = null;
+    /**
+     * True while a thumb is on the throttle track. A hand on the throttle
+     * outranks the autopilot's speed hold: the track sets power directly, and
+     * without this the autopilot spent the next frame putting it back.
+     */
+    private touchThrottleHeld = false;
 
     public assistLevel: AssistLevel = loadAssistLevel();
     /** Which protection, if any, is currently taking authority. For the HUD. */
     public assistOverride: ControlDemand['override'] = 'NONE';
+
+    /**
+     * Whether the autopilot looks ahead and hugs the terrain rather than
+     * holding a set altitude. On by default: an autopilot that crosses ridge
+     * lines inside a SAM belt is not flying the aeroplane the way its pilot
+     * would.
+     */
+    public terrainFollowing = loadTerrainFollowing();
+    /** True while a ridge ahead - not the ground below - is setting altitude. */
+    public terrainFollowClimbing = false;
 
     /**
      * The pilot's chosen target. Everything downstream follows it: the HUD
@@ -865,7 +887,9 @@ export class GameLoop {
         if (k['q']) this.physics.applyYawInput(-1.0, dt);
         if (k['e']) this.physics.applyYawInput(1.0, dt);
 
-        if (demand.throttle !== 0) {
+        // A thumb on the throttle track has already set the power for this
+        // frame; the autopilot's speed hold does not get to argue with it.
+        if (demand.throttle !== 0 && !this.touchThrottleHeld) {
             this.physics.throttle = Math.min(1.5, Math.max(0,
                 this.physics.throttle + demand.throttle * 0.5 * dt));
         }
@@ -938,6 +962,7 @@ export class GameLoop {
             ? { pitch: demand.pitch, roll: demand.roll }
             : null;
 
+        this.touchThrottleHeld = airborne && demand.throttle !== null;
         if (airborne && demand.throttle !== null) {
             this.physics.throttle = Math.min(1.5, Math.max(0, demand.throttle));
             this.training.progress.throttleChanged = true;
@@ -1083,15 +1108,71 @@ export class GameLoop {
         const designated = this.tracker.designated();
         if (designated) {
             const p = designated.target.position;
-            return pursuitNav(designated, this.terrain.getElevation(p.x, p.z));
+            const nav = pursuitNav(designated, this.terrain.getElevation(p.x, p.z));
+            return this.applyTerrainFollowing(nav, designated.target.kind === 'AIR');
         }
 
-        return {
+        return this.applyTerrainFollowing({
             bearing: this.physics.yaw,
             altitudeAgl: 900,
             airSpeed: 240,
             maxBank: 0.6
+        }, false);
+    }
+
+    /**
+     * Rewrite the autopilot's altitude to hug the terrain.
+     *
+     * The rule differs by what is being flown, and the difference is the
+     * point of the feature rather than a special case:
+     *
+     *  - Going after something on the ground, or holding a heading with
+     *    nothing designated, the follower REPLACES the commanded altitude.
+     *    Cruising the fjord at 520 m to bomb a pen is how the autopilot used
+     *    to get you locked.
+     *  - Intercepting an aeroplane, it is only a FLOOR. You have to go where
+     *    the bandit is, and it is not obliged to be low - but a co-altitude
+     *    intercept must still not fly the jet into the ridge in between.
+     *
+     * `terrainFollowing` is also ignored on an approach, where the deck is
+     * twenty metres above the water and a two-hundred-metre floor would
+     * simply be a go-around.
+     */
+    private applyTerrainFollowing(nav: NavTarget, isIntercept: boolean): NavTarget {
+        this.terrainFollowClimbing = false;
+        if (!this.terrainFollowing || HUD.isOnApproach(this.physics)) return nav;
+
+        const p = this.physics.position;
+        const samples = sampleGroundTrack(
+            p,
+            this.physics.yaw,
+            this.physics.airSpeed,
+            (x, z) => this.terrain.getElevation(x, z)
+        );
+        const followed = terrainFollowingAltitude(
+            samples,
+            this.terrain.getElevation(p.x, p.z),
+            this.physics.airSpeed
+        );
+        this.terrainFollowClimbing = followed.climbing;
+
+        return {
+            ...nav,
+            altitudeAgl: isIntercept
+                ? Math.max(nav.altitudeAgl, followed.altitudeAgl)
+                : followed.altitudeAgl
         };
+    }
+
+    /** Toggle terrain following, and remember the choice. */
+    public toggleTerrainFollowing(): boolean {
+        this.terrainFollowing = !this.terrainFollowing;
+        saveTerrainFollowing(this.terrainFollowing);
+        this.callouts.push(
+            this.terrainFollowing ? 'TERRAIN FOLLOW — ON' : 'TERRAIN FOLLOW — OFF',
+            'MODE'
+        );
+        return this.terrainFollowing;
     }
 
     /**
@@ -1259,7 +1340,8 @@ export class GameLoop {
             this.weapons.fireSidewinder(
                 this.physics,
                 this.airborneTargets,
-                designated?.target.kind === 'AIR' ? designated.target.id : null
+                designated?.target.kind === 'AIR' ? designated.target.id : null,
+                (target) => this.visibility.isVisible(target.id)
             );
             if (this.weapons.missiles.length > before) this.shake(SHAKE_SOURCES.missileLaunch);
         } else if (this.selectedWeapon === 'BOMB') {
@@ -1875,7 +1957,8 @@ export class GameLoop {
                 touchMode: this.controlScheme === 'TOUCH',
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
                 motion: this.motion,
-                visibleContacts: this.visibility
+                visibleContacts: this.visibility,
+                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO'
             }
         );
     }

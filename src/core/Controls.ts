@@ -47,6 +47,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
 
     // --- Flight assistance ---
     { keys: ['f'], display: 'F', label: 'Cycle flight assist (MANUAL / ASSIST / AUTOPILOT)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['g'], display: 'G', label: 'Autopilot terrain following (hug the valleys, on by default)', context: 'FLIGHT', group: 'FLIGHT' },
 
     // --- Deck operations ---
     { keys: ['enter'], display: 'ENTER', label: 'Launch from catapult', context: 'DECK', group: 'DECK OPS' },

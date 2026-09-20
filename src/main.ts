@@ -156,6 +156,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Autopilot terrain following ---
+        if (key === 'g') {
+            e.preventDefault();
+            game.toggleTerrainFollowing();
+            return;
+        }
+
         // --- Weapons bay ---
         if (key === 'b') {
             e.preventDefault();

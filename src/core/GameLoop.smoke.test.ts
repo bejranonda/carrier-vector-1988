@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { angleDelta } from '../flight/FlightAssist';
+import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { SCENARIOS } from './Scenarios';
@@ -1316,6 +1317,9 @@ describe('GameLoop integration smoke test', () => {
             position: { x: 0, y: 750, z: game.physics.position.z + 1200 },
             velocity: { x: 0, y: 0, z: -200 }
         }];
+        // A frame, so the visibility tracker sees the contact that was just
+        // dropped into the world: auto-acquisition is gated on it too now.
+        runFrames(game, 1);
         game.tracker.clear();
         game.selectedWeapon = 'AIM9';
         game.physics.loadout.sidewinders = 2;
@@ -1353,6 +1357,74 @@ describe('GameLoop integration smoke test', () => {
         // And it is still flying: the autopilot has not stalled or dug in.
         expect(game.deck.aircraftState).toBe('AIRBORNE');
         expect(game.physics.airSpeed).toBeGreaterThan(80);
+    });
+
+    /**
+     * The claim the feature rests on: with terrain following the autopilot
+     * threads the terrain instead of cruising over it. Asserted rather than
+     * screenshotted, because "it looked low" is not a regression net.
+     */
+    it('flies the autopilot lower with terrain following than without', () => {
+        const fly = (terrainFollowing: boolean) => {
+            const game = new GameLoop(makeCanvasStub());
+            game.selectScenarioById('CANYON_STRIKE');
+            airborne(game);
+            game.assistLevel = 'AUTO';
+            game.terrainFollowing = terrainFollowing;
+            game.airborneTargets = [];
+            game.sensors.samSites = [];
+
+            let sum = 0;
+            let samples = 0;
+            for (let i = 0; i < 40; i++) {
+                runFrames(game, 15);
+                const p = game.physics.position;
+                sum += p.y - game.terrain.getElevation(p.x, p.z);
+                samples++;
+            }
+            return { game, meanAgl: sum / samples };
+        };
+
+        const off = fly(false);
+        const on = fly(true);
+
+        expect(on.meanAgl).toBeLessThan(off.meanAgl);
+        // And it is flying, not falling: still airborne, still above the dirt.
+        expect(on.game.deck.aircraftState).toBe('AIRBORNE');
+        expect(on.meanAgl).toBeGreaterThan(60);
+    });
+
+    it('never lets terrain following take the aeroplane below the hard floor', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioById('CANYON_STRIKE');
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.terrainFollowing = true;
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < 60; i++) {
+            runFrames(game, 10);
+            const p = game.physics.position;
+            lowest = Math.min(lowest, p.y - game.terrain.getElevation(p.x, p.z));
+        }
+        expect(lowest).toBeGreaterThan(0);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+    });
+
+    it('leaves terrain following out of the way on an approach', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.terrainFollowing = true;
+        // Low and closing on the boat at the origin: the follower must stand
+        // aside or its 200 m floor is a permanent go-around.
+        game.physics.position = { x: 0, y: 120, z: -2600 };
+        game.physics.velocity = { x: 0, y: -4, z: 70 };
+        runFrames(game, 2);
+        expect(HUDClass.isOnApproach(game.physics)).toBe(true);
+        expect(game.terrainFollowClimbing).toBe(false);
     });
 
     it('cycles the display mode without throwing', () => {

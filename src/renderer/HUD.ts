@@ -125,6 +125,8 @@ export interface HudContext {
      * same information leak as being able to designate it.
      */
     visibleContacts?: { isVisible(id: string): boolean };
+    /** Whether the autopilot is hugging the terrain, for the annunciator. */
+    terrainFollowing?: boolean;
 }
 
 /**
@@ -138,17 +140,24 @@ export interface HudContext {
  */
 export function assistCaption(
     override: ControlDemand['override'],
-    hasDesignation = false
+    hasDesignation = false,
+    terrainFollowing = false
 ): { text: string; tone: 'ALERT' | 'CAUTION' | 'INFO' } | null {
     switch (override) {
         case 'TERRAIN':
             return { text: 'TERRAIN — AUTO PULL-UP', tone: 'ALERT' };
         case 'STALL':
             return { text: 'ALPHA LIMIT', tone: 'CAUTION' };
-        case 'AUTOPILOT':
+        case 'AUTOPILOT': {
+            // The suffix, not a separate line: the player needs to know the
+            // autopilot is deliberately down in the valley rather than failing
+            // to climb, and a second caption competing for the same band is
+            // how the one that matters gets ignored.
+            const tf = terrainFollowing ? ' · TF' : '';
             return hasDesignation
-                ? { text: 'AUTOPILOT — FLYING THE INTERCEPT', tone: 'INFO' }
-                : { text: 'AUTOPILOT FLYING — PRESS T TO PICK A TARGET', tone: 'INFO' };
+                ? { text: `AUTOPILOT — FLYING THE INTERCEPT${tf}`, tone: 'INFO' }
+                : { text: `AUTOPILOT FLYING — PRESS T TO PICK A TARGET${tf}`, tone: 'INFO' };
+        }
         default:
             return null;
     }
@@ -240,7 +249,8 @@ export class HUD {
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
-            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx
+            ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
+            context.terrainFollowing ?? false
         );
         if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
@@ -825,7 +835,8 @@ export class HUD {
             const alpha = progress < 0.66 ? 1 : Math.max(0, 1 - (progress - 0.66) / 0.34);
             const color = c.tone === 'LOSS' ? THEME.alert
                 : c.tone === 'PRAISE' ? THEME.caution
-                    : THEME.phosphor;
+                    : c.tone === 'MODE' ? THEME.muted
+                        : THEME.phosphor;
 
             ctx.globalAlpha = alpha;
             ctx.font = font(c.tone === 'PRAISE' ? 22 : 18, 700);
@@ -880,9 +891,10 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         override: ControlDemand['override'],
         hasDesignation: boolean,
-        cx: number
+        cx: number,
+        terrainFollowing: boolean
     ) {
-        const caption = assistCaption(override, hasDesignation);
+        const caption = assistCaption(override, hasDesignation, terrainFollowing);
         if (!caption) return;
 
         const color = caption.tone === 'ALERT' ? THEME.alert

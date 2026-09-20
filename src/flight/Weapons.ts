@@ -122,11 +122,21 @@ export class WeaponsSystem {
      * to auto-acquisition when there is no designation. Before this the
      * missile chose its own target from a 30-degree cone, so in a furball the
      * player could not shoot at a specific aeroplane at all.
+     *
+     * `canSee` gates the fallback only. Designation is already gated upstream
+     * (`tactics/Visibility.ts`), but the fallback used to sweep the seeker cone
+     * blind, so a missile could be sent after a contact behind a ridge - the
+     * one path left where terrain masking did not cut both ways. A designation
+     * the pilot made deliberately is honoured whatever the terrain does next:
+     * losing the shot because a hill slid between you at the moment of pressing
+     * the button would read as a broken trigger, and the missile's own
+     * terrain-masking rules already decide whether it survives the flight.
      */
     public fireSidewinder(
         physics: AircraftPhysics,
         targets: AirborneTarget[],
-        designatedId: string | null = null
+        designatedId: string | null = null,
+        canSee: (target: AirborneTarget) => boolean = () => true
     ) {
         if (physics.loadout.sidewinders <= 0) return;
         physics.loadout.sidewinders--;
@@ -144,7 +154,7 @@ export class WeaponsSystem {
             // No designation: closest live contact inside the seeker cone.
             let bestDist = 8000;
             for (const t of targets) {
-                if (!t.isAlive) continue;
+                if (!t.isAlive || !canSee(t)) continue;
                 const dx = t.position.x - physics.position.x;
                 const dy = t.position.y - physics.position.y;
                 const dz = t.position.z - physics.position.z;

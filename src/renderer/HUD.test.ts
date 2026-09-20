@@ -70,4 +70,18 @@ describe('assistCaption', () => {
         expect(assistCaption('LEVEL')).toBeNull();
         expect(assistCaption('NONE')).toBeNull();
     });
+
+    /**
+     * Down in the valley on purpose reads exactly like failing to climb
+     * unless the glass says which it is.
+     */
+    it('marks terrain following on the autopilot caption', () => {
+        expect(assistCaption('AUTOPILOT', true, true)!.text).toContain('TF');
+        expect(assistCaption('AUTOPILOT', true, false)!.text).not.toContain('TF');
+    });
+
+    it('does not put TF on a caption that is not the autopilot', () => {
+        expect(assistCaption('TERRAIN', true, true)!.text).not.toContain('TF');
+        expect(assistCaption('STALL', true, true)!.text).not.toContain('TF');
+    });
 });
