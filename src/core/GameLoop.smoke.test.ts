@@ -1770,6 +1770,51 @@ describe('GameLoop integration smoke test', () => {
         expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
     });
 
+    it('records terrain impact as the loss cause, and clears it on the next sortie', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        expect(game.score.breakdown.airframesLost).toBe(1);
+        expect(game['lastLossCause']).toEqual({ kind: 'TERRAIN', detail: 'terrain' });
+
+        // A fresh sortie must not carry a cause from the one before it -
+        // otherwise a pilot who dies to terrain and later runs out of fuel
+        // would be told, wrongly, that a ridge killed them.
+        game.beginSortie(game.physics.fuel, game.physics.loadout);
+        expect(game['lastLossCause']).toBeNull();
+    });
+
+    it('renders a failed debrief with a recorded loss cause, without throwing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        // Force the debrief screen directly rather than fighting the exact
+        // number of frames a full mission failure needs - what this test
+        // protects is that drawDebrief() can consume a real LossCause without
+        // throwing, which is the wiring PostMortem.test.ts cannot see because
+        // it never touches a canvas.
+        game.missionOutcome = 'FAILED';
+        game.phase = 'DEBRIEF';
+
+        expect(() => game['draw'](1 / 60)).not.toThrow();
+    });
+
     it('renders the missile-inbound banner with a time-to-impact readout, without throwing', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);

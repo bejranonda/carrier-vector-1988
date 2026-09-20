@@ -31,6 +31,7 @@ import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
 import { getContextualHint, TrainingSequence } from './Tutorial';
+import type { LossCause } from './PostMortem';
 import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
@@ -369,6 +370,12 @@ export class GameLoop {
     private countermeasures: CountermeasureState = createCountermeasureState();
     /** Damage at the last master-caution, so it fires per event not per frame. */
     private lastCautionDamage = 0;
+    /**
+     * What most recently damaged the aeroplane this sortie, for the debrief
+     * post-mortem. Cleared at the start of every sortie so a stale cause from
+     * a previous flight can never be shown against this one's outcome.
+     */
+    private lastLossCause: LossCause | null = null;
 
     /**
      * Wire-catch payoff. The trap used to resolve as an instant view switch
@@ -771,6 +778,7 @@ export class GameLoop {
         this.physics.loadout = { ...loadout };
         this.selectedWeapon = 'GUN';
         this.countermeasures = createCountermeasureState(loadout.chaff);
+        this.lastLossCause = null;
     }
 
     /** Seed the end-of-catapult-stroke flight state. */
@@ -1896,6 +1904,8 @@ export class GameLoop {
                 this.deck.log(`[TRAINING] SAM from ${impact.samId} ghosted — no damage in combat-shielded sortie.`);
             } else {
                 this.physics.applyDamage(impact.damage);
+                const sourceSam = this.sensors.samSites.find(s => s.id === impact.samId);
+                this.lastLossCause = { kind: 'SAM', detail: sourceSam?.name ?? impact.samId };
                 this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
                 this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
                 soundFX.playExplosion(this.placeAt(impact.position));
@@ -1913,6 +1923,7 @@ export class GameLoop {
             if (this.scenario.setup.combatShielded) return; // ghost in training
             const dmg = 4 + Math.random() * 6;
             this.physics.applyDamage(dmg);
+            this.lastLossCause = { kind: 'CANNON', detail: enemy.name };
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
             soundFX.playIncomingFire(this.placeAt(enemy.position));
             this.shake(SHAKE_SOURCES.damageTaken * 0.5);
@@ -1965,6 +1976,7 @@ export class GameLoop {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
             this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
             this.physics.position.y = groundElevation + 2;
+            this.lastLossCause = { kind: 'TERRAIN', detail: 'terrain' };
             this.replaceAirframe('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
             return;
         }
@@ -2203,6 +2215,10 @@ export class GameLoop {
                     outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
                     scenarioName: this.scenario.name,
                     reason: this.missionReason,
+                    // Only surfaced on a failure - a win has no "cause" to
+                    // report, and lastLossCause is reset every sortie so it
+                    // can never point at a hit from a previous flight.
+                    cause: this.missionOutcome === 'FAILED' ? this.lastLossCause : null,
                     title: this.scenario.victoryTitle,
                     missionBest: recordFor(this.missionRecords, this.scenario.id).best,
                     isMissionBest: this.isMissionBest,
