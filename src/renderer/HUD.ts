@@ -37,6 +37,8 @@ import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout } from './HudLayout';
 import type { HudLayout, HudReserve } from './HudLayout';
+import { placeLabels } from './LabelDeclutter';
+import type { LabelBox, LabelCandidate, PlacedLabel } from './LabelDeclutter';
 import {
     THEME,
     fitText,
@@ -191,7 +193,7 @@ export class HUD {
         this.drawPitchLadder(ctx, physics, renderer, layout);
         this.drawFlightPathMarker(ctx, physics, renderer);
         this.drawWaterline(ctx, layout.cx, layout.cy);
-        this.drawCombatReticles(ctx, physics, targets, renderer);
+        this.drawCombatReticles(ctx, physics, targets, renderer, layout);
         this.drawStrikeTargets(ctx, physics, context.strikeTargets ?? [], renderer);
         if (context.designated) this.drawDesignation(ctx, physics, context.designated, renderer, layout);
         if (context.bombImpactPoint) {
@@ -242,6 +244,44 @@ export class HUD {
             physics.velocity.x * physics.position.x + physics.velocity.z * physics.position.z
         ) / Math.max(1, range);
         return closingRate >= 5;
+    }
+
+    /**
+     * The rectangles a floating label must not cover. Derived from the same
+     * layout the instruments are drawn from, so it cannot drift from them.
+     */
+    private instrumentBoxes(layout: HudLayout): LabelBox[] {
+        const boxes: LabelBox[] = [
+            // Objective strip and the compass band across the top.
+            { x: 0, y: 0, w: this.width, h: layout.showCompass ? 130 : 78 },
+            { x: layout.speedX, y: layout.cy - 34, w: HUD_METRICS.speedW, h: 68 },
+            { x: layout.altX, y: layout.cy - 34, w: HUD_METRICS.altW, h: 68 }
+        ];
+        if (layout.showRwr) {
+            boxes.push({
+                x: this.width - layout.rwrSize - HUD_METRICS.edge,
+                y: this.height - layout.rwrSize - 54,
+                w: layout.rwrSize,
+                h: layout.rwrSize
+            });
+        }
+
+        // The boresight itself: the waterline, the flight path marker and the
+        // gun pipper all live here, and a range tag through them is a tag
+        // over the three symbols you fly by.
+        boxes.push({ x: layout.cx - 54, y: layout.cy - 26, w: 108, h: 52 });
+
+        if (layout.touchMode) {
+            // The touch systems line, which sits where a tag would otherwise
+            // happily land on a short screen.
+            boxes.push({
+                x: HUD_METRICS.edge + layout.reserve.left,
+                y: this.height - layout.reserve.bottom - 26,
+                w: this.width - layout.reserve.left - layout.reserve.right,
+                h: 24
+            });
+        }
+        return boxes;
     }
 
     /** Solve instrument placement for the current viewport. */
@@ -304,8 +344,13 @@ export class HUD {
         // The strip is centred, so its half-width has to clear the score chip
         // in the same band on the right. Without this reserve the plate ran
         // under the chip on anything narrower than about 1000px.
+        //
+        // In touch mode the chip is not there - the score rides in the systems
+        // line - so the strip gets that width back, which is what lets a phone
+        // read the whole objective instead of "descend...".
+        const sideReserve = touchMode ? 52 : OBJECTIVE_SIDE_RESERVE;
         const w = Math.min(
-            this.width - 2 * (HUD_METRICS.edge + OBJECTIVE_SIDE_RESERVE),
+            this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
         const h = 54;
@@ -1289,12 +1334,63 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         targets: AirborneTarget[],
-        renderer: VectorRenderer
+        renderer: VectorRenderer,
+        layout: HudLayout
     ) {
         const bulletSpeed = 1050; // m/s for 20mm Vulcan M61A1
 
         ctx.save();
         noGlow(ctx);
+
+        /**
+         * Decide the range tags up front, before any are drawn.
+         *
+         * Three contacts in a loose trail used to print three tags inside
+         * forty pixels of each other and across the altitude block, which is
+         * worse than no tags: none of the three is readable and the
+         * instrument behind them is gone. The brackets are always drawn - a
+         * contact never disappears - but a tag has to earn its place.
+         */
+        ctx.font = font(10, 600);
+        const candidates: LabelCandidate[] = [];
+        for (const target of targets) {
+            if (!target.isAlive) continue;
+            const dist = Math.hypot(
+                target.position.x - physics.position.x,
+                target.position.y - physics.position.y,
+                target.position.z - physics.position.z
+            );
+            if (dist >= 4500) continue;
+
+            const camPt = renderer.transformToCamera(
+                target.position, physics.position, physics.pitch, physics.yaw, physics.roll
+            );
+            if (camPt.z < 2.0) continue;
+            const proj = renderer.projectCameraPoint(camPt);
+            const text = `${shortName(target.name)} ${(dist / 1000).toFixed(1)}KM`;
+            const half = Math.max(16, Math.min(56, 24000 / dist)) / 2;
+
+            candidates.push({
+                id: target.id,
+                x: proj.x,
+                y: proj.y,
+                w: ctx.measureText(text).width + 4,
+                h: 14,
+                priority: dist,
+                offset: half + 6
+            });
+        }
+
+        const tags = new Map<string, PlacedLabel>();
+        for (const placed of placeLabels(candidates, {
+            viewportW: this.width,
+            viewportH: this.height,
+            maxVisible: layout.touchMode ? 3 : 5,
+            avoid: this.instrumentBoxes(layout)
+        })) {
+            tags.set(placed.id, placed);
+        }
+
         for (const target of targets) {
             if (!target.isAlive) continue;
 
@@ -1327,12 +1423,17 @@ export class HUD {
             // Only the nearest handful of contacts get a text tag, and it is
             // a short type + range, not the full aircraft designation - a
             // screen full of "MiG-23 FLOGGER #2" labels was unreadable.
-            if (dist < 4500) {
+            const tag = tags.get(target.id);
+            if (tag) {
                 ctx.font = font(10, 600);
                 ctx.fillStyle = THEME.hostile;
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(`${shortName(target.name)} ${(dist / 1000).toFixed(1)}KM`, proj.x + s + 6, proj.y);
+                ctx.fillText(
+                    `${shortName(target.name)} ${(dist / 1000).toFixed(1)}KM`,
+                    tag.x + 2,
+                    tag.y + tag.h / 2
+                );
             }
 
             // Lead computing pipper

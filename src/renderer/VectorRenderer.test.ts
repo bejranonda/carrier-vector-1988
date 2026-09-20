@@ -207,3 +207,68 @@ describe('VectorRenderer.renderMesh backward compatibility', () => {
         expect(p1.y).toBeGreaterThan(0);
     });
 });
+
+describe('field of view across screen sizes', () => {
+    /**
+     * The bug this prevents: a fixed 380 px focal length meant the angular
+     * field of view was a function of window height. A phone at 320 px saw
+     * 46 degrees vertically against a desktop's 100, so with the nose up the
+     * landscape - the thing the game is worth looking at - fell entirely
+     * outside the frame and the cockpit rendered as empty black.
+     */
+    const SIZES: [number, number][] = [
+        [568, 320], [844, 390], [1024, 768], [1280, 800], [1440, 900], [2560, 1440]
+    ];
+
+    const halfAngle = (fov: number, height: number) => Math.atan((height / 2) / fov);
+
+    it('shows the same vertical slice of the world on every screen', () => {
+        for (const [, height] of SIZES) {
+            const fov = VectorRenderer.focalLengthFor(height);
+            expect(halfAngle(fov, height)).toBeCloseTo(VectorRenderer.VERTICAL_HALF_FOV, 6);
+        }
+    });
+
+    it('preserves the view the game shipped with on a desktop', () => {
+        // 800 px tall was the design size, and produced a focal length of 380.
+        expect(VectorRenderer.focalLengthFor(800)).toBeCloseTo(380, 6);
+    });
+
+    it('lets a wider screen see more to the sides, not less', () => {
+        const horizontal = ([w, h]: [number, number]) =>
+            Math.atan((w / 2) / VectorRenderer.focalLengthFor(h));
+        const phone = horizontal([568, 320]);
+        const desktop = horizontal([2560, 1440]);
+        // Both are wide; neither is a telephoto slit.
+        expect(phone).toBeGreaterThan(0.6);
+        expect(desktop).toBeGreaterThan(0.6);
+    });
+
+    it('follows a resize rather than keeping the focal length it was built with', () => {
+        const renderer = new VectorRenderer(makeFakeCanvas(1280, 800).canvas);
+        const before = renderer.fov;
+        renderer.resize(568, 320);
+        expect(renderer.fov).not.toBe(before);
+        expect(halfAngle(renderer.fov, 320)).toBeCloseTo(VectorRenderer.VERTICAL_HALF_FOV, 6);
+    });
+
+    it('survives a degenerate viewport without dividing by zero', () => {
+        expect(Number.isFinite(VectorRenderer.focalLengthFor(0))).toBe(true);
+        expect(VectorRenderer.focalLengthFor(0)).toBeGreaterThan(0);
+    });
+
+    /**
+     * The real symptom, as geometry: something 30 degrees below the nose has
+     * to be on screen. At the old fixed focal length on a 320 px screen it
+     * was not.
+     */
+    it('keeps the ground in frame on a phone when the nose is up', () => {
+        const height = 320;
+        const fov = VectorRenderer.focalLengthFor(height);
+        const offset = fov * Math.tan(30 * (Math.PI / 180));
+        expect(offset).toBeLessThan(height / 2);
+
+        const oldOffset = 380 * Math.tan(30 * (Math.PI / 180));
+        expect(oldOffset).toBeGreaterThan(height / 2);
+    });
+});

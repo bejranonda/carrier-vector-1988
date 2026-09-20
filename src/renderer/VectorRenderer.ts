@@ -37,13 +37,36 @@ export class VectorRenderer {
     public warningColor: string = THEME.caution;
     public dimColor: string = WORLD.sea;
 
-    constructor(canvas: HTMLCanvasElement, fov: number = 380) {
+    /**
+     * Vertical half-angle of the camera, radians.
+     *
+     * The focal length used to be a fixed 380 px that `resize()` never
+     * touched, which meant the ANGULAR field of view was a function of how
+     * tall the window happened to be: about 100 degrees vertically on a
+     * 900 px desktop, and 46 degrees on a 320 px phone. A player on a handset
+     * was looking down a telephoto lens - with the nose up, the entire
+     * landscape fell outside the frame and the cockpit showed empty black.
+     *
+     * The angle is now the constant and the focal length is derived from it,
+     * so every screen sees the same slice of the world vertically and a wider
+     * screen sees more to the sides. The value is the one an 800 px-tall
+     * window produced before (atan(400 / 380)), so the desktop view the game
+     * shipped with is preserved.
+     */
+    public static readonly VERTICAL_HALF_FOV = Math.atan(400 / 380);
+
+    /** Focal length in pixels for a viewport of this height. */
+    public static focalLengthFor(height: number): number {
+        return Math.max(1, height) / 2 / Math.tan(VectorRenderer.VERTICAL_HALF_FOV);
+    }
+
+    constructor(canvas: HTMLCanvasElement, fov?: number) {
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Could not get 2D context');
         this.ctx = ctx;
         this.width = canvas.width;
         this.height = canvas.height;
-        this.fov = fov;
+        this.fov = fov ?? VectorRenderer.focalLengthFor(this.height);
     }
 
     /**
@@ -57,6 +80,8 @@ export class VectorRenderer {
     public resize(width: number, height: number) {
         this.width = width;
         this.height = height;
+        // Keep the angle, not the focal length. See VERTICAL_HALF_FOV.
+        this.fov = VectorRenderer.focalLengthFor(height);
     }
 
     /**

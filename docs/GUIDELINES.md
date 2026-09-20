@@ -168,6 +168,16 @@ Rules:
   map it is. A new map is a new `TerrainProfile` plus the invariants in
   `TerrainProfiles.test.ts` — do not add one without making those pass, because
   a map that cannot mask a radar breaks a core mechanic silently.
+- **The camera's field of view is an angle, not a pixel count.** `fov` is
+  derived from the viewport in `VectorRenderer.resize()`. A fixed focal length
+  means small screens see a narrower slice of the world, and the world is the
+  reason anyone is here — on a phone it showed as an empty black cockpit.
+- **A label must earn its place.** Anything floating over the world —
+  a range tag, a callout, a designator — goes through
+  `LabelDeclutter.placeLabels()` with the instrument rectangles as keepouts.
+  Two labels on one spot are worth less than one label, and a label over an
+  instrument costs more than it gives. Dropping it is a valid outcome: the
+  bracket still marks the contact.
 - **Touch mode is a way in, not a second game.** `Platform`, `TouchLayout`
   and `TouchInput` produce the same `PilotInput` and call the same public
   methods the keyboard does. If a feature needs a parallel implementation for

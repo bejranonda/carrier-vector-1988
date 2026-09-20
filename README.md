@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 573 headless Vitest tests
+npm run test     # 595 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -402,6 +402,10 @@ exceeding the mode you picked.
 - **Phosphor persistence** — vectors decay with a frame-rate-independent time constant
 - **Additive bloom pass** with a `multiply` pseudo-threshold, at ¼ resolution
 - Distance haze, horizon ring, and a scrolling sea lattice for depth and motion cues
+- **A field of view that is an angle, not a pixel count** — every screen sees the
+  same slice of the world vertically, and a wider one sees more to the sides
+- **Decluttered HUD labels** — contact range tags are placed nearest-first around
+  their bracket, never stacking on each other or covering an instrument
 - **Always-on objective line** in both loops, derived from a pure `Objectives.ts` module
 - Every HUD cluster sits on a translucent backplate, so legibility never depends on
   what part of the wireframe happens to be behind it
@@ -451,6 +455,7 @@ src/
 │   ├── VectorRenderer.ts  # 3D pipeline: camera transform, near-plane clip, projection
 │   ├── PostProcess.ts     # Phosphor persistence + bloom compositor
 │   ├── CameraShake.ts     # Trauma model for cockpit shake (pure, view-only)
+│   ├── LabelDeclutter.ts  # Pure HUD label placement and keepouts
 │   ├── TouchLayout.ts     # Pure thumb-control placement and hit-testing
 │   ├── TouchControls.ts   # Thumb-control chrome and the rotate prompt
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
@@ -515,7 +520,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**573 headless tests** across 32 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**595 headless tests** across 33 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -535,6 +540,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
 | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
