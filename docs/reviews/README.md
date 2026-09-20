@@ -10,7 +10,7 @@ Future AI development agents and human contributors must consult this repository
 
 | Version | Evaluation Date | Status | Overall Score | Key Focus & Milestones | Review Files |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| **`v1.3.0`** | 2026-09-20 | **Active Baseline** | **6.0 / 10** | • Live GitHub Pages playtest & onboarding analysis<br>• Zero-dependency 6-DOF math engine review<br>• Identification of Issue #32 (SAM ambush during checklist)<br>• Blueprints for Rogue-lite Campaign & Vector Juice | • [Critique & Scores](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.3.0`** | 2026-09-20 | **Active Baseline** | **6.35 / 10** | • 10-Pillar Comprehensive Evaluation (Flight, Deck, Juice, Churn, Thermals)<br>• Live GitHub Pages playtest & onboarding analysis<br>• Zero-dependency 6-DOF math engine review<br>• Identification of Issue #32 (SAM ambush during checklist)<br>• Blueprints for Rogue-lite Campaign & Vector Juice | • [10-Pillar Review](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.4.0+`** | *Upcoming* | *Pending* | — | • Narrative Onboarding Sortie (Non-lethal)<br>• Vector Fragmentation Explosion Physics ("Juice")<br>• Rogue-lite Campaign State Machine scaffold | • *To be created using [Template](REVIEW_TEMPLATE.md)* |
 
 ---
