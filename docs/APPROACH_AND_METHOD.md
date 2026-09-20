@@ -32,8 +32,11 @@ timescales, coupled through shared resources.
 
 A deterministic tick-based queuing simulation. Crews with stamina work an
 aircraft through a state machine; fatigue slows turnaround by up to 60%, so
-sustained high-tempo operations degrade your ability to launch. A threat
-director advances strike packages along a timeline toward the carrier.
+sustained high-tempo operations degrade your ability to launch. The player can
+intervene by rushing the turnaround (`R`), pushing crews past their ordinary
+pace for an immediate burst of progress, paid for in the stamina that pace
+depends on. A threat director advances strike packages along a timeline toward
+the carrier.
 
 ### Micro — 3D Vector Tactical Sortie
 
