@@ -53,6 +53,8 @@ This is what makes it a game rather than two demos:
 - Lost airframes are **permanently gone**; at zero hull integrity the mission ends
 - Time spent managing the deck is time the threat timeline keeps advancing
 
+**Future Evolution (Rogue-lite Campaign):** As identified in the `AI_DESIGN_REVIEW.md`, this macro-loop is currently static within a single mission. Future updates will transition this into a persistent rogue-lite campaign across a node-based map, where carrier damage, fuel stocks, and airframe counts persist between individual combat sorties.
+
 ## 3. Rendering Pipeline
 
 ### Pure linear algebra projection
@@ -165,6 +167,8 @@ two panels overlap**, verified across 28 viewport size combinations.
 3. **Guided cold start** — begins on the deck, so the dual-loop structure is learned by doing
 4. **Flight checkout** — a six-step checklist that ticks off as each control is demonstrated
 5. **Contextual coach** — thereafter, only speaks when something needs attention
+
+**Post-Mortem Note:** Recent playtesting (`AI_DESIGN_REVIEW.md`) revealed a critical flaw in this approach. Delivering the "Flight checkout" (Step 4) during a live combat scenario (e.g., launching directly into a SAM belt) forces the player to learn controls while actively dodging missiles. The tutorial and the combat fight for the player's attention, and if the player pitches up to test controls, they break terrain masking and die. Future updates will isolate the onboarding into a dedicated, safe, narrative-driven mission to fix this pacing issue.
 
 ### Two channels, never confused
 

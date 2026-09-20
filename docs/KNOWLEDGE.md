@@ -12,6 +12,8 @@ Flogger escorts, Tu-22M Backfire bombers) approach on a timeline; unintercepted
 packages damage the carrier. Ground SAM sites (SA-6 Gainful, SA-8 Gecko, SA-11
 Gadfly) defend the canyon corridor.
 
+*(Note: Future AI-assisted development will evolve this static setup into a node-based, persistent Rogue-lite campaign as outlined in `docs/AI_DESIGN_REVIEW.md`.)*
+
 ## 2. Coordinate System
 
 Right-handed, metres:
@@ -366,6 +368,8 @@ migCount     = 1 + ⌊rng × min(3, 1 + ⌊n/2⌋)⌋
 ```
 
 ## 7b. Scenarios
+
+*(Note: Currently, scenarios are isolated missions. Future AI-assisted updates will transition this architecture to support persistent state management for a Rogue-lite campaign.)*
 
 Five selectable missions, each a `ScenarioDef` in `core/Scenarios.ts`.
 

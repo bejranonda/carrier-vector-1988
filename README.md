@@ -602,7 +602,17 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
 | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
+| [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Comprehensive AI-assisted design review, playtest feedback, and future development roadmap |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
+
+---
+
+## Future Roadmap
+
+Following a comprehensive [AI Design Review](docs/AI_DESIGN_REVIEW.md) and live playtesting, future development will focus on the following core areas:
+- **Persistent Rogue-lite Campaign:** Transitioning the static carrier deck into a persistent base. Aircraft losses and carrier damage will persist across a node-based tactical map.
+- **Narrative-Driven Onboarding:** Separating the dry tutorial from live combat to avoid cognitive overload for new players.
+- **Enhanced "Game Feel" / Juice:** Adding physics-driven debris and electronic warfare visual effects to improve the visceral feedback of the simulation.
 
 ---
 

@@ -391,3 +391,9 @@ had full touch parity, it has only ever had "wait, then tap launch." A touch
 player therefore cannot rush a turnaround, and does not lose anything they
 had before - but closing this gap fully means giving the deck screen real
 touch controls, not only this one.
+
+## 32. Onboarding overlaps with live combat **[Resolved pending redesign]**
+
+The introductory "Flight Checkout" checklist is presented to the player during a live combat scenario (e.g., launching from the catapult in `CARRIER DEFENSE`). If a new player immediately pulls back on the stick to test the pitch controls (climbing steeply), they break terrain masking and are immediately locked and destroyed by enemy SAMs before they finish reading the tutorial.
+
+**Consequence:** The tutorial actively fights the player's survival instinct. We are aware of this brutal pacing flaw, and future AI-assisted updates will replace this with a dedicated, safe, narrative-driven onboarding mission (see `docs/AI_DESIGN_REVIEW.md`).

@@ -313,3 +313,12 @@ Rules:
   can begin - miss one and the feature is either always available or never
   available again. A crew rush is gated on stamina headroom instead, which
   needs no reset because the condition it checks is never stale.
+
+## 10. AI-Assisted Development
+
+To any AI agent tasked with modifying this codebase, heed the following directives. Our core philosophy is strict, and our math is pure. If you violate these rules, your code will be rejected.
+
+- **Mandatory Reading:** Before suggesting or implementing any logic changes, you MUST read `docs/APPROACH_AND_METHOD.md` and `docs/AI_DESIGN_REVIEW.md`. These documents explain the deterministic, zero-dependency philosophy.
+- **Zero-Dependency Rule:** Do NOT import Three.js, Babylon, or gl-matrix.
+- **Logic vs. Rendering:** All state transitions and logic MUST be separated from the view layer and MUST be fully deterministic. If you are adding a new mechanic (e.g., persistent Rogue-lite campaign resources), write headless Vitest tests for the state machine first.
+- **Game Feel & "Juice":** If requested to add visual flair, search for the terms "Juice" or "Game Feel". This means you should focus on physics-driven particles, screen shake, easing functions, and phosphor decay rather than generic UI changes.
