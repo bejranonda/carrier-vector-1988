@@ -602,18 +602,23 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
 | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
-| [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Comprehensive AI-assisted design review, playtest feedback, and future development roadmap |
-| [docs/reviews/](docs/reviews/README.md) | **Systematic Review Suite:** Multi-dimensional critique, scoring, roadmap, and copy-paste AI master prompts |
+| [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
+| [docs/reviews/](docs/reviews/README.md) | **Comprehensive Review Hub:** 12-Dimensional evaluation, version registry, and copy-paste AI master prompts |
+| [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized 12-Pillar evaluation protocol for benchmarking future releases |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
 ## Future Roadmap
 
-Following a comprehensive [AI Design Review](docs/AI_DESIGN_REVIEW.md) and live playtesting, future development will focus on the following core areas:
-- **Persistent Rogue-lite Campaign:** Transitioning the static carrier deck into a persistent base. Aircraft losses and carrier damage will persist across a node-based tactical map.
-- **Narrative-Driven Onboarding:** Separating the dry tutorial from live combat to avoid cognitive overload for new players.
-- **Enhanced "Game Feel" / Juice:** Adding physics-driven debris and electronic warfare visual effects to improve the visceral feedback of the simulation.
+Following the [12-Dimensional Game Design & Player Psychology Review](docs/reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) and live playtesting, upcoming development centers on 6 core pillars:
+
+1. **Non-Lethal Narrative Onboarding (`TRAINING_SORTIE`):** Isolating the tutorial in safe Scottish waters with scripted wingman radio comms ("Ghost-Lead"), resolving Known Issue #32.
+2. **Synthesized Cockpit Voice Warnings ("Bitchin' Betty"):** Zero-dependency robotic voice alerts (*"PULL UP"*, *"WARNING: MISSILE LAUNCH"*, *"STALL"*, *"BINGO FUEL"*) via native Web Speech or procedural formant synthesis.
+3. **Padlock Target-Tracking Camera Mode (`V` Key):** Slaving the view vector toward designated bandits with canopy angle clamping, eliminating the 60° forward boresight blindfold.
+4. **Enhanced Kinetic "Juice" & Vector Debris:** 3D wireframe line fragmentation explosion physics, distance-scaled screen shake, and threat-responsive procedural synthwave audio.
+5. **Persistent Rogue-lite Fleet Campaign:** Node-based Norwegian Sea strategic map with 24 F-14 / 12 A-6 finite airframes, fuel/ordnance logistics, and permanent attrition.
+6. **Retro Gun-Camera VHS Replay Export:** 15-second low-res CRT HUD recording post-sortie for viral social sharing.
 
 ---
 

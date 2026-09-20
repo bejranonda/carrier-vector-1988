@@ -396,4 +396,22 @@ touch controls, not only this one.
 
 The introductory "Flight Checkout" checklist is presented to the player during a live combat scenario (e.g., launching from the catapult in `CARRIER DEFENSE`). If a new player immediately pulls back on the stick to test the pitch controls (climbing steeply), they break terrain masking and are immediately locked and destroyed by enemy SAMs before they finish reading the tutorial.
 
-**Consequence:** The tutorial actively fights the player's survival instinct. We are aware of this brutal pacing flaw, and future AI-assisted updates will replace this with a dedicated, safe, narrative-driven onboarding mission (see `docs/AI_DESIGN_REVIEW.md`).
+**Consequence:** The tutorial actively fights the player's survival instinct. We are aware of this brutal pacing flaw, and future AI-assisted updates will replace this with a dedicated, safe, narrative-driven onboarding mission (`TRAINING_SORTIE`) off the coast of Scotland (see `docs/reviews/v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md`).
+
+## 33. Mute cockpit audio and visual attention split **[Pending Cockpit Voice System]**
+
+Combat flight telemetry relies heavily on auditory alerts so the pilot's eyes can stay glued to the boresight. Currently, the cockpit is completely mute: warnings like `MISSILE LAUNCH — GET LOW` and `STALL` are drawn as small text at the bottom or top of the HUD. In a high-G evasive maneuver, looking away from the boresight to read text causes fatal pilot disorientation.
+
+**Consequence:** High cognitive load and preventable deaths during supersonic evasive maneuvers. Future updates will introduce a synthesized Cockpit Voice Warning System ("Bitchin' Betty") with priority-queued audio alerts (*"PULL UP"*, *"WARNING: MISSILE LAUNCH"*, *"STALL"*, *"BINGO FUEL"*) using native zero-dependency Web Speech or procedural formant synthesis.
+
+## 34. Fixed 60° forward FOV blindfold in turning dogfights **[Pending Padlock Camera]**
+
+The camera is rigidly locked to a 60° forward boresight cone with no head tracking or look-around capability. During high-G turning scissor maneuvers, enemy bandits cross the canopy and vanish from view. The player is forced to fly purely by staring at the 2D tactical radar screen rather than tracking the target visually.
+
+**Consequence:** Dogfights lack visual dogfight tension and feel like flying with horse blinders. Mitigation planned: a Padlock Camera mode bound to `V` (and a touch button) that smoothly slaves the camera's orientation vector toward the designated target while clamping to realistic canopy angles (max 110° azimuth, 60° elevation).
+
+## 35. Sterile target destruction feedback and lack of kinetic "Juice" **[Pending Vector Debris]**
+
+When an enemy aircraft or ground radar site is destroyed, its wireframe either abruptly disappears or collapses into an understated circle. There is no screen-shake impulse, no kinetic recoil, and no debris arcing across the sky.
+
+**Consequence:** Kills lack visceral dopamine payoff. Mitigation planned: 3D vector line fragmentation explosion physics in `VectorRenderer.ts` that decomposes the target mesh into 10–16 independent physical line segments with outward explosive velocity, angular tumble, and decaying phosphor trails.

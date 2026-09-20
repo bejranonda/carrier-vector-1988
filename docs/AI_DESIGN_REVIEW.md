@@ -59,16 +59,19 @@ Furthermore, your idea of a "mission" is too static. A mission shouldn't just be
 Here is the roadmap for how you (and future AI agents) should improve this game to make it attractive, understandable, and deeply engaging.
 
 ### 3.1. How to make it easy to understand and play
-*   **Narrative-Driven Onboarding (Fixing the Playtest Issue):** The current tutorial is broken because it happens in a live combat zone. Replace the dry "Flight Checkout" checklist with a scripted, safe narrative mission (like the 'Carrier Quals' but with guided flying). Have a fictional Wingman guide the player. "Keep it low, Nugget, they're painting us!" teaches terrain masking far better than a manual. Do not spawn lethal SAMs until the player has checked off basic flight controls.
+*   **Narrative-Driven Onboarding (Fixing the Playtest Issue):** The current tutorial is broken because it happens in a live combat zone. Replace the dry "Flight Checkout" checklist with a scripted, safe narrative mission (`TRAINING_SORTIE`). Have a fictional Wingman guide the player. "Keep it low, Nugget, they're painting us!" teaches terrain masking far better than a manual. Do not spawn lethal SAMs until the player has checked off basic flight controls.
+*   **Synthesized Cockpit Voice Warnings ("Bitchin' Betty"):** Modern fighter cockpits rely on voice alerts. Add zero-dependency synthesized alerts (*"PULL UP"*, *"WARNING: MISSILE LAUNCH"*, *"STALL"*, *"BINGO FUEL"*) to eliminate visual distraction during high-G combat.
+*   **Padlock Target-Tracking Camera (`V` Key):** Add a camera key slaving the view toward the designated contact to eliminate the 60° forward boresight blindfold during turning dogfights.
 *   **The "Oops" Button:** For `ARCADE` mode, add a time-rewind mechanic. If a player eats a SAM, let them rewind 5 seconds to try dodging it. It lowers frustration and keeps them in the game loop.
 
 ### 3.2. How to get it attractive (Visuals & Marketing hooks)
-*   **Juice the Visuals:** You have a vector engine. Use it! When an enemy bomber explodes, it shouldn't just vanish—shatter the vector lines into physics-driven debris. Add screen-glitch effects when jammed by enemy radar. 
-*   **Dynamic Music:** The "threat drone" is smart, but you need a driving, synth-heavy dynamic soundtrack that kicks in during a dogfight. 
+*   **Juice the Visuals:** You have a vector engine. Use it! When an enemy bomber explodes, it shouldn't just vanish—shatter the vector lines into 3D physics-driven debris with phosphor trails. Add distance-scaled screen shake and scanline glitch effects when jammed by radar.
+*   **Dynamic Music:** Layer a driving, 1980s synth-heavy arpeggiated bassline into `WebAudioSystem.ts` that accelerates tempo when locked by hostile radar.
+*   **Retro Gun-Camera VHS Replay:** Allow players to export a 15-second retro HUD recording post-sortie for viral social sharing.
 
 ### 3.3. How to fix the Macro Loop & Campaign (The Big Suggestion)
 *   **Persistent Dynamic Campaign:** Convert the game into a rogue-lite campaign. 
-    *   **The Carrier is your base:** You have 24 planes and finite fuel/missiles.
+    *   **The Carrier is your base:** You have 24 F-14s, 12 A-6s, and finite fuel/missiles.
     *   **Node-based map:** You choose which sectors of the Norwegian Sea to strike. Striking a radar site lowers enemy SAM threat in adjacent nodes. 
     *   **Consequences:** If you lose a plane, it's gone from the carrier's inventory for the rest of the campaign. If the carrier takes too much damage, the campaign is over.
 *   **Multi-Stage Missions:** AI should be tasked with rewriting the `Scenarios.ts` engine to support mid-mission state changes. "Objective updated: A secondary SAM site just powered on, take it out before RTB."

@@ -23,37 +23,58 @@ nothing is worth zero. The radar, RCS and terrain-masking model was
 sophisticated and completely inert because missiles had no collision check.
 Every system must be able to change the game state.
 
-## 2. Dual-Loop Architecture
+## 2. The 4-Tier Architecture & Gameplay Loops
 
-The game deliberately alternates between two loops operating on different
-timescales, coupled through shared resources.
+The game alternates across four coupled timescales, from instantaneous reflex to strategic campaign persistence:
 
-### Macro — Flight Deck Logistics
+### 1. Micro-Loop (0–5 seconds) — Gun Boresight & Kinetic Payoff
+Boresight lead tracking, missile lock tone acquisition, weapon release, and immediate visceral feedback: 3D vector line fragmentation debris tumbling in space, camera-shake impulses, and audio transient hit pings.
 
-A deterministic tick-based queuing simulation. Crews with stamina work an
-aircraft through a state machine; fatigue slows turnaround by up to 60%, so
-sustained high-tempo operations degrade your ability to launch. The player can
-intervene by rushing the turnaround (`R`), pushing crews past their ordinary
-pace for an immediate burst of progress, paid for in the stamina that pace
-depends on. A threat director advances strike packages along a timeline toward
-the carrier.
+### 2. Meso-Loop (30–90 seconds) — Tactical Intercept & Evasion
+Energy management during dogfights, terrain-masking dives below radar horizon, and Padlock camera target tracking (`V` key) to keep visual contact with bandits during high-G turns.
 
-### Micro — 3D Vector Tactical Sortie
+### 3. Macro-Loop (5–15 minutes) — Flight Deck Operations & Sortie Recovery
+A deterministic tick-based queuing simulation. Crews with stamina work an aircraft through a state machine; fatigue slows turnaround by up to 60%, so sustained high-tempo operations degrade launch capability. Players can rush turnaround (`R`), trading crew stamina for immediate progress. The sortie concludes with an authentic carrier recovery approach (meatball, AoA indexer, 3-wire trap).
 
-A fixed-timestep 6-DOF flight simulation. Energy management is the core skill:
-lift costs induced drag, induced drag scales super-linearly with G, so every
-hard turn is paid for in airspeed.
+### 4. Meta-Loop (Campaign) — Persistent Rogue-lite Fleet Strategy
+The carrier acts as an operational mobile base navigating a node-based strategic map of the Norwegian Sea:
+- **Finite Logistics:** The air wing starts with 24 F-14 Tomcat and 12 A-6 Intruder airframes, finite aviation fuel (JP-5), and ordnance pools.
+- **Permanent Attrition:** Shot-down aircraft and expended ordnance are permanently deducted from the fleet roster across sorties.
+- **Strategic Cause & Effect:** Striking an enemy Early Warning Radar outpost disables SAM coordination in adjacent nodes, clearing corridors for subsequent deep-strike packages.
 
-### The coupling
+### 2.5. Subsystem Mathematical Models
 
-This is what makes it a game rather than two demos:
+#### Padlock Target-Tracking Camera
+In combat flight, maintaining visual contact ("padlock") on a maneuvering target is paramount. The camera look-at orientation vector $\mathbf{v}_{\text{look}}$ interpolates from the aircraft boresight $\mathbf{u}_{\text{forward}}$ toward the designated target position $\mathbf{p}_{\text{tgt}}$:
 
-- Ordnance and fuel you load are **deducted from finite carrier stocks**
-- Packages you fail to intercept **damage the deck you launch from**
-- Lost airframes are **permanently gone**; at zero hull integrity the mission ends
-- Time spent managing the deck is time the threat timeline keeps advancing
+$$\mathbf{d} = \frac{\mathbf{p}_{\text{tgt}} - \mathbf{p}_{\text{ac}}}{\|\mathbf{p}_{\text{tgt}} - \mathbf{p}_{\text{ac}}\|}$$
 
-**Future Evolution (Rogue-lite Campaign):** As identified in the `AI_DESIGN_REVIEW.md`, this macro-loop is currently static within a single mission. Future updates will transition this into a persistent rogue-lite campaign across a node-based map, where carrier damage, fuel stocks, and airframe counts persist between individual combat sorties.
+Target-relative camera angles in aircraft body axes:
+$$\psi_{\text{tgt}} = \text{atan2}(\mathbf{d} \cdot \mathbf{u}_{\text{right}},\, \mathbf{d} \cdot \mathbf{u}_{\text{forward}})$$
+$$\theta_{\text{tgt}} = \text{asin}(\mathbf{d} \cdot \mathbf{u}_{\text{up}})$$
+
+Clamped to physical human canopy limits:
+$$\psi_{\text{cam}} = \text{clamp}(\psi_{\text{tgt}}, -110^\circ, +110^\circ)$$
+$$\theta_{\text{cam}} = \text{clamp}(\theta_{\text{tgt}}, -30^\circ, +60^\circ)$$
+
+Camera rotation smoothly transitions over $\Delta t = 250\text{ ms}$ using ease-out cubic interpolation: $f(t) = 1 - (1 - t)^3$. The underlying aerodynamic physics basis is strictly invariant during padlock look-at.
+
+#### Cockpit Voice Alert Architecture ("Bitchin' Betty")
+Synthesized voice warnings bypass visual attention channels, delivering immediate critical telemetry. Alerts are dispatched through a deterministic priority queue with a 4.0-second de-bounce lockout per warning type:
+1. **Priority 1 (`CRITICAL`):** *"WARNING: MISSILE LAUNCH"* — Hostile SAM guidance radar lock active.
+2. **Priority 2 (`TERRAIN`):** *"PULL UP, PULL UP"* — Altitude $y < 200\text{ m}$ and vertical velocity $v_y < -30\text{ m/s}$.
+3. **Priority 3 (`AERODYNAMIC`):** *"STALL, STALL"* — Angle of attack $|\alpha| > 18^\circ$ with authority degradation.
+4. **Priority 4 (`LOGISTICS`):** *"BINGO FUEL"* — Fuel reserve $< 15\%$ capacity.
+
+Zero external audio files: synthesized via the browser's native `window.speechSynthesis` or procedural phonetic formant synthesis in `WebAudioSystem.ts`.
+
+#### Vector Fragmentation Explosion Kinetics
+Target destruction breaks 3D wireframe line segments into $N \in [10, 16]$ physical line entities. Each fragment $i$ inherits parent velocity $\mathbf{v}_{\text{parent}}$ plus radial blast velocity $\mathbf{v}_{\text{blast}}$ and random 3D angular velocity $\boldsymbol{\omega}$:
+
+$$\mathbf{v}_i(0) = \mathbf{v}_{\text{parent}} + v_{\text{radial}} \cdot \hat{\mathbf{r}}_i, \quad v_{\text{radial}} \in [15, 40]\text{ m/s}$$
+$$\mathbf{a}_i(t) = \mathbf{g} - \frac{1}{2}\rho \|\mathbf{v}_i\| \mathbf{v}_i \frac{C_D A}{m}$$
+
+Fragments arc ballistically toward sea level while phosphor line alpha decays over $\tau_{\text{debris}} = 1.2\text{ s}$. Screen-shake impulse $I_{\text{shake}} = \frac{I_0}{1 + d / 500}$ decays exponentially over $150\text{ ms}$.
 
 ## 3. Rendering Pipeline
 

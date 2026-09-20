@@ -1014,3 +1014,61 @@ below 3:1. The rule that replaced it: labels are neutral, values carry colour,
 and cyan means "this one is yours" — a key you can press or a thing you have
 chosen. Nothing the world does is cyan, which is what lets a designation bracket
 read as a decision rather than as another contact.
+
+## 12. Cockpit Voice Warning System ("Bitchin' Betty")
+
+Deterministic priority queue dispatched with a 4.0-second de-bounce lockout per warning type:
+
+| Priority | Callout | Trigger Condition | Audio Spec |
+| :---: | :--- | :--- | :--- |
+| **1** | `WARNING: MISSILE LAUNCH` | Active SAM guidance radar lock (`spikeType === 'SAM_GUIDANCE'`) | 200 Hz monotone robotic synthesis |
+| **2** | `PULL UP, PULL UP` | Altitude $y < 200\text{ m}$ and vertical speed $v_y < -30\text{ m/s}$ | Urgent dual-tone cadence |
+| **3** | `STALL, STALL` | Angle of attack $\|\alpha\| > 18^\circ$ and authority $\le 0.25$ | Staccato alert |
+| **4** | `BINGO FUEL` | Remaining fuel $< 15\%$ capacity | Informational cue |
+
+Implemented with zero external audio assets via the browser's native `window.speechSynthesis` or procedural phonetic formant synthesis in `src/audio/WebAudioSystem.ts`.
+
+## 13. Padlock Tracking Camera
+
+Smoothly rotates the camera view vector toward the designated target $\mathbf{p}_{\text{tgt}}$ while keeping the physics flight model unchanged:
+
+```
+d = (p_tgt - p_ac) / |p_tgt - p_ac|
+psi_tgt   = atan2(d · right, d · forward)
+theta_tgt = asin(d · up)
+
+psi_cam   = clamp(psi_tgt, -110°, +110°)     // Human cervical rotation limit
+theta_cam = clamp(theta_tgt, -30°, +60°)     // Canopy elevation limit
+```
+
+Interpolation: cubic ease-out $f(t) = 1 - (1 - t)^3$ over $\Delta t = 250\text{ ms}$.
+
+## 14. Vector Line Debris Kinetics
+
+Upon target destruction, the wireframe mesh decomposes into $N \in [10, 16]$ physical line entities:
+
+```
+v_radial   ∈ [15, 40] m/s
+v_debris(0) = v_parent + v_radial · r_hat
+omega      ∈ [-4π, +4π] rad/s (random 3D angular tumble)
+tau_debris = 1.2 s (phosphor alpha decay)
+```
+
+Screen-shake impulse: $I_{\text{shake}} = I_0 / (1 + \text{distance} / 500)$, decaying exponentially over 150 ms.
+
+## 15. Rogue-lite Campaign Fleet Constants
+
+Initial fleet logistics baseline for the persistent Norwegian Sea campaign:
+
+| Asset | Initial Inventory | Notes |
+| :--- | :---: | :--- |
+| **F-14 Tomcat Airframes** | 24 | Air superiority / fleet intercept |
+| **A-6 Intruder Airframes** | 12 | Deep strike / anti-radiation |
+| **JP-5 Aviation Fuel** | 150,000 L | Decremented by engine thrust $\times$ time |
+| **AIM-9 Sidewinder** | 72 | Heat-seeking short-range AAM |
+| **AIM-7 Sparrow** | 48 | Semi-active radar medium-range AAM |
+| **GBU-12 Paveway II** | 24 | Laser-guided hard-target bomb |
+| **Mk.82 Snakeye** | 48 | Retarded iron bomb for low-level strikes |
+| **Carrier Hull Integrity** | 100% | Reaching 0% ends the campaign |
+
+**Strategic Suppression:** Disabling an Early Warning Radar node reduces hostile SAM detection ranges by **40%** in all adjacent connected nodes.

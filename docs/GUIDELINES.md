@@ -314,11 +314,37 @@ Rules:
   available again. A crew rush is gated on stamina headroom instead, which
   needs no reset because the condition it checks is never stale.
 
-## 10. AI-Assisted Development
+## 10. AI-Assisted Development & Prompt Engineering Standards
 
-To any AI agent tasked with modifying this codebase, heed the following directives. Our core philosophy is strict, and our math is pure. If you violate these rules, your code will be rejected.
+To any human developer or AI agent tasked with modifying this codebase, heed the following directives. Our core philosophy is strict, and our math is pure. If you violate these rules, your code will be rejected.
 
-- **Mandatory Reading:** Before suggesting or implementing any logic changes, you MUST read `docs/APPROACH_AND_METHOD.md` and `docs/AI_DESIGN_REVIEW.md`. These documents explain the deterministic, zero-dependency philosophy.
-- **Zero-Dependency Rule:** Do NOT import Three.js, Babylon, or gl-matrix.
-- **Logic vs. Rendering:** All state transitions and logic MUST be separated from the view layer and MUST be fully deterministic. If you are adding a new mechanic (e.g., persistent Rogue-lite campaign resources), write headless Vitest tests for the state machine first.
-- **Game Feel & "Juice":** If requested to add visual flair, search for the terms "Juice" or "Game Feel". This means you should focus on physics-driven particles, screen shake, easing functions, and phosphor decay rather than generic UI changes.
+### 10.1. Core Architectural Guardrails
+- **Mandatory Reading:** Before suggesting or implementing any logic changes, you MUST read `docs/APPROACH_AND_METHOD.md` and `docs/reviews/v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`.
+- **Zero-Dependency Rule:** Do NOT import Three.js, Babylon, gl-matrix, or any npm runtime package. Hand-write all linear algebra and audio algorithms.
+- **Logic vs. Rendering Separation:** All simulation states, aerodynamic integration, and carrier state machines MUST reside in pure TypeScript classes (`src/flight/`, `src/carrier/`, `src/campaign/`) completely decoupled from `CanvasRenderingContext2D` and `AudioContext`.
+- **Headless Test Discipline:** Every new state machine, aerodynamic rule, camera transform, or tactical logic MUST be backed by headless unit tests in Vitest before touching the rendering layer.
+
+### 10.2. Specific Subsystem Implementation Rules
+
+#### Cockpit Voice System ("Bitchin' Betty")
+- Zero runtime npm dependencies. Use either native Web Speech API (`window.speechSynthesis`) or procedural phonetic formant synthesis in `WebAudioSystem.ts`.
+- Must implement a strict priority queue (Priority 1: Missile Launch Warning; Priority 2: Pull-Up; Priority 3: Stall; Priority 4: Bingo Fuel).
+- Must enforce a 4.0-second de-bounce cooldown per alert type to prevent repetitive audio spam.
+- Must provide an accessibility toggle to mute voice warnings independently of sound effects.
+
+#### Padlock Target-Tracking Camera
+- Must smoothly interpolate the camera look-at orientation vector toward `designatedTarget.position` in 3D world space using ease-out cubic interpolation (`Δt = 250ms`).
+- Must strictly clamp look angles to realistic canopy limits: azimuth `|ψ_cam| ≤ 110°`, elevation `−30° ≤ θ_cam ≤ 60°`.
+- Must NEVER alter the underlying aircraft physics basis vectors (`right`, `up`, `forward`); only the camera projection matrix rotates.
+
+#### Vector Fragmentation Debris ("Juice")
+- Target destruction must decompose 3D wireframe models into 10–16 individual line segment entities with outward radial explosion velocity (`15–40 m/s`), gravity (`g = 9.81 m/s²`), and aerodynamic drag (`C_D ≈ 0.8`).
+- Debris objects must be allocated from a pre-warmed pool or bounded array to guarantee zero garbage-collection allocations in the hot loop.
+- Screen-shake impulses must decay exponentially over 150ms and scale inversely with distance to the explosion (`impulse / (1 + distance / 500)`).
+
+### 10.3. The 4-Block Master Prompt Formula
+When directing AI assistants on this repository, structure all prompts into 4 explicit blocks:
+1. **Context & Guardrails:** *"Zero runtime dependencies, fixed timestep 1/120s, pure logic in `src/...` decoupled from Canvas2D."*
+2. **The Exact Task:** *"Implement [Feature] in [Exact File Paths]."*
+3. **Game Feel & Behavior:** *"Focus on easing functions, visual feedback, and audio transients."*
+4. **Verification & Tests:** *"Write headless Vitest tests in `tests/...` and ensure 100% pass before touching Canvas2D."*
