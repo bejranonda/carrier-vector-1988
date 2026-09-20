@@ -163,6 +163,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Recovery assist (fly me home) ---
+        if (key === 'l') {
+            e.preventDefault();
+            game.toggleApproachAssist();
+            return;
+        }
+
         // --- Weapons bay ---
         if (key === 'b') {
             e.preventDefault();

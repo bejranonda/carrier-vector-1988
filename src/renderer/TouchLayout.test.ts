@@ -27,7 +27,8 @@ const rects = (l: TouchLayout): [string, TouchRect][] => [
     ['fire', { x: l.fire.cx - l.fire.r, y: l.fire.cy - l.fire.r, w: l.fire.r * 2, h: l.fire.r * 2 }],
     ['target', { x: l.target.cx - l.target.r, y: l.target.cy - l.target.r, w: l.target.r * 2, h: l.target.r * 2 }],
     ...l.weapons.map((w, i) => [`weapon${i}`, w] as [string, TouchRect]),
-    ['menu', l.menu]
+    ['menu', l.menu],
+    ['recover', l.recover]
 ];
 
 const overlaps = (a: TouchRect, b: TouchRect) =>
@@ -141,6 +142,7 @@ describe('hitTest', () => {
         expect(hitTest(layout, layout.stick.cx, layout.stick.cy)).toBe('STICK');
         expect(hitTest(layout, layout.throttle.x + 4, layout.throttle.y + 20)).toBe('THROTTLE');
         expect(hitTest(layout, layout.menu.x + 4, layout.menu.y + 4)).toBe('MENU');
+        expect(hitTest(layout, layout.recover.x + 4, layout.recover.y + 4)).toBe('RECOVER');
     });
 
     it('finds each weapon button', () => {
@@ -161,6 +163,9 @@ describe('hitTest', () => {
     it('offers only the launch button on the deck', () => {
         expect(hitTest(layout, layout.launch.x + 10, layout.launch.y + 10, 'DECK')).toBe('LAUNCH');
         expect(hitTest(layout, layout.fire.cx, layout.fire.cy, 'DECK')).toBe('WORLD');
+        // The recovery toggle is a flight control, and there is nothing to
+        // recover from on the deck.
+        expect(hitTest(layout, layout.recover.x + 4, layout.recover.y + 4, 'DECK')).toBe('WORLD');
         // The menu is reachable from both screens.
         expect(hitTest(layout, layout.menu.x + 2, layout.menu.y + 2, 'DECK')).toBe('MENU');
     });

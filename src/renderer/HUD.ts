@@ -127,6 +127,14 @@ export interface HudContext {
     visibleContacts?: { isVisible(id: string): boolean };
     /** Whether the autopilot is hugging the terrain, for the annunciator. */
     terrainFollowing?: boolean;
+    /**
+     * What the recovery assist is doing, when it is doing anything. It takes
+     * the assist band over the ordinary autopilot caption: while the assist is
+     * flying you home, that IS what the autopilot is doing, and the handover
+     * line is the single most important thing on the glass at the moment it
+     * appears.
+     */
+    recovery?: { text: string; handover: boolean } | null;
 }
 
 /**
@@ -250,7 +258,7 @@ export class HUD {
         if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
-            context.terrainFollowing ?? false
+            context.terrainFollowing ?? false, context.recovery ?? null
         );
         if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
 
@@ -892,9 +900,12 @@ export class HUD {
         override: ControlDemand['override'],
         hasDesignation: boolean,
         cx: number,
-        terrainFollowing: boolean
+        terrainFollowing: boolean,
+        recovery: { text: string; handover: boolean } | null
     ) {
-        const caption = assistCaption(override, hasDesignation, terrainFollowing);
+        const caption = recovery
+            ? { text: recovery.text, tone: recovery.handover ? 'CAUTION' as const : 'INFO' as const }
+            : assistCaption(override, hasDesignation, terrainFollowing);
         if (!caption) return;
 
         const color = caption.tone === 'ALERT' ? THEME.alert

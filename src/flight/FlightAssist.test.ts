@@ -97,13 +97,46 @@ describe('stall limiter', () => {
         expect(stallLimiter(state({ alpha: ASSIST_TUNING.alphaLimit }), 1)).toBeCloseTo(0, 6);
     });
 
-    it('never blocks a push, so the pilot can always unload', () => {
+    it('never blocks an unload, so the pilot can always reduce alpha', () => {
         expect(stallLimiter(state({ alpha: 0.5 }), -1)).toBe(-1);
-        expect(stallLimiter(state({ isStalled: true }), -1)).toBe(-1);
+        expect(stallLimiter(state({ isStalled: true, alpha: 0.5 }), -1)).toBe(-1);
+        // The mirror image: at negative alpha, pulling is the unload.
+        expect(stallLimiter(state({ alpha: -0.5 }), 1)).toBe(1);
+        expect(stallLimiter(state({ isStalled: true, alpha: -0.5 }), 1)).toBe(1);
     });
 
     it('pushes the nose down on its own once the wing has let go', () => {
-        expect(stallLimiter(state({ isStalled: true }), 1)).toBeLessThanOrEqual(-0.6);
+        expect(stallLimiter(state({ isStalled: true, alpha: 0.4 }), 1)).toBeLessThanOrEqual(-0.6);
+    });
+
+    /**
+     * `isStalled` is |alpha| > critical, so the wing lets go at negative alpha
+     * too - nose low, unloaded into a descent, which is exactly where an
+     * autopilot descending in a hard turn ends up. Answering that with a push
+     * drives alpha further negative and flies the aeroplane into the sea. It
+     * did, repeatably, until this was symmetric.
+     */
+    it('pulls instead of pushing when the wing let go at negative alpha', () => {
+        expect(stallLimiter(state({ isStalled: true, alpha: -0.4 }), -1))
+            .toBeGreaterThanOrEqual(0.6);
+    });
+
+    it('fades a push out as alpha approaches the negative limit', () => {
+        const mild = stallLimiter(state({ alpha: -ASSIST_TUNING.alphaLimit * 0.75 }), -1);
+        const severe = stallLimiter(state({ alpha: -ASSIST_TUNING.alphaLimit * 0.9 }), -1);
+        expect(mild).toBeGreaterThan(-1);
+        expect(severe).toBeGreaterThan(mild);
+        expect(severe).toBeLessThanOrEqual(0);
+    });
+
+    it('does not tax ordinary nose-down manoeuvring above the negative gate', () => {
+        const alpha = -ASSIST_TUNING.alphaLimit * ASSIST_TUNING.alphaGate * 0.9;
+        expect(stallLimiter(state({ alpha }), -1)).toBe(-1);
+    });
+
+    it('leaves a centred stick alone whatever alpha is doing', () => {
+        expect(stallLimiter(state({ alpha: 0.9 }), 0)).toBe(0);
+        expect(stallLimiter(state({ alpha: -0.9 }), 0)).toBe(0);
     });
 });
 
@@ -172,6 +205,24 @@ describe('carrier approach', () => {
         expect(d.override).toBe('LEVEL');
         // Levelling the wings, not flying off to the nav target.
         expect(d.roll).toBeLessThan(0);
+    });
+
+    /**
+     * ...except for the recovery assist, which is the one nav target in the
+     * game whose entire purpose is to fly the approach. It stops at short
+     * final on its own, so the refusal here would only prevent it starting.
+     */
+    it('lets the recovery assist fly the approach when it asks to', () => {
+        const nav = { bearing: 0, altitudeAgl: 200, airSpeed: 70, overridesApproach: true };
+        const s = state({ yaw: 2.5, roll: 0, altitudeAgl: 200, onApproach: true });
+        const d = resolveControls('AUTO', s, input(), nav);
+        expect(d.override).toBe('AUTOPILOT');
+    });
+
+    it('still refuses an ordinary nav target on an approach', () => {
+        const nav = { bearing: 0, altitudeAgl: 200, airSpeed: 70, overridesApproach: false };
+        const s = state({ yaw: 2.5, roll: 0, altitudeAgl: 200, onApproach: true });
+        expect(resolveControls('AUTO', s, input(), nav).override).not.toBe('AUTOPILOT');
     });
 });
 

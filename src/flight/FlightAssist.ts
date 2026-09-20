@@ -112,6 +112,18 @@ export interface NavTarget {
     airSpeed: number;
     /** Roll limit, radians - gentler for an approach than for a intercept. */
     maxBank?: number;
+    /**
+     * Set only by the assisted carrier approach.
+     *
+     * The autopilot refuses to fly an approach on purpose (see
+     * `resolveControls`), and that refusal is right for every nav target the
+     * game generates except one: the recovery assist, which exists precisely
+     * to fly the approach - and which hands the aeroplane back at short final
+     * of its own accord rather than landing it. The flag lives on the target
+     * rather than in the signature so the decision stays where the target is
+     * built, with everything that knows why.
+     */
+    overridesApproach?: boolean;
 }
 
 // ---------------------------------------------------------------------
@@ -153,6 +165,24 @@ export const ASSIST_TUNING = {
     headingGain: 1.5,
     /** Autopilot rudder per radian of heading error. */
     rudderGain: 1.1,
+    /**
+     * Cap on the autopilot's rudder demand.
+     *
+     * Full deflection held for seconds at 220 m/s does not turn the
+     * aeroplane, it departs it: the nose swings away from the velocity
+     * vector, alpha runs to ninety degrees, the wing lets go and the recovery
+     * assist flies a perfectly serviceable jet into the sea. Found by a
+     * recovery from abeam the boat, which needs a hundred and forty degrees
+     * of heading change - more than any intercept had ever asked for.
+     */
+    maxRudder: 0.55,
+    /**
+     * Rudder authority available before any bank is established. Not zero:
+     * the rudder is how heading changes in this flight model, and an
+     * autopilot that waits for the wings to come round before touching it is
+     * an autopilot that starts every turn a beat late.
+     */
+    rudderFloor: 0.3,
     /** Autopilot pitch per metre of altitude error. */
     altitudeGain: 0.0016,
     /** Autopilot throttle per m/s of speed error. */
@@ -178,20 +208,45 @@ export function angleDelta(from: number, to: number): number {
 // ---------------------------------------------------------------------
 
 /**
- * Stall limiter. Blocks further nose-up demand as alpha approaches the limit,
- * and actively pushes if the wing has already let go. It never blocks a push,
- * so the pilot can always unload.
+ * Stall limiter. Blocks demand that is taking alpha further past the limit,
+ * and actively unloads if the wing has already let go.
+ *
+ * SYMMETRIC, and that is not a detail. `isStalled` is `|alpha| > critical`,
+ * so the wing can let go at NEGATIVE alpha just as readily - nose low, unloaded
+ * into a descent, which is exactly where an autopilot commanding a descent in a
+ * hard turn puts it. The first version of this law answered every stall with a
+ * push, so a negative-alpha stall was met with more nose-down: alpha went
+ * further negative, the limiter pushed harder, and the aeroplane arrived in the
+ * sea with the recovery law flying it there. Unloading means moving alpha
+ * toward ZERO, whichever side of zero it is on.
+ *
+ * It never blocks a demand that reduces the magnitude of alpha, so the pilot
+ * can always unload.
  */
 export function stallLimiter(state: FlightState, pitchDemand: number): number {
-    if (state.isStalled) return Math.min(pitchDemand, -0.6);
-    if (pitchDemand <= 0) return pitchDemand;
-
     const { alphaLimit, alphaGate } = ASSIST_TUNING;
-    const gate = alphaLimit * alphaGate;
-    if (state.alpha <= gate) return pitchDemand;
 
-    const margin = (alphaLimit - state.alpha) / (alphaLimit - gate);
-    return pitchDemand * clamp(margin, 0, 1);
+    if (state.isStalled) {
+        return state.alpha >= 0
+            ? Math.min(pitchDemand, -0.6)
+            : Math.max(pitchDemand, 0.6);
+    }
+
+    const gate = alphaLimit * alphaGate;
+
+    if (pitchDemand > 0) {
+        if (state.alpha <= gate) return pitchDemand;
+        const margin = (alphaLimit - state.alpha) / (alphaLimit - gate);
+        return pitchDemand * clamp(margin, 0, 1);
+    }
+
+    if (pitchDemand < 0) {
+        if (state.alpha >= -gate) return pitchDemand;
+        const margin = (alphaLimit + state.alpha) / (alphaLimit - gate);
+        return pitchDemand * clamp(margin, 0, 1);
+    }
+
+    return pitchDemand;
 }
 
 /**
@@ -260,15 +315,32 @@ export function autopilotDemand(state: FlightState, target: NavTarget): ControlD
     const roll = clamp((desiredBank - state.roll) * 2.2, -1, 1);
 
     const altError = target.altitudeAgl - state.altitudeAgl;
-    // Bleed the climb demand off as bank increases: pulling hard while banked
-    // is how an autopilot flies itself into a stall.
+    /**
+     * Bleed the climb demand off as bank increases.
+     *
+     * This looks wrong - a hard bank is where MORE back pressure is needed to
+     * hold a flight path - and it was replaced with a vertical-speed loop that
+     * pulls whenever the jet is sinking faster than asked. That version flew
+     * into the sea far more reliably than this one: in a sustained bank the
+     * pull rotates the lift vector sideways rather than up, the sink does not
+     * stop, the loop pulls harder, and alpha departs. This law spirals gently
+     * instead, which the terrain floor can catch. Bank is the thing that has
+     * to yield in a turning descent, and it yields in the guidance that sets
+     * `maxBank`, not here.
+     */
     const bankFactor = Math.max(0.25, Math.cos(state.roll));
     let pitch = clamp(altError * t.altitudeGain * bankFactor, -0.8, 0.9);
     // Hold the nose where the climb rate wants it rather than chasing altitude
     // with attitude, which oscillates.
     pitch = clamp(pitch - state.pitch * 0.8, -1, 1);
 
-    const yaw = clamp(headingError * t.rudderGain, -1, 1);
+    // Rudder follows the bank rather than the raw heading error, which is
+    // what makes it a coordinated turn instead of a skid: leading with full
+    // rudder is how the nose leaves the velocity vector, and a jet whose nose
+    // has left its velocity vector is not turning, it has departed.
+    const bankProgress = t.rudderFloor + (1 - t.rudderFloor)
+        * Math.min(1, Math.abs(state.roll) / Math.max(0.05, maxBank));
+    const yaw = clamp(headingError * t.rudderGain, -t.maxRudder, t.maxRudder) * bankProgress;
 
     const throttle = clamp((target.airSpeed - state.airSpeed) * t.speedGain, -1, 1);
 
@@ -297,8 +369,9 @@ export function resolveControls(
     let demand: ControlDemand;
     // The autopilot does not land. Rolling onto final hands the aeroplane
     // back with the assists still on, because a trap is the one part of this
-    // game nobody wants flown for them.
-    if (level === 'AUTO' && navTarget && !state.onApproach) {
+    // game nobody wants flown for them - unless the player has asked the
+    // recovery assist for the approach, which stops short of the wires.
+    if (level === 'AUTO' && navTarget && (!state.onApproach || navTarget.overridesApproach)) {
         demand = autopilotDemand(state, navTarget);
         // A nudge on the stick still gets through, so the player can break
         // out of an autopilot turn without first switching it off.
@@ -326,7 +399,15 @@ export function resolveControls(
     // Both laws blend rather than switch, so an exact inequality would flash
     // the caption at the pilot over a hundredth of a unit of stick.
     const afterStall = stallLimiter(state, demand.pitch);
-    if (afterStall < demand.pitch - ANNUNCIATE_EPSILON) demand.override = 'STALL';
+    // Either direction: the limiter now pulls as well as pushes, and a law
+    // taking authority away has to say so whichever way it moved the stick.
+    // A wing that has let go always annunciates, even when the demand
+    // happened to already be inside what the limiter would allow - the pilot
+    // is not being told about an adjustment, they are being told the
+    // aeroplane is not doing what the stick says.
+    if (state.isStalled || Math.abs(afterStall - demand.pitch) > ANNUNCIATE_EPSILON) {
+        demand.override = 'STALL';
+    }
 
     const afterFloor = terrainFloor(state, afterStall);
     if (afterFloor > afterStall + ANNUNCIATE_EPSILON) demand.override = 'TERRAIN';

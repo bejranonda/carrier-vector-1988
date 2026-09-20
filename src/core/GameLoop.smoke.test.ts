@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { angleDelta } from '../flight/FlightAssist';
+import { APPROACH_TUNING as APPROACH, glideslopeAltitude } from '../flight/ApproachGuidance';
 import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
@@ -1425,6 +1426,119 @@ describe('GameLoop integration smoke test', () => {
         runFrames(game, 2);
         expect(HUDClass.isOnApproach(game.physics)).toBe(true);
         expect(game.terrainFollowClimbing).toBe(false);
+    });
+
+    /**
+     * The claim the recovery assist rests on: from a sane approach entry it
+     * flies the ball and the speed down to short final, and the player only
+     * has to keep it lined up. Asserted, because "it seemed to work" is not
+     * something a player can rely on at the end of a good sortie.
+     */
+    it('flies the ball and the speed from the approach entry to short final', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        game.tracker.clear();
+        // Astern, on the centreline, high and fast - the state a pilot who has
+        // pointed themselves at the boat is actually in.
+        game.physics.position = { x: 0, y: 900, z: APPROACH.touchdownZ - 9000 };
+        game.physics.velocity = { x: 0, y: 0, z: 150 };
+
+        let handover = null as null | { y: number; z: number; speed: number };
+        for (let i = 0; i < 600 && handover === null; i++) {
+            runFrames(game, 10);
+            if (game.approachPhase === 'HANDOVER') {
+                handover = {
+                    y: game.physics.position.y,
+                    z: game.physics.position.z,
+                    speed: game.physics.airSpeed
+                };
+            }
+        }
+
+        expect(handover).not.toBeNull();
+        const h = handover!;
+        // On the slope, and slow enough for the arresting gear to take it.
+        const wanted = glideslopeAltitude(APPROACH.touchdownZ - h.z);
+        expect(Math.abs(h.y - wanted)).toBeLessThan(60);
+        expect(h.speed).toBeLessThan(95);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
+    });
+
+    /**
+     * Lineup is the player's, so the assist must not be quietly steering
+     * underneath them: it commands the heading the jet already has.
+     */
+    it('leaves the steering to the pilot on final', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 900, y: 300, z: APPROACH.touchdownZ - 5000 };
+        game.physics.velocity = { x: 0, y: 0, z: 120 };
+        runFrames(game, 120);
+
+        expect(game.approachPhase).toBe('FINAL');
+        // Nine hundred metres off the centreline and the assist has not
+        // dragged it back: that correction is the player's to make.
+        expect(Math.abs(game.physics.position.x - 900)).toBeLessThan(200);
+    });
+
+    it('hands the aeroplane back at short final instead of landing it', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 0, y: glideslopeAltitude(300), z: APPROACH.touchdownZ - 300 };
+        game.physics.velocity = { x: 0, y: -3, z: 70 };
+        runFrames(game, 2);
+
+        expect(game.approachPhase).toBe('HANDOVER');
+        // Not the autopilot's aeroplane any more.
+        expect(game.assistOverride).not.toBe('AUTOPILOT');
+    });
+
+    /**
+     * The assist does not ferry the aeroplane home. Out of the corridor it is
+     * a cue - which way to go - and the player flies it, because a transit is
+     * the part of a sortie that touch controls are already good at.
+     */
+    it('cues rather than flies when the jet is not astern of the boat', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.physics.position = { x: 7000, y: 1400, z: 3000 };
+        runFrames(game, 2);
+
+        expect(game.approachPhase).toBe('JOIN');
+        // Still flying under the ordinary autopilot, not the approach: the
+        // recovery has no say in where the jet goes until it is astern.
+        expect(game.physics.position.y).toBeGreaterThan(1000);
+    });
+
+    it('turns the autopilot on when the recovery assist is asked for', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'MANUAL';
+        game.approachAssist = false;
+        game.toggleApproachAssist();
+        expect(game.approachAssist).toBe(true);
+        expect(game.assistLevel).toBe('AUTO');
+    });
+
+    it('does not fly the recovery when it is switched off', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = false;
+        game.physics.position = { x: 0, y: 400, z: APPROACH.touchdownZ - 3000 };
+        runFrames(game, 5);
+        expect(game.approachPhase).toBe(null);
     });
 
     it('cycles the display mode without throwing', () => {

@@ -28,6 +28,8 @@ export interface TouchChromeContext {
     hasDesignation: boolean;
     /** Highlight the fire control while a shot is actually available. */
     fireArmed: boolean;
+    /** Whether the recovery assist is engaged, to light its button. */
+    recoveryOn: boolean;
 }
 
 const IDLE_ALPHA = 0.38;
@@ -168,6 +170,26 @@ export function drawTouchControls(
 
     ring(ctx, layout.fire.cx, layout.fire.cy, layout.fire.r,
         context.fireArmed ? THEME.alert : THEME.key, demand.firing, 'FIRE', 12);
+
+    // --- Recovery assist ---
+    // Lit when engaged, because "am I being flown home or not" is the whole
+    // question this button answers.
+    const rec = layout.recover;
+    const recColor = context.recoveryOn ? THEME.caution : THEME.key;
+    ctx.save();
+    noGlow(ctx);
+    ctx.globalAlpha = context.recoveryOn ? ACTIVE_ALPHA : IDLE_ALPHA;
+    plate(ctx, rec, {
+        fill: context.recoveryOn ? 'rgba(255,201,77,0.16)' : 'rgba(9,19,25,0.55)',
+        border: recColor,
+        radius: 5
+    });
+    ctx.fillStyle = recColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = font(10, 700);
+    ctx.fillText('RCVY', rec.x + rec.w / 2, rec.y + rec.h / 2);
+    ctx.restore();
 
     // --- Menu ---
     ctx.save();

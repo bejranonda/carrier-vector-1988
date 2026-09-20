@@ -67,6 +67,15 @@ import {
     saveTerrainFollowing,
     terrainFollowingAltitude
 } from '../flight/TerrainFollowing';
+import {
+    APPROACH_TUNING,
+    approachCaption,
+    approachGuidance,
+    loadApproachAssist,
+    saveApproachAssist,
+    storedApproachAssist
+} from '../flight/ApproachGuidance';
+import type { ApproachPhase } from '../flight/ApproachGuidance';
 import { VisibilityTracker } from '../tactics/Visibility';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
 import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
@@ -246,6 +255,16 @@ export class GameLoop {
     public terrainFollowing = loadTerrainFollowing();
     /** True while a ridge ahead - not the ground below - is setting altitude. */
     public terrainFollowClimbing = false;
+
+    /**
+     * Whether the autopilot will fly the recovery: join the pattern, roll out
+     * on the final approach course and fly the glideslope to short final,
+     * then hand back. Off by default on a keyboard - the trap is the game -
+     * and on by default on a phone, where the alternative is not landing.
+     */
+    public approachAssist = loadApproachAssist();
+    /** Which phase the recovery is in, or null when it is not flying. */
+    public approachPhase: ApproachPhase | null = null;
 
     /**
      * The pilot's chosen target. Everything downstream follows it: the HUD
@@ -753,6 +772,12 @@ export class GameLoop {
      */
     private applyTouchDefaults() {
         if (storedAssistLevel() === null) this.assistLevel = 'AUTO';
+        // On a phone the trap is the one thing the thumb controls cannot
+        // really do: a virtual stick, a lens the size of a fingernail and no
+        // altimeter that is not under a thumb. The recovery assist flies the
+        // approach and still hands the landing back at short final, so a
+        // handset player gets to finish a sortie rather than ditching.
+        if (storedApproachAssist() === null) this.approachAssist = true;
         if (storedDisplayMode() === null) {
             this.displayMode = 'CLEAN';
             this.applyDisplayMode();
@@ -1001,6 +1026,10 @@ export class GameLoop {
                 this.helpVisible = !this.helpVisible;
                 soundFX.playUiMove();
                 return;
+            case 'RECOVER':
+                this.toggleApproachAssist();
+                soundFX.playUiMove();
+                return;
             case 'LAUNCH':
                 this.requestCatapultLaunch();
                 return;
@@ -1105,6 +1134,9 @@ export class GameLoop {
      * stabilise the jet and take stock.
      */
     private navTarget(): NavTarget | null {
+        const recovery = this.recoveryNav();
+        if (recovery) return recovery;
+
         const designated = this.tracker.designated();
         if (designated) {
             const p = designated.target.position;
@@ -1162,6 +1194,82 @@ export class GameLoop {
                 ? Math.max(nav.altitudeAgl, followed.altitudeAgl)
                 : followed.altitudeAgl
         };
+    }
+
+    /**
+     * The recovery assist's nav target, or null when it is not flying.
+     *
+     * It outranks a designation: asking to be taken home is unambiguous, and
+     * a pilot who wants to go back to fighting turns it off. It stops of its
+     * own accord at short final - `HANDOVER` returns null, so the ordinary
+     * assists have the aeroplane again with the deck in the windscreen.
+     */
+    private recoveryNav(): NavTarget | null {
+        this.approachPhase = null;
+        if (!this.approachAssist) return null;
+        if (this.assistLevel !== 'AUTO') return null;
+        if (this.deck.aircraftState !== 'AIRBORNE') return null;
+
+        const guidance = approachGuidance(this.physics.position, {
+            bank: this.physics.roll,
+            lateralSpeed: this.physics.velocity.x
+        });
+        this.approachPhase = guidance.phase;
+        // The assist flies the APPROACH, not the transit and not the landing.
+        // JOIN is a cue, not a hand-over: see `ApproachGuidance`.
+        if (guidance.phase !== 'FINAL') return null;
+
+        // The recovery owns the altitude; the terrain follower's 200 m floor
+        // would be a permanent go-around over a deck twenty metres up.
+        this.terrainFollowClimbing = false;
+
+        // Boards out. The only drag device this airframe has is the weapons
+        // bay, and without it an idle descent on the glideslope stabilises
+        // far too fast for the wires - see APPROACH_TUNING.boardsOutAbove.
+        this.physics.bayOpen =
+            this.physics.airSpeed > APPROACH_TUNING.approachSpeed + APPROACH_TUNING.boardsOutAbove;
+
+        const p = this.physics.position;
+        const ground = this.terrain.getElevation(p.x, p.z);
+        // The guidance works in altitude above the water; the autopilot flies
+        // above the ground below, which over the sea is the same datum and
+        // near a coast is not.
+        const altitudeAgl = Math.max(0, guidance.altitudeMsl - ground);
+
+        return {
+            /**
+             * The CURRENT heading, deliberately - not the guidance's course.
+             *
+             * The assist holds the ball and the speed; lineup is the player's,
+             * and an autopilot quietly steering underneath them would fight
+             * every correction they made. With no heading error the autopilot
+             * levels the wings when the stick is centred and gets out of the
+             * way the moment it is not, which is exactly the division of
+             * labour this is meant to be.
+             */
+            bearing: this.physics.yaw,
+            altitudeAgl,
+            airSpeed: guidance.airSpeed,
+            maxBank: guidance.maxBank,
+            overridesApproach: true
+        };
+    }
+
+    /** Toggle the recovery assist, and remember the choice. */
+    public toggleApproachAssist(): boolean {
+        this.approachAssist = !this.approachAssist;
+        saveApproachAssist(this.approachAssist);
+        if (this.approachAssist && this.assistLevel !== 'AUTO') {
+            // Asking to be taken home and not being taken home is the kind of
+            // dead key a player never presses twice.
+            this.assistLevel = 'AUTO';
+            saveAssistLevel(this.assistLevel);
+        }
+        this.callouts.push(
+            this.approachAssist ? 'RECOVERY — TAKING YOU HOME' : 'RECOVERY — OFF',
+            'MODE'
+        );
+        return this.approachAssist;
     }
 
     /** Toggle terrain following, and remember the choice. */
@@ -1848,7 +1956,8 @@ export class GameLoop {
             ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
-            fireArmed: this.deck.aircraftState === 'AIRBORNE'
+            fireArmed: this.deck.aircraftState === 'AIRBORNE',
+            recoveryOn: this.approachAssist
         });
     }
 
@@ -1958,7 +2067,11 @@ export class GameLoop {
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
                 motion: this.motion,
                 visibleContacts: this.visibility,
-                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO'
+                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO',
+                recovery: this.approachPhase === null ? null : {
+                    text: approachCaption(approachGuidance(this.physics.position)),
+                    handover: this.approachPhase === 'HANDOVER'
+                }
             }
         );
     }
