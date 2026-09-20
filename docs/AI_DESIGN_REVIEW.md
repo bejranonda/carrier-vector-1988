@@ -2,10 +2,11 @@
 
 > **Note:** This review evaluates the current state of *Carrier Vector: 1988*. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
 >
-> 📁 **Detailed Review Suite:** For the full multi-document review collection, see [`docs/reviews/`](reviews/README.md), containing:
-> - [`COMPREHENSIVE_GAME_REVIEW.md`](reviews/COMPREHENSIVE_GAME_REVIEW.md) (Multi-dimensional critique & category scores)
-> - [`RECOMMENDATIONS_AND_ROADMAP.md`](reviews/RECOMMENDATIONS_AND_ROADMAP.md) (Onboarding, visual juice & Rogue-lite campaign blueprint)
-> - [`FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`](reviews/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) (Frank feedback & copy-paste AI master prompts)
+> 📁 **Detailed Review Suite:** For the systematic review collection and version archive, see [`docs/reviews/`](reviews/README.md), containing:
+> - [`v1.3.0 Comprehensive Review`](reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) (Multi-dimensional critique & category scores)
+> - [`v1.3.0 Recommendations & Roadmap`](reviews/v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md) (Onboarding, visual juice & Rogue-lite campaign blueprint)
+> - [`v1.3.0 Frank Suggestions & AI Prompts`](reviews/v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) (Frank feedback & copy-paste AI master prompts)
+> - [`Review Template for Future Versions`](reviews/REVIEW_TEMPLATE.md) (Standardized evaluation protocol for upcoming releases)
 
 ## 1. Current State Critique & Scoring
 
