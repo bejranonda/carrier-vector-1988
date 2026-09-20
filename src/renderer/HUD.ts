@@ -184,6 +184,12 @@ const OBJECTIVE_SIDE_RESERVE = 150;
  */
 const ASSIST_BAND_HALF_W = 210;
 
+/**
+ * Width kept clear on each side of the objective strip in touch mode: the two
+ * top-corner buttons (menu, and the recovery assist) plus their edge gaps.
+ */
+const TOUCH_TOP_RIGHT_RESERVE = 104;
+
 /** Vertical anchors, so no two overlays can be given the same band. */
 const BAND = {
     objective: 18,
@@ -402,9 +408,12 @@ export class HUD {
         // under the chip on anything narrower than about 1000px.
         //
         // In touch mode the chip is not there - the score rides in the systems
-        // line - so the strip gets that width back, which is what lets a phone
-        // read the whole objective instead of "descend...".
-        const sideReserve = touchMode ? 52 : OBJECTIVE_SIDE_RESERVE;
+        // line - so the strip gets most of that width back, which is what lets
+        // a phone read the whole objective instead of "descend...". It cannot
+        // have all of it: the menu and the recovery button live in that corner,
+        // and 52 px covered one of them. Adding the second put the strip
+        // straight under RCVY on the smallest handset.
+        const sideReserve = touchMode ? TOUCH_TOP_RIGHT_RESERVE : OBJECTIVE_SIDE_RESERVE;
         const w = Math.min(
             this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
