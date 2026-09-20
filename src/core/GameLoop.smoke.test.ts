@@ -1329,9 +1329,12 @@ describe('GameLoop integration smoke test', () => {
         game.assistLevel = 'AUTO';
 
         // A contact well off to the right: the autopilot has to turn for it.
+        // High, deliberately: designation now needs line of sight, and at 900 m
+        // a contact 9 km abeam is behind the ridge line, so the intercept test
+        // would be measuring terrain masking instead of the autopilot.
         game.airborneTargets = [{
             id: 'BANDIT', name: 'MiG-23 FLOGGER', isAlive: true,
-            position: { x: 9000, y: 900, z: game.physics.position.z + 2000 },
+            position: { x: 9000, y: 5000, z: game.physics.position.z + 2000 },
             velocity: { x: 0, y: 0, z: 0 }
         }];
         game.sensors.samSites = [];

@@ -5,6 +5,29 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-09-20
+
+### Changed
+
+- **Terrain masking now cuts both ways.** Target designation used to rank every
+  live contact, launcher and strike target within 20 km whatever stood in
+  between, so you could designate a SAM through a mountain and cycling the
+  scope was free reconnaissance. `tactics/Visibility.ts` gates the candidate
+  list on what the pilot can actually see, by class: a **structure** is always
+  available (it is on the briefing card), an **aircraft** needs live line of
+  sight (it moves, so a remembered position is a lie), and a **launcher** needs
+  line of sight *or* to have been discovered already — seen once, or having
+  painted you, since it does not move. Masking a ridge now hides the launchers
+  from you as well as you from them, which makes climbing a real decision.
+- Contact brackets and range tags follow the same rule, so the HUD no longer
+  draws a bracket on something behind a hill.
+
+### Performance
+
+- Line of sight is a ray march, so it is re-evaluated at most every 120 ms and
+  cached in between — except for a contact never yet evaluated, which resolves
+  on the tick it appears, so a newly spawned package is designatable at once.
+
 ## [1.1.1] — 2026-09-20
 
 ### Fixed

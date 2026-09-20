@@ -263,6 +263,16 @@ Rules:
 - **A designation outlives its frame, not its target.** The lock is stored as an
   id and re-solved every tick, so a contact that dies drops the lock rather than
   leaving the HUD bracketing wreckage or, worse, a recycled id.
+- **A mechanic has to cut both ways or it is not a mechanic.** Terrain masking
+  hid the player from the SAM belt and hid nothing from the player, which made
+  the designate key free reconnaissance and quietly cheapened the thing the game
+  is about. Before adding to a system, check whether its existing rule is being
+  applied symmetrically.
+- **An optimisation may only serve an answer it has.** Line of sight is
+  throttled to a few times a second because it is a ray march, but a contact the
+  cache has never seen must be resolved on the spot: a cache that returns "not
+  visible" for something it never looked at is not a cache, it is a wrong
+  answer with a timer on it.
 - **A hardened target is not killed by a near miss.** That single number
   (`hitRadius`) is what makes a bombing run a skill, so any cue that helps aim
   it — the CCIP cross, the designator diamond — must be computed from the same

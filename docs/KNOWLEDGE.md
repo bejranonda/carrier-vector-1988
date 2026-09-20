@@ -186,6 +186,9 @@ Ray-marched from radar to aircraft in 40 m steps; occluded if the ray dips below
 the interpolated terrain elevation at any sample. Occlusion sets
 `STATUS: TERRAIN MASKED`, forces RWR to `SILENT`, and **kills any missile in flight**.
 
+The same function runs the other way, from the aircraft to each contact, to
+decide what the player's own scope may offer — see §7e.
+
 ### Missile proximity fuze (swept sphere)
 
 Closest point on the travel segment `A → B` to aircraft `P`:
@@ -469,6 +472,37 @@ broken by id so the cycle order is stable frame to frame.
 `pursuitNav()` turns a solution into an autopilot `NavTarget`: co-altitude for an
 air intercept (floored at 260 m AGL, bank limit 1.15), 520 m AGL at 250 m/s with
 a 0.8 bank limit for a ground attack run.
+
+### What the scope is allowed to offer
+
+`tactics/Visibility.ts` filters the candidate list before it is ranked. The rule
+is per class, not uniform, because a uniform line-of-sight test would be wrong
+in two directions at once:
+
+| Class | Designatable when | Rationale |
+| --- | --- | --- |
+| `STRUCTURE` | always | briefed before the sortie; you know where the pen is |
+| `AIR` | live line of sight | it moves, so a remembered position is stale in seconds |
+| `SAM` | line of sight **or** discovered | it does not move; seeing it once, or being painted by it, is enough |
+
+`VisibilityTracker` owns two sets: `visible`, rebuilt on each refresh, and
+`discovered`, sticky for the sortie. A site enters `discovered` by being seen
+with line of sight, or by appearing in `sensors.activeThreats` un-masked —
+radiating at you tells you exactly where it is.
+
+Line of sight is `SensorTacticsManager.checkLOS()` from the aircraft to the
+contact: the same ray march the SAMs use against the player, which is what makes
+masking symmetric. It is re-evaluated at most every `refreshSeconds` (0.12) and
+cached in between — a 7 km look is ~175 terrain samples, and ten candidates every
+frame at 60 Hz would be a hundred thousand lookups a second for an answer that
+cannot change in 16 ms. The one exception: a contact the tracker has **never**
+evaluated is resolved on the tick it appears, because the throttle may only serve
+an answer it actually has. Without that, a package spawning mid-window stayed
+undesignatable for up to 120 ms, long enough for the key to feel broken.
+
+Measured in Chromium on BJORNFJORD: at 100 m AGL one of three launchers is
+designatable; at 5 km, all three. Climbing buys you the picture and costs you
+your own masking.
 
 ## 7f. Operational tempo
 

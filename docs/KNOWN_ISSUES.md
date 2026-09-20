@@ -214,19 +214,30 @@ low-level run is the mission's skill, and it should not be automatable), but it
 is a limitation rather than a decision, and a terrain-following mode would be
 the honest fix.
 
-## 20. Designation ignores detection and line of sight
+## 20. The Sidewinder's fallback seeker ignores line of sight
 
-`TargetTracker` ranks every live contact, surviving SAM site and intact strike
-target within 20 km, regardless of whether the player could actually see or
-detect it. There is no sensor model between the scope and the world.
+Designation itself is now gated. `src/tactics/Visibility.ts` filters the
+candidate list `TargetTracker` ranks, by contact class:
 
-**Consequence:** you can designate a launcher through a mountain, and cycling
-the scope tells you where everything is. The Sidewinder still refuses a shot
-outside its seeker envelope and the gun still needs a tracking solution, so
-this leaks information rather than kills — but it does mean the designation key
-doubles as a free reconnaissance tool. Gating candidates on
-`SensorTacticsManager.checkLOS()` plus a detection range is the fix, and would
-also make terrain masking cut both ways.
+| Class | Rule | Why |
+| --- | --- | --- |
+| Structure | always designatable | it is on the briefing card |
+| Aircraft | live line of sight | it moves, so a remembered position is a lie |
+| Launcher | line of sight **or** previously discovered | it does not move, and painting you gives it away |
+
+Line of sight is `SensorTacticsManager.checkLOS()`, re-marched at most every
+120 ms — with the exception that a contact the tracker has never evaluated is
+resolved on the tick it appears, so a newly spawned package is designatable
+immediately.
+
+**What is left:** `Weapons.fireSidewinder()` falls back to "closest live
+contact inside the seeker cone" when *nothing* is designated, and that fallback
+does not check line of sight. **Consequence:** with no designation you can put
+a missile onto a contact behind a ridge if it happens to be within 8 km and 30°
+of the nose. The missile then usually flies into the hill, so this costs you a
+round rather than gaining you a kill, and every path the player actually uses —
+the scope, the brackets, the lead pipper — is gated. Threading the visibility
+predicate into the weapons world is the remaining fix.
 
 
 ## 21. The daily sortie is local-only **[By design]**

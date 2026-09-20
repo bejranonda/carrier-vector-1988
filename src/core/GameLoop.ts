@@ -61,6 +61,7 @@ import {
 } from '../flight/FlightAssist';
 import type { AssistLevel, ControlDemand, FlightState, NavTarget } from '../flight/FlightAssist';
 import { TargetTracker, pursuitNav } from '../tactics/TargetDesignation';
+import { VisibilityTracker } from '../tactics/Visibility';
 import type { DesignatableTarget, TargetSolution } from '../tactics/TargetDesignation';
 import { DEFAULT_MAP } from '../tactics/TerrainProfiles';
 import { loadBestScore, recordBestScore } from './HighScore';
@@ -230,6 +231,13 @@ export class GameLoop {
      * on, and where the autopilot flies.
      */
     public tracker = new TargetTracker();
+
+    /**
+     * What the pilot can actually see. Designation used to rank every contact
+     * within twenty kilometres regardless of terrain, which made the scope a
+     * free reconnaissance tool and let masking cut only one way.
+     */
+    public visibility = new VisibilityTracker();
 
     /**
      * Cockpit shake and the full-screen hit flash. Both are presentation only:
@@ -434,6 +442,7 @@ export class GameLoop {
         this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
 
         this.callouts.clear();
+        this.visibility.reset();
         this.samMissileActive.clear();
         this.lastCautionDamage = 0;
         this.sortieKills = 0;
@@ -1105,9 +1114,21 @@ export class GameLoop {
             candidates.push({ id: st.id, kind: 'STRUCTURE', name: st.name, position: st.position });
         }
 
+        // A launcher that is painting you has told you exactly where it is,
+        // whether or not you can see it.
+        for (const threat of this.sensors.activeThreats) {
+            if (!threat.isTerrainMasked) this.visibility.markDiscovered(threat.id);
+        }
+
+        this.visibility.update(
+            this.elapsedSeconds,
+            candidates,
+            (position) => this.sensors.checkLOS(this.physics.position, position)
+        );
+
         this.tracker.refresh(
             { position: this.physics.position, forward: this.physics.forwardVector },
-            candidates
+            candidates.filter(c => this.visibility.isVisible(c.id))
         );
     }
 
@@ -1853,7 +1874,8 @@ export class GameLoop {
                 trapStamp: this.trapGrade,
                 touchMode: this.controlScheme === 'TOUCH',
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
-                motion: this.motion
+                motion: this.motion,
+                visibleContacts: this.visibility
             }
         );
     }

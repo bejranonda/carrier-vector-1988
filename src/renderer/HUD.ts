@@ -120,6 +120,11 @@ export interface HudContext {
      * old 4.5 Hz one.
      */
     motion?: MotionSettings;
+    /**
+     * What the pilot can see. A bracket on a contact behind a mountain is the
+     * same information leak as being able to designate it.
+     */
+    visibleContacts?: { isVisible(id: string): boolean };
 }
 
 /**
@@ -204,7 +209,7 @@ export class HUD {
         this.drawPitchLadder(ctx, physics, renderer, layout);
         this.drawFlightPathMarker(ctx, physics, renderer);
         this.drawWaterline(ctx, layout.cx, layout.cy);
-        this.drawCombatReticles(ctx, physics, targets, renderer, layout);
+        this.drawCombatReticles(ctx, physics, targets, renderer, layout, context.visibleContacts);
         this.drawStrikeTargets(ctx, physics, context.strikeTargets ?? [], renderer);
         if (context.designated) this.drawDesignation(ctx, physics, context.designated, renderer, layout);
         if (context.bombImpactPoint) {
@@ -1347,9 +1352,11 @@ export class HUD {
         physics: AircraftPhysics,
         targets: AirborneTarget[],
         renderer: VectorRenderer,
-        layout: HudLayout
+        layout: HudLayout,
+        visible?: { isVisible(id: string): boolean }
     ) {
         const bulletSpeed = 1050; // m/s for 20mm Vulcan M61A1
+        const canSee = (target: AirborneTarget) => !visible || visible.isVisible(target.id);
 
         ctx.save();
         noGlow(ctx);
@@ -1366,7 +1373,7 @@ export class HUD {
         ctx.font = font(10, 600);
         const candidates: LabelCandidate[] = [];
         for (const target of targets) {
-            if (!target.isAlive) continue;
+            if (!target.isAlive || !canSee(target)) continue;
             const dist = Math.hypot(
                 target.position.x - physics.position.x,
                 target.position.y - physics.position.y,
@@ -1404,7 +1411,7 @@ export class HUD {
         }
 
         for (const target of targets) {
-            if (!target.isAlive) continue;
+            if (!target.isAlive || !canSee(target)) continue;
 
             const dx = target.position.x - physics.position.x;
             const dy = target.position.y - physics.position.y;
