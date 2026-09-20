@@ -296,3 +296,15 @@ tablet mode, an unusual browser, a desktop with a touch monitor.
 `K` cycles `AUTO` / `TOUCH` / `KEYBOARD` and the choice is stored, which is the
 mitigation rather than a cure; there is no on-screen affordance for it in touch
 mode, only in the control reference.
+
+
+## 27. Contact range tags are dropped when they cannot be placed
+
+`LabelDeclutter` tries four seats around each bracket and gives up rather than
+stacking tags or covering an instrument. In a dense merge, the further contacts
+lose their range readout.
+
+**Consequence:** the bracket and the lead pipper are always drawn, so no
+contact disappears, but you may have to designate one (`T`, or tap it) to read
+its range. That is the intended trade: a readable tag on the nearest threat
+beats four unreadable ones.

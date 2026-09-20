@@ -817,6 +817,24 @@ describe('GameLoop integration smoke test', () => {
         expect(game.dailyCard).toBeNull();
     });
 
+    /**
+     * A sortie begun at 23:59 belongs to the day it was flown on, not to
+     * whatever the clock says when the carrier finally goes down. Reading the
+     * date twice filed it against a seed it was never flown on.
+     */
+    it('files the run under the day it started, not the day it ended', () => {
+        const day = new Date('2026-05-04T23:59:30Z');
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.startDailySortie(day);
+
+        game.deck.inventory.carrierHealth = 0;
+        runFrames(game, 30);
+
+        expect(game.todaysDaily(day)).not.toBeNull();
+        expect(game.todaysDaily(new Date('2026-05-05T00:01:00Z'))).toBeNull();
+    });
+
     it('does not fall over when the clipboard is unavailable', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);

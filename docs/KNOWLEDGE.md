@@ -597,6 +597,30 @@ its 24 px hard floor on a 568 px phone.
 | Briefing phase cards, loss line | touch or height < 430 | The mission list and the button are what you press |
 | Deck panels beyond orders and turnaround | always in touch | Crew stamina and the deck plan do not fit beside a button big enough to press |
 
+## 7j. HUD label declutter
+
+`renderer/LabelDeclutter.ts`. Contact range tags are placed before any is
+drawn, greedily, nearest first:
+
+```
+for each candidate, in ascending range:
+    try RIGHT, LEFT, ABOVE, BELOW of the bracket
+    reject a seat that leaves the viewport, collides with an
+      already-placed tag (+4 px), or covers an instrument
+    place in the first seat that survives, else drop the tag
+```
+
+The brackets are always drawn — a contact never disappears — but a tag has to
+earn its place. Three MiG-23s in a loose trail used to print three tags inside
+forty pixels of each other and across the altitude block, which is strictly
+worse than none: no tag is readable and the instrument behind them is gone.
+
+The instrument rectangles come from the same `HudLayout` the instruments are
+drawn from, so the keepouts cannot drift from what is on screen. Left and right
+alone were not enough: in a head-on merge on a phone the contacts cluster
+around the boresight with both sides blocked by the systems line, and every tag
+was dropped.
+
 ## 8. Scoring
 
 | Event | Points |

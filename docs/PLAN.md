@@ -314,3 +314,62 @@ needed a way in rather than a rewrite. Touch input produces the same
   0.000 -> 0.535 from a thumb drag), throttle track, weapon pills, fire, and
   tap-to-designate end to end, with no console errors
 - Portrait orientation shows the rotate prompt and swallows input
+
+---
+
+## 11. Follow-up Pass — Field of View, Label Declutter & v1.1.0
+
+**Status:** Complete
+**Trigger:** "review and improve what's showing on the screen... In sampling,
+No landscape visible in mobile, please check? Because the Landscape is the
+attractive part in the game?"
+**Result:** 595 tests across 33 suites, released as **v1.1.0**
+
+### The reported bug, and its cause
+
+The landscape really was invisible on a phone, and the cause was one line that
+had been wrong since the first build: `VectorRenderer.fov` was a fixed 380 px
+focal length that `resize()` never touched.
+
+| Viewport | Focal length | Vertical FOV |
+| --- | --- | --- |
+| 1440x900 desktop | 380 | ~100° |
+| 568x320 phone | 380 | **~46°** |
+
+A handset was looking down a telephoto lens. With the nose up, the ground was
+entirely out of frame and the cockpit rendered as black. The angle is now the
+constant (`atan(400 / 380)`, the value an 800 px window produced) and the focal
+length is derived from the viewport, so every screen sees the same vertical
+slice and a wider screen sees more to the sides.
+
+### The UX review that followed
+
+Screenshots of a busy intercept showed the second defect immediately: three
+contacts in a loose trail printed three range tags inside forty pixels of each
+other and across the altitude block. `renderer/LabelDeclutter.ts` now places
+tags greedily, nearest first, trying four seats around each bracket and
+dropping a tag rather than stacking it or covering an instrument.
+
+Left and right alone were not enough — on a phone a head-on merge clusters the
+contacts around the boresight where both sides are blocked, and every tag was
+dropped. Above and below were added, and the phone got its range readouts back.
+
+Also fixed: the objective strip reclaims the score chip's reserve in touch mode
+(the chip lives in the systems line there), so a phone reads the whole
+objective instead of "descend...".
+
+### A bug the calendar found
+
+The date rolled over mid-session and two daily-sortie tests failed. The cause
+was real: `recordDailyRun()` read the clock again at the end of a run, so a
+sortie begun at 23:59 was filed under the following day, against a seed it was
+never flown on. The day is now fixed when the run starts.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (595), `npm run build`
+- Measured in Chromium after the fix: 93° vertical FOV on every device —
+  iPhone SE (568x320), iPhone 12 (750x340), iPad Mini (1024x768) — where the
+  phones previously had 46°
+- Screenshots at 1440x900, 1024x700, and all three handsets: landscape visible,
+  no label collisions, no instrument overdraw

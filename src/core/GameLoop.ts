@@ -280,6 +280,13 @@ export class GameLoop {
     public dailyCard: string | null = null;
     /** Set briefly after a successful copy, for the confirmation line. */
     public dailyCopied = false;
+    /**
+     * Which day the run in progress belongs to, fixed when it started.
+     *
+     * Reading the clock again at the end would file a sortie begun at 23:59
+     * under the following day - against a seed it was never flown on.
+     */
+    private dailyRunDate: string | null = null;
 
     /**
      * Rolling average frame time, used to back the bloom pass off on hardware
@@ -1106,6 +1113,7 @@ export class GameLoop {
     public startDailySortie(now: Date = new Date()) {
         this.selectScenarioById('CARRIER_DEFENSE');
         this.isDailyRun = true;
+        this.dailyRunDate = dailyKey(now);
         this.dailyCard = null;
         this.dailyCopied = false;
         this.pacing = 'ARCADE';
@@ -1139,10 +1147,10 @@ export class GameLoop {
     }
 
     /** Fold a finished daily run into the stored record and build its card. */
-    private recordDailyRun(now: Date = new Date()) {
+    private recordDailyRun() {
         const b = this.score.breakdown;
         const merged = mergeDailyResult(this.dailyResults, {
-            date: dailyKey(now),
+            date: this.dailyRunDate ?? dailyKey(),
             score: this.score.totalScore,
             rank: this.score.rank,
             wave: this.deck.waveNumber,
@@ -1895,6 +1903,7 @@ export class GameLoop {
         this.isMissionBest = false;
         this.isDailyRun = false;
         this.dailyCopied = false;
+        this.dailyRunDate = null;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'BRIEFING';
