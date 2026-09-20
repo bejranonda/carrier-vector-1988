@@ -207,6 +207,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Chaff ---
+        if (key === 'x') {
+            e.preventDefault();
+            game.releaseChaff();
+            return;
+        }
+
         // --- Weapons bay ---
         if (key === 'b') {
             e.preventDefault();

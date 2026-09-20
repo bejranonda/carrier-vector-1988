@@ -565,6 +565,51 @@ export class SoundFX {
     }
 
     /**
+     * The chaff dispenser. A dry mechanical thump and a short hiss of foil
+     * blooming behind the aeroplane - deliberately mechanical rather than
+     * explosive, so a player never confuses spending a cartridge with being
+     * hit by something.
+     */
+    public playCountermeasure(place?: SoundPlacement) {
+        const out = this.route(this.busWeapons, place);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+
+        // The cartridge leaving the tube.
+        const thump = this.ctx.createOscillator();
+        thump.type = 'square';
+        thump.frequency.setValueAtTime(220, now);
+        thump.frequency.exponentialRampToValueAtTime(70, now + 0.05);
+        const thumpGain = this.ctx.createGain();
+        thumpGain.gain.setValueAtTime(0.18, now);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        thump.connect(thumpGain);
+        thumpGain.connect(out);
+        thump.start(now);
+        thump.stop(now + 0.07);
+
+        // The cloud blooming: filtered noise, tuned high so it reads as foil
+        // rather than as an explosion.
+        const noise = this.ctx.createOscillator();
+        noise.type = 'sawtooth';
+        noise.frequency.setValueAtTime(1400, now);
+        noise.frequency.exponentialRampToValueAtTime(320, now + 0.32);
+        const band = this.ctx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.frequency.setValueAtTime(2200, now);
+        band.Q.value = 0.7;
+        const hiss = this.ctx.createGain();
+        hiss.gain.setValueAtTime(0.0001, now);
+        hiss.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
+        hiss.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
+        noise.connect(band);
+        band.connect(hiss);
+        hiss.connect(out);
+        noise.start(now);
+        noise.stop(now + 0.36);
+    }
+
+    /**
      * A round connecting. Deliberately tiny and dry - it fires up to twenty
      * times a second, so anything with a tail turns a burst into mush.
      */

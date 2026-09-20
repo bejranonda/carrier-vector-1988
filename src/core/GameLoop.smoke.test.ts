@@ -1769,4 +1769,51 @@ describe('GameLoop integration smoke test', () => {
         expect(game.timeRewind.rewindsRemaining).toBe(initialUses - 1);
         expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
     });
+
+    it('releases chaff, spends a cartridge and breaks a tracking SAM lock', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        const before = game.physics.loadout.chaff;
+        expect(before).toBeGreaterThan(0);
+
+        // Fly at a SAM site until it is actually tracking or engaging, so
+        // the "lock broken" path (not just "cartridge spent") is exercised.
+        const sam = game.sensors.samSites[0];
+        if (sam) {
+            game.physics.position = { x: sam.position.x + 800, y: sam.position.y + 700, z: sam.position.z };
+            game.physics.velocity = { x: 0, y: 0, z: 220 };
+        }
+        runFrames(game, 5);
+
+        const released = game.releaseChaff();
+        expect(released).toBe(true);
+        expect(game.physics.loadout.chaff).toBe(before - 1);
+        expect(game.callouts.active().some(c => c.text.includes('CHAFF'))).toBe(true);
+
+        // Immediately empty dispenser: the reload timer blocks another shot.
+        const secondImmediate = game.releaseChaff();
+        expect(secondImmediate).toBe(false);
+        expect(game.physics.loadout.chaff).toBe(before - 1);
+    });
+
+    it('runs the chaff dispenser dry and keeps it dry', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        game.physics.loadout.chaff = 1;
+        // beginSortie already ran during hotStartAirborne, but it seeds the
+        // dispenser from the loadout snapshot at that time - reflect the
+        // override into a fresh sortie state the same way a scenario would.
+        game.beginSortie(game.physics.fuel, game.physics.loadout);
+
+        expect(game.releaseChaff()).toBe(true);
+        runFrames(game, 200); // well past the reload timer
+        expect(game.releaseChaff()).toBe(false);
+        expect(game.physics.loadout.chaff).toBe(0);
+    });
 });

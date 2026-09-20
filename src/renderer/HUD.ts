@@ -268,7 +268,7 @@ export class HUD {
         this.drawSpeedBlock(ctx, physics, layout);
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
         this.touchScore = layout.touchMode ? context.score : undefined;
-        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context);
+        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
         if (layout.showRwr) this.drawRWR(ctx, sensors, layout);
         if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
         const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
@@ -635,14 +635,15 @@ export class HUD {
         physics: AircraftPhysics,
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
         layout: HudLayout,
-        context: HudContext
+        context: HudContext,
+        sensors: SensorTacticsManager
     ) {
         if (layout.touchMode) {
             this.drawTouchSystemsLine(ctx, physics, layout, this.touchScore);
             return;
         }
         if (this.hudDensity === 'ARCADE') {
-            this.drawArcadeBottomBar(ctx, physics, selectedWeapon, context);
+            this.drawArcadeBottomBar(ctx, physics, selectedWeapon, context, sensors);
             return;
         }
         if (layout.compactSystems) {
@@ -814,7 +815,8 @@ export class HUD {
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
-        context: HudContext
+        context: HudContext,
+        sensors: SensorTacticsManager
     ) {
         ctx.save();
         noGlow(ctx);
@@ -832,7 +834,7 @@ export class HUD {
             width: this.width,
             height: this.height,
             weaponCount: 3,
-            showCountermeasure: false,
+            showCountermeasure: true,
             showRewind: true,
             showPadlock: true,
             statusTextWidth
@@ -859,6 +861,28 @@ export class HUD {
             ctx.fillStyle = selected ? THEME.ink : THEME.muted;
             ctx.textAlign = 'center';
             ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+            noGlow(ctx);
+        }
+
+        // 1b. Chaff. Not a weapon - it is the answer to one - so it sits
+        // apart from the weapon row and turns amber the moment a seeker is
+        // actually looking, which is the only moment it matters.
+        const cmRect = slot('COUNTERMEASURE');
+        if (cmRect) {
+            const chaff = physics.loadout.chaff;
+            const threatened = sensors.masterRwrState === 'LAUNCH';
+            const dry = chaff <= 0;
+            const accent = dry ? THEME.alert : threatened ? THEME.caution : THEME.muted;
+            plate(ctx, cmRect, {
+                fill: threatened && !dry ? 'rgba(255,176,32,0.18)' : 'rgba(9,19,25,0.7)',
+                border: threatened ? accent : THEME.edgeSoft,
+                radius: 4
+            });
+            if (threatened && !dry) glow(ctx, THEME.caution, 6);
+            ctx.font = font(11, 700);
+            ctx.fillStyle = accent;
+            ctx.textAlign = 'center';
+            ctx.fillText(`X CHAFF ${chaff}`, cmRect.x + cmRect.w / 2, cmRect.y + cmRect.h / 2);
             noGlow(ctx);
         }
 

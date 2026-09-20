@@ -19,6 +19,8 @@ import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 import { DeckManager } from '../carrier/DeckManager';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
+import { createCountermeasureState, tickCountermeasures, dispense, decoyExpiry } from '../flight/Countermeasures';
+import type { CountermeasureState } from '../flight/Countermeasures';
 import { VectorDebrisSystem } from '../renderer/VectorDebris';
 import { CockpitVoiceSystem } from '../audio/CockpitVoiceSystem';
 import { PadlockCamera } from '../renderer/PadlockCamera';
@@ -362,6 +364,8 @@ export class GameLoop {
     private hitMarker = 0;
     /** Last-seen missileActive per SAM, for launch-edge detection. */
     private samMissileActive = new Map<string, boolean>();
+    /** Chaff dispenser: reload timer. Cartridge count itself lives on the loadout. */
+    private countermeasures: CountermeasureState = createCountermeasureState();
     /** Damage at the last master-caution, so it fires per event not per frame. */
     private lastCautionDamage = 0;
 
@@ -765,6 +769,7 @@ export class GameLoop {
         this.physics.fuel = fuel;
         this.physics.loadout = { ...loadout };
         this.selectedWeapon = 'GUN';
+        this.countermeasures = createCountermeasureState(loadout.chaff);
     }
 
     /** Seed the end-of-catapult-stroke flight state. */
@@ -1441,6 +1446,45 @@ export class GameLoop {
     }
 
     /**
+     * Release a chaff cartridge.
+     *
+     * Always breaks every SAM currently tracking or engaging the aeroplane -
+     * see flight/Countermeasures.ts for why that is deliberate rather than a
+     * missed nuance. Decoys every threatening site rather than only the one
+     * that has actually fired, because from the cockpit there is no way to
+     * tell which site is about to pull the trigger, and a player should never
+     * have to guess which of several red contacts their one countermeasure
+     * key affects.
+     */
+    public releaseChaff(): boolean {
+        if (this.currentView !== 'MICRO_FLIGHT') return false;
+        if (!dispense(this.countermeasures)) {
+            soundFX.playRelayClick();
+            return false;
+        }
+        this.physics.loadout.chaff = this.countermeasures.remaining;
+
+        const until = decoyExpiry(this.sensors.missionSeconds);
+        let decoyedAny = false;
+        for (const sam of this.sensors.samSites) {
+            const threat = this.sensors.activeThreats.find(t => t.id === sam.id);
+            if (threat && (threat.state === 'LAUNCH' || threat.state === 'TRACK')) {
+                sam.decoyedUntil = Math.max(sam.decoyedUntil, until);
+                decoyedAny = true;
+            }
+        }
+
+        soundFX.playCountermeasure(this.placeAt(this.physics.position));
+        this.callouts.push(
+            decoyedAny ? 'CHAFF — LOCK BROKEN' : 'CHAFF',
+            decoyedAny ? 'PRAISE' : 'MODE',
+            `${this.countermeasures.remaining} REMAINING`
+        );
+        this.deck.log(`CHAFF RELEASED. ${this.countermeasures.remaining} REMAINING.`);
+        return true;
+    }
+
+    /**
      * Toggle pitch inversion. Real-aviation stick: pulling UP arrow / W makes
      * the nose go DOWN (climb). False = Direct: Up arrow makes nose go UP.
      * Persisted across sessions so the player never has to set it again.
@@ -1830,6 +1874,9 @@ export class GameLoop {
             isAirborne: true,
             rwrState: this.sensors.masterRwrState
         });
+
+        // Countermeasure dispenser recycle.
+        tickCountermeasures(this.countermeasures, dt);
 
         // Sensors, RWR and SAM engagements
         this.sensors.update(dt, this.physics);
