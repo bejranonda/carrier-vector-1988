@@ -371,3 +371,23 @@ be - and closes nothing else.
 RCS penalty that comes with an open bay applies. Three miles behind your own
 boat that does not matter; if a modelled speedbrake is ever added, this should
 move to it.
+
+## 31. Rushing a turnaround, and the deck screen, are keyboard-only **[Resolved, with a caveat]**
+
+`R` pushes the crew currently working the aircraft - the mechanic during
+`HANGAR_MAINTENANCE` / `DAMAGED_REPAIR`, fuel and ordnance during
+`ARMING_REFUELING` - past their ordinary pace: `+20` task progress for `-30`
+stamina from each crew member driving that task, gated on their stamina being
+above a floor rather than on a per-task lockout (see
+`DeckManager.rushTurnaround()`). The hint (`R  RUSH IT`) appears on the deck
+screen only while it would do something, and disappears once the crew is
+spent - the stamina bars in the crew panel say why, so the hint does not have
+to.
+
+**The caveat:** `TouchLayout`'s `DECK` context only ever resolves to `LAUNCH`
+or `WORLD` - there is no touch button for this, and none for the fuel/loadout
+adjustment keys (`1`-`4`) either. That is not new: the deck screen has never
+had full touch parity, it has only ever had "wait, then tap launch." A touch
+player therefore cannot rush a turnaround, and does not lose anything they
+had before - but closing this gap fully means giving the deck screen real
+touch controls, not only this one.

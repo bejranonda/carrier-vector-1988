@@ -51,6 +51,49 @@ export interface CarrierInventory {
 export type MissionState = 'ACTIVE' | 'FAILED';
 
 /**
+ * Pushing the deck crew past their ordinary pace.
+ *
+ * WHY THIS EXISTS
+ * The deck's one real decision was made once, in the four seconds it takes
+ * to set fuel and ordnance, and everything after that was watching a
+ * progress bar with nothing left to choose. This is the second axis: a
+ * choice with a cost, available on every turnaround rather than a special
+ * mode, paid for in the same currency (crew stamina) the rest of the deck
+ * already spends. Getting back in the fight three seconds sooner against a
+ * turnaround that runs slower afterward is a real trade, not a free button.
+ *
+ * Gated on stamina HEADROOM rather than a per-task "already used" flag.
+ * `aircraftState` enters a task-bearing state from half a dozen places
+ * (a clean trap, a battle-damaged trap, a lost airframe with or without a
+ * spare, the arcade fast-respawn path) and a flag would need resetting at
+ * every one of them - miss one and rushing either never works or never stops
+ * working. A crew whose stamina is already at the floor cannot be pushed
+ * further no matter how it got there, which is the same rule stated once
+ * instead of six times.
+ */
+export const RUSH_TUNING = {
+    /** Progress, in percentage points, gained by one rush. */
+    progressBoost: 20,
+    /** Stamina burned from each crew member driving the rushed task. */
+    staminaCost: 30,
+    /**
+     * Stamina a crew must be above to be pushed. Below this they are already
+     * running on fumes from ordinary work, and pushing further would not be
+     * a choice with a cost, it would be a crew injury waiting to be logged.
+     */
+    minStaminaToRush: 20
+} as const;
+
+export type RushRefusal = 'NO_ACTIVE_TASK' | 'CREW_EXHAUSTED';
+
+export interface RushOutcome {
+    applied: boolean;
+    refusal?: RushRefusal;
+    progressGained?: number;
+    staminaCost?: number;
+}
+
+/**
  * How a scenario wants the threat director to behave.
  *
  * The director used to be hardcoded: a fixed three-package opening act, then
@@ -458,6 +501,50 @@ export class DeckManager {
             this.pendingTrapOutcome = 'HANGAR';
             this.log('CLEAN TRAP RECOVERY. TAXIING TO HANGAR ELEVATOR.');
         }
+    }
+
+    /** Which crews a rush would push, for the given deck state. Empty outside a task. */
+    private crewsWorking(state: AircraftDeckState): DeckCrew[] {
+        switch (state) {
+            case 'HANGAR_MAINTENANCE':
+            case 'DAMAGED_REPAIR':
+                return this.crews.filter(c => c.role === 'MECHANIC');
+            case 'ARMING_REFUELING':
+                return this.crews.filter(c => c.role === 'FUEL' || c.role === 'ORDNANCE');
+            default:
+                return [];
+        }
+    }
+
+    /** Read-only: would `rushTurnaround()` do anything right now? For the HUD. */
+    public canRush(): boolean {
+        const crews = this.crewsWorking(this.aircraftState);
+        return crews.length > 0 && crews.every(c => c.stamina > RUSH_TUNING.minStaminaToRush);
+    }
+
+    /**
+     * Push the crew currently working the aircraft past their ordinary pace,
+     * at the cost of the stamina that pace depends on. See the type doc above
+     * for why this exists and why it is gated the way it is.
+     */
+    public rushTurnaround(): RushOutcome {
+        const crews = this.crewsWorking(this.aircraftState);
+        if (crews.length === 0) return { applied: false, refusal: 'NO_ACTIVE_TASK' };
+
+        if (crews.some(c => c.stamina <= RUSH_TUNING.minStaminaToRush)) {
+            return { applied: false, refusal: 'CREW_EXHAUSTED' };
+        }
+
+        for (const crew of crews) {
+            crew.stamina = Math.max(0, crew.stamina - RUSH_TUNING.staminaCost);
+        }
+        this.currentTaskProgress = Math.min(100, this.currentTaskProgress + RUSH_TUNING.progressBoost);
+        this.log('TURNAROUND RUSHED - CREW PUSHING PAST THE SAFE PACE.');
+        return {
+            applied: true,
+            progressGained: RUSH_TUNING.progressBoost,
+            staminaCost: RUSH_TUNING.staminaCost
+        };
     }
 
     /**

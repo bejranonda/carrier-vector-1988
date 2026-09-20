@@ -324,6 +324,12 @@ export class DeckView {
         if (ready && !touchMode) {
             const segs: Segment[] = [{ key: 'ENTER' }, { text: 'CAT SHOT', color: THEME.caution, weight: 600 }];
             drawSegments(ctx, inner.x + 44, barY + 18, segs, 11);
+        } else if (!touchMode && deck.canRush()) {
+            // Hidden rather than greyed out once the crew is spent: an action
+            // that would silently fail is worse advertised than not shown -
+            // the stamina bars in the CREW panel already say why.
+            const segs: Segment[] = [{ key: 'R' }, { text: 'RUSH IT', color: THEME.phosphor, weight: 600 }];
+            drawSegments(ctx, inner.x + 44, barY + 18, segs, 11);
         }
 
         // What is actually hanging on the jet right now, as opposed to the

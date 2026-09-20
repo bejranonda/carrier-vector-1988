@@ -176,21 +176,15 @@ What changed, and the reasoning that is worth keeping:
 
 ## 5. Still open — ranked by what they would buy
 
-1. **The deck loop is mostly waiting.** The macro layer's interesting decision
-   (fuel versus ordnance) is made once, in about four seconds, and the rest is
-   watching a progress bar. It wants a second axis — a choice with a cost, such
-   as a rushed turnaround that risks a crew-fatigue penalty, or holding a jet
-   back as alert-five cover. This is the largest remaining gap between the
-   game's structure and its fun.
-2. **The strike missions have no second act.** Every scenario resolves in one
+1. **The strike missions have no second act.** Every scenario resolves in one
    pass. A mission that changes its mind halfway — a pop-up threat, a target
    that turns out to be defended, a recall — would make the mission director
    earn its structure.
-3. **The story is scenery, not stakes.** The briefing prose is good and the
+2. **The story is scenery, not stakes.** The briefing prose is good and the
    world is coherent, but nothing carries between missions: the campaign has no
    memory beyond a score. Carrying *losses* forward — airframes, stores, hull
    damage — across a run of missions would make each sortie cost something.
-4. **The autopilot cannot fly a route.** It follows terrain now, and it holds a
+3. **The autopilot cannot fly a route.** It follows terrain now, and it holds a
    bearing well, but a large heading change departs the aeroplane (KNOWN_ISSUES
    §19). That is what stops the recovery assist being a "take me home" button,
    and it is the one piece of unfinished engineering the rest of this list keeps
@@ -204,12 +198,16 @@ building first.
 the later addition at the end of §3); the autopilot climbing over terrain
 rather than threading it; landing on a phone being brutal; carrier defence
 being locked to one map; difficulty being fixed per scenario; red and green
-being load-bearing; and nobody being told the colour-blind palette existed —
-the briefing's secondary row now offers it by name, `C  try colour-blind
-palette`, for as long as `Theme.storedPalette()` reports the setting has never
-been touched, and it retires itself the instant it has, even to confirm
-CLASSIC. Seven of eleven, and the four that remain are the four that are
-really design work rather than engineering.
+being load-bearing; nobody being told the colour-blind palette existed — the
+briefing's secondary row now offers it by name, `C  try colour-blind palette`,
+for as long as `Theme.storedPalette()` reports the setting has never been
+touched, and it retires itself the instant it has, even to confirm CLASSIC;
+and the deck loop being mostly waiting — `R` rushes the crew currently working
+the aircraft past their ordinary pace, at a stamina cost that slows the *next*
+turnaround, which is exactly the "choice with a cost" this item asked for and
+was judged the largest remaining gap between the game's structure and its fun.
+Eight of twelve, and the three that remain are the three that are really
+design work rather than engineering.
 
 ---
 

@@ -294,3 +294,22 @@ Rules:
   (`hitRadius`) is what makes a bombing run a skill, so any cue that helps aim
   it — the CCIP cross, the designator diamond — must be computed from the same
   integration the live weapon uses, never an approximation of it.
+- **A working, tested, invisible feature is not a shipped feature.** The
+  colour-blind palette existed for a full release behind a key in the full
+  control reference, with nothing pointing at it. "Never chosen" and "chose
+  the default" have to be distinguishable (`storedX()` beside `loadX()`) or a
+  discoverability hint can neither appear nor ever retire itself.
+- **Match the precedent exactly, not a stricter version of it.** A new hint
+  copied from an existing one (`CAT SHOT`) added an extra bounds check the
+  original never had, "to be safe" — and that check silently killed the new
+  hint on the exact layout where the original renders fine. Copying a working
+  pattern means copying it, not improving it on the way past.
+- **A second axis has to cost the same currency the first one already
+  spends.** The deck's rushed turnaround needed no new subsystem because crew
+  stamina already scaled task speed; the choice was making that resource
+  spendable on purpose instead of only lost to attrition.
+- **Gate on the condition, not on having remembered to reset a flag.** A
+  per-task "already used" lockout needs resetting at every place a new task
+  can begin - miss one and the feature is either always available or never
+  available again. A crew rush is gated on stamina headroom instead, which
+  needs no reset because the condition it checks is never stale.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DeckManager, mulberry32, generateWave } from './DeckManager';
+import { DeckManager, RUSH_TUNING, mulberry32, generateWave } from './DeckManager';
 
 describe('Carrier Deck Logistics Engine', () => {
     let deck: DeckManager;
@@ -245,5 +245,122 @@ describe('DeckManager operational tempo', () => {
         deck.scrambleSpareAirframe(3);
         expect(deck.catapultTimer).toBe(0);
         expect(deck.trapDerigTimer).toBe(0);
+    });
+});
+
+describe('rushing a turnaround', () => {
+    it('does nothing with no task running', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'CATAPULT_READY';
+        const before = deck.currentTaskProgress;
+        const outcome = deck.rushTurnaround();
+        expect(outcome).toEqual({ applied: false, refusal: 'NO_ACTIVE_TASK' });
+        expect(deck.currentTaskProgress).toBe(before);
+    });
+
+    it('is unavailable in the air or on the catapult, where there is no crew to push', () => {
+        const deck = new DeckManager();
+        for (const state of ['AIRBORNE', 'CATAPULT_READY', 'CATAPULT_LAUNCHING', 'RECOVERY_TRAP'] as const) {
+            deck.aircraftState = state;
+            expect(deck.canRush(), state).toBe(false);
+            expect(deck.rushTurnaround().refusal).toBe('NO_ACTIVE_TASK');
+        }
+    });
+
+    it('advances the task and burns the crew stamina working it', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        deck.currentTaskProgress = 10;
+        const fuelCrew = deck.crews.find(c => c.role === 'FUEL')!;
+        const ordCrew = deck.crews.find(c => c.role === 'ORDNANCE')!;
+        const mechCrew = deck.crews.find(c => c.role === 'MECHANIC')!;
+        const fuelBefore = fuelCrew.stamina;
+        const ordBefore = ordCrew.stamina;
+        const mechBefore = mechCrew.stamina;
+
+        const outcome = deck.rushTurnaround();
+
+        expect(outcome.applied).toBe(true);
+        expect(deck.currentTaskProgress).toBe(10 + RUSH_TUNING.progressBoost);
+        expect(fuelCrew.stamina).toBe(fuelBefore - RUSH_TUNING.staminaCost);
+        expect(ordCrew.stamina).toBe(ordBefore - RUSH_TUNING.staminaCost);
+        // Only the crews actually driving THIS task pay for it.
+        expect(mechCrew.stamina).toBe(mechBefore);
+    });
+
+    it('pushes only the mechanic during maintenance and repair', () => {
+        for (const state of ['HANGAR_MAINTENANCE', 'DAMAGED_REPAIR'] as const) {
+            const deck = new DeckManager();
+            deck.aircraftState = state;
+            const mechCrew = deck.crews.find(c => c.role === 'MECHANIC')!;
+            const fuelCrew = deck.crews.find(c => c.role === 'FUEL')!;
+            const before = mechCrew.stamina;
+
+            deck.rushTurnaround();
+
+            expect(mechCrew.stamina, state).toBe(before - RUSH_TUNING.staminaCost);
+            expect(fuelCrew.stamina, state).toBe(fuelCrew.stamina);
+        }
+    });
+
+    it('never advances progress past 100', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        deck.currentTaskProgress = 95;
+        deck.rushTurnaround();
+        expect(deck.currentTaskProgress).toBe(100);
+    });
+
+    /**
+     * The whole point: a crew that is already spent cannot be pushed further.
+     * Without this a rush is a free button rather than a choice with a cost.
+     */
+    it('refuses to push a crew already at or below the floor', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        deck.crews.find(c => c.role === 'FUEL')!.stamina = RUSH_TUNING.minStaminaToRush;
+        const before = deck.currentTaskProgress;
+
+        const outcome = deck.rushTurnaround();
+
+        expect(outcome).toEqual({ applied: false, refusal: 'CREW_EXHAUSTED' });
+        expect(deck.currentTaskProgress).toBe(before);
+        expect(deck.canRush()).toBe(false);
+    });
+
+    /**
+     * No per-task lockout flag: the gate is stamina headroom alone, so a
+     * crew that has recovered enough can be pushed again without any special
+     * bookkeeping about which task it was pushed for.
+     */
+    it('allows a second rush once the crew has recovered enough headroom', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        deck.currentTaskProgress = 0;
+
+        deck.rushTurnaround();
+        // Regenerate past the floor.
+        for (const crew of deck.crews) crew.stamina = 100;
+
+        const outcome = deck.rushTurnaround();
+        expect(outcome.applied).toBe(true);
+        expect(deck.currentTaskProgress).toBe(RUSH_TUNING.progressBoost * 2);
+    });
+
+    it('logs the rush for the alert panel', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        deck.rushTurnaround();
+        expect(deck.alertLog[0]).toContain('RUSHED');
+    });
+
+    it('never leaves stamina negative even from repeated pushes', () => {
+        const deck = new DeckManager();
+        deck.aircraftState = 'ARMING_REFUELING';
+        for (let i = 0; i < 5; i++) {
+            for (const crew of deck.crews) crew.stamina = Math.max(crew.stamina, RUSH_TUNING.minStaminaToRush + 1);
+            deck.rushTurnaround();
+        }
+        for (const crew of deck.crews) expect(crew.stamina).toBeGreaterThanOrEqual(0);
     });
 });
