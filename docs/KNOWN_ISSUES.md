@@ -392,26 +392,18 @@ player therefore cannot rush a turnaround, and does not lose anything they
 had before - but closing this gap fully means giving the deck screen real
 touch controls, not only this one.
 
-## 32. Onboarding overlaps with live combat **[Resolved pending redesign]**
+## 32. Onboarding overlaps with live combat **[Resolved in v1.4.0]**
 
-The introductory "Flight Checkout" checklist is presented to the player during a live combat scenario (e.g., launching from the catapult in `CARRIER DEFENSE`). If a new player immediately pulls back on the stick to test the pitch controls (climbing steeply), they break terrain masking and are immediately locked and destroyed by enemy SAMs before they finish reading the tutorial.
+Resolved via `TRAINING_SORTIE` in `src/core/Scenarios.ts`. New pilots are introduced via a dedicated non-lethal familiarization scenario off the coast with zero hostile SAM sites (`noSamSites: true`). Narrative wingman "Ghost-Lead" guides the player through pitch, roll, throttle, weapons arming, and the recovery pattern before any live enemy missiles are encountered.
 
-**Consequence:** The tutorial actively fights the player's survival instinct. We are aware of this brutal pacing flaw, and future AI-assisted updates will replace this with a dedicated, safe, narrative-driven onboarding mission (`TRAINING_SORTIE`) off the coast of Scotland (see `docs/reviews/v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md`).
+## 33. Mute cockpit audio and visual attention split **[Resolved in v1.4.0]**
 
-## 33. Mute cockpit audio and visual attention split **[Pending Cockpit Voice System]**
+Resolved via `CockpitVoiceSystem` in `src/audio/CockpitVoiceSystem.ts`. The browser's native `window.speechSynthesis` API synthesizes 1980s military avionics voice warnings ("Bitchin' Betty") for `MISSILE LAUNCH`, `PULL UP`, `STALL WARNING`, and `BINGO FUEL`. Alerts are managed via a priority queue with 4.0s de-bounce lockout per warning type, keeping the pilot's visual attention focused on the boresight.
 
-Combat flight telemetry relies heavily on auditory alerts so the pilot's eyes can stay glued to the boresight. Currently, the cockpit is completely mute: warnings like `MISSILE LAUNCH — GET LOW` and `STALL` are drawn as small text at the bottom or top of the HUD. In a high-G evasive maneuver, looking away from the boresight to read text causes fatal pilot disorientation.
+## 34. Fixed 60° forward FOV blindfold in turning dogfights **[Resolved in v1.4.0]**
 
-**Consequence:** High cognitive load and preventable deaths during supersonic evasive maneuvers. Future updates will introduce a synthesized Cockpit Voice Warning System ("Bitchin' Betty") with priority-queued audio alerts (*"PULL UP"*, *"WARNING: MISSILE LAUNCH"*, *"STALL"*, *"BINGO FUEL"*) using native zero-dependency Web Speech or procedural formant synthesis.
+Resolved via `PadlockCamera` in `src/renderer/PadlockCamera.ts`. Pressing `V` in cockpit view slaves camera line-of-sight tracking to the designated target contact. The look-at orientation is constrained within realistic canopy geometry (±110° azimuth, -30°/+60° elevation) and smoothly transitions via 250ms ease-out cubic interpolation.
 
-## 34. Fixed 60° forward FOV blindfold in turning dogfights **[Pending Padlock Camera]**
+## 35. Sterile target destruction feedback and lack of kinetic "Juice" **[Resolved in v1.4.0]**
 
-The camera is rigidly locked to a 60° forward boresight cone with no head tracking or look-around capability. During high-G turning scissor maneuvers, enemy bandits cross the canopy and vanish from view. The player is forced to fly purely by staring at the 2D tactical radar screen rather than tracking the target visually.
-
-**Consequence:** Dogfights lack visual dogfight tension and feel like flying with horse blinders. Mitigation planned: a Padlock Camera mode bound to `V` (and a touch button) that smoothly slaves the camera's orientation vector toward the designated target while clamping to realistic canopy angles (max 110° azimuth, 60° elevation).
-
-## 35. Sterile target destruction feedback and lack of kinetic "Juice" **[Pending Vector Debris]**
-
-When an enemy aircraft or ground radar site is destroyed, its wireframe either abruptly disappears or collapses into an understated circle. There is no screen-shake impulse, no kinetic recoil, and no debris arcing across the sky.
-
-**Consequence:** Kills lack visceral dopamine payoff. Mitigation planned: 3D vector line fragmentation explosion physics in `VectorRenderer.ts` that decomposes the target mesh into 10–16 independent physical line segments with outward explosive velocity, angular tumble, and decaying phosphor trails.
+Resolved via `VectorDebrisSystem` in `src/renderer/VectorDebris.ts`. Exploding enemy aircraft, SAM radars, and player airframes shatter into 10–16 physics-driven wireframe line segments with outward blast velocity (15–40 m/s), gravity, drag, terrain collision bouncing, and 1.2s phosphor alpha decay. Memory allocation is completely zero-overhead through pre-allocated fragment pools.

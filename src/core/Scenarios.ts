@@ -36,7 +36,8 @@ export type ScenarioId =
     | 'CANYON_STRIKE'
     | 'IRON_HAND'
     | 'LAST_STAND'
-    | 'CARRIER_QUALS';
+    | 'CARRIER_QUALS'
+    | 'TRAINING_SORTIE';
 
 /** Everything a phase or an end condition is allowed to look at. */
 export interface MissionSnapshot {
@@ -565,12 +566,98 @@ const CARRIER_QUALS: ScenarioDef = {
     victoryDetail: 'Three traps and a 3-wire. You can take the boat at night now.'
 };
 
+const TRAINING_SORTIE: ScenarioDef = {
+    id: 'TRAINING_SORTIE',
+    name: 'TRAINING SORTIE',
+    tagline: 'Guided familiarization sortie with Ghost-Lead. Zero combat hostiles.',
+    difficulty: 1,
+    duration: '~4 min',
+    setup: {
+        threat: {
+            openingTimeline: [],
+            endlessWaves: false,
+            inventory: { ironBombs: 0, sidewinders: 4 },
+            plannedFuel: 5000
+        },
+        map: 'FJORD',
+        noSamSites: true,
+        showTrainingChecklist: false
+    },
+    cards: [
+        {
+            n: '1',
+            title: 'LAUNCH & CLIMB',
+            body: 'Ghost-Lead on the radio: "Take the cat shot, 201. Pull back gently to 2,500 ft AGL."',
+            keys: [['ENTER', 'launch'], ['W/S', 'pitch']]
+        },
+        {
+            n: '2',
+            title: 'AUTOPILOT & WEAPONS',
+            body: 'Engage Autopilot with [A] to maintain wings level. Arm Sidewinders with [2] and lock the training drone.',
+            keys: [['A', 'autopilot'], ['2', 'aim-9'], ['SPACE', 'fire']]
+        },
+        {
+            n: '3',
+            title: 'RECOVERY TRAP',
+            body: 'Turn to heading 180 and intercept the glideslope. Trap aboard CV-68 under 90 m/s at 18-28 m.',
+            keys: [['L', 'recovery assist'], ['SHIFT/CTRL', 'throttle']]
+        }
+    ],
+    lossCondition: 'Running out of fuel or ditching in the fjord.',
+    phases: [
+        {
+            id: 'CAT_SHOT',
+            title: 'CATAPULT LAUNCH',
+            detail: () => 'Take the cat stroke and climb away. Ghost-Lead: "Good launch, 201. Pull back gently to 2,500 ft."',
+            key: 'ENTER',
+            urgency: 'ACTION',
+            onDeck: true,
+            isComplete: (s) => s.hasLaunched,
+            callout: 'GHOST-LEAD: GOOD LAUNCH, 201. PULL BACK GENTLY TO 2,500 FT.'
+        },
+        {
+            id: 'CLIMB_OUT',
+            title: 'CLIMB TO 2,500 FT',
+            detail: (s) => `Climb to 2,500 ft (760 m). Current altitude: ${Math.round(s.altitudeAgl)} m.`,
+            key: 'W',
+            urgency: 'ACTION',
+            isComplete: (s) => s.altitudeAgl >= 700,
+            callout: 'GHOST-LEAD: 2,500 FT REACHED. LEVEL OFF AND TRIM FOR CRUISE.'
+        },
+        {
+            id: 'AUTOPILOT_CHECK',
+            title: 'ENGAGE AUTOPILOT',
+            detail: () => 'Ghost-Lead: "Tap [A] to engage Autopilot. She will hold wings level and manage pitch."',
+            key: 'A',
+            urgency: 'ACTION',
+            isComplete: (s) => s.airSpeed > 90 && s.missionSeconds > 20,
+            callout: 'GHOST-LEAD: AUTOPILOT VERIFIED. ARM WEAPONS FOR DRONE PRACTICE.'
+        },
+        {
+            id: 'DRONE_SPLASH',
+            title: 'SPLASH THE DRONE',
+            detail: (s) => s.contactsAlive > 0
+                ? 'Ghost-Lead: "Drone spawned bearing 045. Select [2] AIM-9 and press [SPACE] to fire."'
+                : 'Ghost-Lead: "Clean hit! Splash one target drone."',
+            key: 'SPACE',
+            urgency: 'ACTION',
+            isComplete: (s) => s.contactsAlive === 0 && s.missionSeconds > 30,
+            callout: 'GHOST-LEAD: DRONE SPLASHED! TURN TO 180 AND HEAD FOR THE BOAT.'
+        },
+        recoverPhase()
+    ],
+    failure: (s) => (s.airframesLost > 0 ? 'Aircraft lost during training sortie.' : null),
+    victoryTitle: 'TRAINING COMPLETE',
+    victoryDetail: 'Ghost-Lead: "Outstanding stick work, 201. You are cleared for combat operations."'
+};
+
 export const SCENARIOS: readonly ScenarioDef[] = [
     CARRIER_DEFENSE,
     CANYON_STRIKE,
     IRON_HAND,
     LAST_STAND,
-    CARRIER_QUALS
+    CARRIER_QUALS,
+    TRAINING_SORTIE
 ];
 
 export const DEFAULT_SCENARIO: ScenarioId = 'CARRIER_DEFENSE';

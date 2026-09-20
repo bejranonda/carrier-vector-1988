@@ -512,7 +512,7 @@ describe('GameLoop integration smoke test', () => {
         game.selectScenario(-1);
         expect(game.scenario.id).toBe(first);
         game.selectScenario(-1);
-        expect(game.scenario.id).toBe('CARRIER_QUALS');
+        expect(game.scenario.id).toBe(SCENARIOS[SCENARIOS.length - 1].id);
     });
 
     // -----------------------------------------------------------------
@@ -1734,5 +1734,39 @@ describe('GameLoop integration smoke test', () => {
         game.cycleDisplayMode();
         runFrames(game, 10);
         expect(game.phase).toBe('ACTIVE');
+    });
+
+    it('toggles padlock camera and reports callouts', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        expect(game.padlock.isEnabled).toBe(false);
+        const active = game.togglePadlock();
+        expect(active).toBe(true);
+        expect(game.padlock.isEnabled).toBe(true);
+        expect(game.callouts.active().some(c => c.text.includes('PADLOCK'))).toBe(true);
+
+        const inactive = game.togglePadlock();
+        expect(inactive).toBe(false);
+        expect(game.padlock.isEnabled).toBe(false);
+    });
+
+    it('buffers flight telemetry and triggers arcade time rewind', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        // Run for 30 frames to populate rewind buffer
+        runFrames(game, 30);
+        expect(game.timeRewind.canRewind()).toBe(true);
+
+        const initialUses = game.timeRewind.rewindsRemaining;
+        const rewindSuccess = game.triggerTimeRewind();
+        expect(rewindSuccess).toBe(true);
+        expect(game.timeRewind.rewindsRemaining).toBe(initialUses - 1);
+        expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
     });
 });

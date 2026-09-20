@@ -286,6 +286,23 @@ export class VectorRenderer {
         this.resetShadow();
     }
 
+    /**
+     * Render active 3D line debris fragments from target explosions.
+     */
+    public renderDebris(
+        debris: { fragments: { p1: Vector3; p2: Vector3; life: number; maxLife: number; color: string }[] },
+        camPos: Vector3,
+        camPitch: number,
+        camYaw: number,
+        camRoll: number
+    ): void {
+        for (let i = 0; i < debris.fragments.length; i++) {
+            const f = debris.fragments[i];
+            const alphaFrac = Math.max(0, Math.min(1, f.life / f.maxLife));
+            this.drawLine(f.p1, f.p2, camPos, camPitch, camYaw, camRoll, f.color, 2.0 * alphaFrac);
+        }
+    }
+
     /** Pure depth->opacity falloff. Exposed static so it is unit-testable. */
     public static depthFade(z: number): number {
         if (z <= VectorRenderer.NEAR_FADE) return 1.0;

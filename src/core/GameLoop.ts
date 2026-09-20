@@ -19,6 +19,10 @@ import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
 import { DeckManager } from '../carrier/DeckManager';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
+import { VectorDebrisSystem } from '../renderer/VectorDebris';
+import { CockpitVoiceSystem } from '../audio/CockpitVoiceSystem';
+import { PadlockCamera } from '../renderer/PadlockCamera';
+import { TimeRewindBuffer } from './TimeRewind';
 import { soundFX } from '../audio/SoundFX';
 import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
@@ -180,6 +184,10 @@ export class GameLoop {
     public weapons: WeaponsSystem;
     public score: ScoreKeeper;
     public training: TrainingSequence;
+    public debris: VectorDebrisSystem = new VectorDebrisSystem();
+    public cockpitVoice: CockpitVoiceSystem = new CockpitVoiceSystem();
+    public padlock: PadlockCamera = new PadlockCamera();
+    public timeRewind: TimeRewindBuffer = new TimeRewindBuffer();
 
     // Presentation
     private post: PostProcess;
@@ -555,6 +563,10 @@ export class GameLoop {
         this.trauma = 0;
         this.flashAlpha = 0;
         this.hitMarker = 0;
+        this.debris.clear();
+        this.cockpitVoice.clear();
+        this.padlock.reset();
+        this.timeRewind.reset();
         this.trapCinematic = 0;
         this.trapGrade = null;
 
@@ -1392,6 +1404,29 @@ export class GameLoop {
         return this.terrainFollowing;
     }
 
+    /** Toggle padlock camera tracking the designated target. */
+    public togglePadlock(): boolean {
+        const active = this.padlock.toggle();
+        this.callouts.push(active ? 'PADLOCK — TARGET LOCK' : 'PADLOCK — BORESIGHT', 'MODE');
+        soundFX.playUiMove();
+        return active;
+    }
+
+    /** Trigger the 5-second arcade flight rewind buffer. */
+    public triggerTimeRewind(): boolean {
+        if (this.assistLevel !== 'MANUAL' && this.timeRewind.canRewind()) {
+            const ok = this.timeRewind.triggerRewind(this.physics);
+            if (ok) {
+                soundFX.playMasterCaution();
+                this.shake(SHAKE_SOURCES.missileLaunch);
+                this.deck.log('TIME REWIND: 5 SECONDS RESTORED.');
+                this.callouts.push('REWIND — 5s RESTORED', 'MODE', `${this.timeRewind.rewindsRemaining} REMAINING`);
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Refresh the designation list. Candidates are live airborne contacts,
      * surviving SAM sites and intact strike targets - exactly the things a
@@ -1655,6 +1690,19 @@ export class GameLoop {
 
     private updateSortie(dt: number) {
         this.physics.update(dt);
+        this.debris.update(dt, (x, z) => this.terrain.getElevation(x, z));
+        this.timeRewind.update(dt, this.physics);
+        const groundAlt = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        const altitudeAgl = Math.max(0, this.physics.position.y - groundAlt);
+        this.cockpitVoice.update(dt, {
+            rwrState: this.sensors.masterRwrState,
+            altitudeAgl,
+            verticalSpeed: this.physics.velocity.y,
+            isStalled: this.physics.isStalled,
+            alphaDeg: (this.physics.alpha * 180) / Math.PI,
+            fuelFraction: this.physics.fuel / this.physics.maxFuel,
+            isAirborne: this.deck.aircraftState === 'AIRBORNE'
+        });
         // Recomputed every tick: the HUD bracket, the weapon recommendation
         // and the autopilot all read this frame's geometry, and a lock on a
         // contact that died this tick has to drop itself immediately.
@@ -1721,6 +1769,7 @@ export class GameLoop {
                 this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
                 this.callouts.push('SAM DOWN', 'KILL', destroyedSAM.name);
                 this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedSAM.position), 900));
+                this.debris.spawnFromMesh(this.samMesh.lines, destroyedSAM.position, { x: 0, y: 0, z: 0 }, '#ff6622');
                 soundFX.playExplosion(this.placeAt(destroyedSAM.position));
                 soundFX.playKillConfirm();
             },
@@ -1736,6 +1785,7 @@ export class GameLoop {
         // Aircraft destroyed by accumulated battle damage
         if (this.physics.damage >= 100) {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
+            this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
             this.replaceAirframe('MAYDAY: AIRCRAFT DESTROYED BY ENEMY FIRE!');
             return;
         }
@@ -1744,6 +1794,7 @@ export class GameLoop {
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
         if (this.physics.position.y <= groundElevation + 2) {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
+            this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
             this.physics.position.y = groundElevation + 2;
             this.replaceAirframe('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
             return;
@@ -1790,6 +1841,8 @@ export class GameLoop {
         // five kilometres is a flash on the horizon.
         this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedTarget.position), 900));
         this.flash(THEME.phosphor, 0.12);
+        const meshLines = isBomber(destroyedTarget) ? this.bomberMesh.lines : this.mig23Mesh.lines;
+        this.debris.spawnFromMesh(meshLines, destroyedTarget.position, destroyedTarget.velocity, '#ff4433');
         soundFX.playKillConfirm();
 
         // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
@@ -2099,8 +2152,15 @@ export class GameLoop {
         // flight model never does.
         const jolt = shakeOffsets(this.trauma, this.elapsedSeconds);
         const camPos = this.physics.position;
-        const camPitch = this.physics.pitch + jolt.pitch;
-        const camYaw = this.physics.yaw + jolt.yaw;
+
+        // Padlock camera tracking target look-at
+        const basis = VectorRenderer.basisVectors(this.physics.pitch, this.physics.yaw, this.physics.roll);
+        const des = this.tracker.designated();
+        const tgtPos = des ? des.target.position : null;
+        const padlockOffset = this.padlock.update(frameDt, camPos, basis, tgtPos);
+
+        const camPitch = this.physics.pitch + jolt.pitch + padlockOffset.pitchOffset;
+        const camYaw = this.physics.yaw + jolt.yaw + padlockOffset.yawOffset;
         const camRoll = this.physics.roll + jolt.roll;
 
         // Phosphor decay instead of a hard clear: old strokes fade out over
@@ -2153,10 +2213,15 @@ export class GameLoop {
         }
 
         this.weapons.render(this.renderer, camPos, camPitch, camYaw, camRoll);
+        this.renderer.renderDebris(this.debris, camPos, camPitch, camYaw, camRoll);
 
         // Composite world + bloom to the visible canvas, THEN draw the HUD
         // crisply on top so persistence never smears the symbology.
         this.post.composite(this.ctx);
+
+        if (this.timeRewind.isRewindingEffect > 0) {
+            this.flash('#00e5ff', this.timeRewind.isRewindingEffect * 0.8);
+        }
 
         this.hud.draw(
             this.ctx,
@@ -2176,6 +2241,8 @@ export class GameLoop {
                     ? WeaponsSystem.predictBombImpact(this.physics, this.terrain)
                     : null,
                 designated: this.tracker.designated(),
+                isPadlocked: this.padlock.isPadlocked,
+                rewindsRemaining: this.timeRewind.rewindsRemaining,
                 assistLabel: assistSpec(this.assistLevel).label,
                 assistOverride: this.assistOverride,
                 callouts: this.callouts.active(),

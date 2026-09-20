@@ -49,6 +49,8 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['f'], display: 'F', label: 'Cycle flight assist (MANUAL / ASSIST / AUTOPILOT)', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['g'], display: 'G', label: 'Autopilot terrain following (hug the valleys, on by default)', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['l'], display: 'L', label: 'Recovery assist - fly the approach, hand back at short final', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['v'], display: 'V', label: 'Toggle padlock camera (track designated target)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['backspace'], display: 'BACKSPACE', label: 'Time rewind (5 seconds flight restore, 2 uses)', context: 'FLIGHT', group: 'FLIGHT' },
 
     // --- Deck operations ---
     { keys: ['enter'], display: 'ENTER', label: 'Launch from catapult', context: 'DECK', group: 'DECK OPS' },
@@ -57,6 +59,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['3'], display: '3', label: 'Cycle AIM-9 Sidewinder loadout', context: 'DECK', group: 'DECK OPS' },
     { keys: ['4'], display: '4', label: 'Cycle Mk.82 bomb loadout', context: 'DECK', group: 'DECK OPS' },
     { keys: ['r'], display: 'R', label: 'Rush the turnaround (costs crew stamina)', context: 'DECK', group: 'DECK OPS' },
+    { keys: ['v'], display: 'V', label: 'Cycle threat level (CADET / REGULAR / VETERAN)', context: 'DECK', group: 'DECK OPS' },
 
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
@@ -65,6 +68,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['d'], display: 'D', label: "Fly today's daily sortie (same seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['v'], display: 'V', label: 'Cycle threat level (CADET / REGULAR / VETERAN)', context: 'BRIEFING', group: 'MISSION SELECT' },
 
     // --- System (available everywhere) ---
     { keys: ['h', 'f1'], display: 'H / F1', label: 'Show control reference', context: 'GLOBAL', group: 'SYSTEM' },
@@ -73,7 +77,6 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['v'], display: 'V', label: 'Cycle threat level (CADET / REGULAR / VETERAN)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' }
 ];

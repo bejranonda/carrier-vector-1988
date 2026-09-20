@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-758%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-800%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 758 headless Vitest tests
+npm run test     # 800 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -75,6 +75,7 @@ cards, and tracks its own ordered objectives.
 | 3 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges, four bombs a sortie — trap aboard and rearm as many times as it takes. |
 | 4 | **LAST STAND** | ●●●●● | NORWEGIAN SEA | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
 | 5 | **CARRIER QUALS** | ●○○○○ | NORWEGIAN SEA | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
+| 6 | **TRAINING SORTIE** | ●○○○○ | NORWEGIAN SEA | Non-lethal familiarization flight with Ghost-Lead. Zero combat hostiles — test pitch, roll, throttle, weapons arming, and the recovery pattern safely. |
 
 ### The three maps
 
@@ -275,8 +276,9 @@ exceeding the mode you picked.
 | `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
 | `G` | Autopilot terrain following (hug the valleys; on by default) |
 | `L` | Recovery assist — flies the ball and the speed, hands back at short final |
+| `V` | Toggle padlock camera (track designated target) |
+| `BACKSPACE` | Time rewind (5 seconds flight restore, 2 uses per sortie) |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
-| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
 | `C` | Cycle colour palette — classic phosphor / blue-amber |
 | `K` | Cycle controls — `AUTO` / `TOUCH` / `KEYBOARD` |
 
@@ -288,17 +290,19 @@ exceeding the mode you picked.
 | `1` / `2` | Decrease / increase planned fuel (±500 L) |
 | `3` / `4` | Cycle AIM-9 / Mk.82 loadout |
 | `R` | Rush the turnaround — costs crew stamina |
+| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
 
 ### Mission Select (briefing screen)
 
 | Key | Action |
 | --- | --- |
 | `←` / `→` | Change selected mission |
-| `1`–`5` | Pick a mission directly |
+| `1`–`6` | Pick a mission directly |
 | `ENTER` | Fly the selected mission |
 | `↑` / `↓` | Change map (endless carrier defence only) |
 | `S` | Skip the deck and start airborne |
 | `D` | Fly today's daily sortie |
+| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
 
 ### System
 
@@ -310,17 +314,17 @@ exceeding the mode you picked.
 | `M` | Mute / unmute |
 | `P` | Cycle display mode — `CLEAN` / `MODERN` / `RETRO CRT` |
 | `C` | Cycle colour palette — classic phosphor / blue-amber |
-| `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
 
 > Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
 
 ## Features
 
-### Missions
+### Missions & Campaign
 - **Three maps**, each a pure height function plus a SAM order of battle, each with
   unit-tested navigability guarantees
-- **Five selectable scenarios** with their own world setup, briefing cards, ordered
-  objectives, win conditions and loss conditions — all defined as data in one pure module
+- **Six selectable scenarios** with their own world setup, briefing cards, ordered
+  objectives, win conditions and loss conditions — including the safe `TRAINING SORTIE`
+- **Persistent Rogue-lite Campaign State Machine**: Air wing logistics (24 F-14s, 12 A-6s, finite ordnance, carrier hull) across a 7-sector Norwegian Sea theater with Early Warning Radar threat attenuation.
 - **Hardened ground targets** with a tight hit radius, so an iron bomb is an aimed
   delivery rather than a lob
 - **CCIP bombing cue** computed from the same ballistic integration the live bomb uses
@@ -418,7 +422,10 @@ exceeding the mode you picked.
 - Safe-area insets, landscape prompt, audio unlock on first touch, and no
   scroll, zoom or rubber-band
 
-### Feel
+### Feel & Juice
+- **3D Vector Line Fragmentation Debris**: Exploding aircraft and SAM sites shatter into 10–16 physics-driven wireframe line segments with outward blast impulses (15–40 m/s), gravity, drag, terrain bouncing, and phosphor alpha fading over 1.2s
+- **Padlock Target-Tracking Camera (`V`)**: Slaves the pilot's view to the designated contact within human canopy limits (±110° azimuth, -30°/+60° elevation) with 250ms ease-out cubic transitions
+- **Arcade 5-Second Time Rewind (`Backspace`)**: Zero-allocation circular buffer of flight telemetry allowing recovery from terrain impacts and flight stalls (2 uses per sortie)
 - **Camera shake** on a trauma model — squared amplitude, so a cannon round and
   a missile strike read as different events — applied to the camera only, never
   to the flight model
@@ -430,7 +437,8 @@ exceeding the mode you picked.
   stamps over the deck, and the arresting gear is the loudest sound in the game
 - **Impact flash** — red when something hits you, green when you kill something
 
-### Sound
+### Sound & Avionics
+- **Synthesized Cockpit Voice Warnings ("Bitchin' Betty")**: Native browser speech synthesis tuned to 1980s military avionics (female voice, priority queue, 4.0s de-bounce) announcing `MISSILE LAUNCH`, `PULL UP`, `STALL WARNING`, and `BINGO FUEL`
 - **A real mix**: every voice runs `[panner] → category bus → master →
   compressor → out`. Nothing connects to the output directly, so a busy fight
   compresses instead of clipping

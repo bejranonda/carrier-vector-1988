@@ -1072,3 +1072,50 @@ Initial fleet logistics baseline for the persistent Norwegian Sea campaign:
 | **Carrier Hull Integrity** | 100% | Reaching 0% ends the campaign |
 
 **Strategic Suppression:** Disabling an Early Warning Radar node reduces hostile SAM detection ranges by **40%** in all adjacent connected nodes.
+
+## 16. Arcade Time Rewind Buffer Specifications
+
+The flight telemetry circular buffer captures continuous flight state for deterministic rollback:
+
+```
+Buffer Depth:         5.0 seconds
+Sampling Frequency:   20 Hz (dt = 0.05s)
+Capacity:             100 snapshots
+Budget:               2 uses per sortie (ARCADE / ASSIST only)
+```
+
+Snapshot layout per slot (zero garbage collection allocations):
+```typescript
+interface AircraftSnapshot {
+    position: Vector3;
+    velocity: Vector3;
+    pitch: number;
+    yaw: number;
+    roll: number;
+    airSpeed: number;
+    throttle: number;
+    fuel: number;
+    damage: number;
+    bayOpen: boolean;
+}
+```
+
+Safety Invariant: `physics.damage = Math.min(target.damage, physics.damage)` ensures current airframe battle damage is preserved upon rewind, preventing invulnerability cheating while rescuing the pilot from controlled flight into terrain (CFIT) or flat spins.
+
+## 17. Cockpit Voice Warning System ("Bitchin' Betty")
+
+Synthesized avionics warning hierarchy and speech parameter tuning:
+
+| Priority | Alert Key | Announcement Text | Trigger Condition | De-bounce Cooldown |
+| :---: | :--- | :--- | :--- | :---: |
+| 100 | `MISSILE_LAUNCH` | "MISSILE LAUNCH. DEFENSIVE." | Active hostile missile guidance lock | 4.0 s |
+| 90 | `PULL_UP` | "PULL UP. TERRAIN." | Altitude AGL < 200m & $v_y < -30\text{ m/s}$ | 4.0 s |
+| 80 | `STALL` | "STALL WARNING." | Aerodynamic stall or $|\alpha| > 18^\circ$ | 4.0 s |
+| 70 | `BINGO_FUEL` | "BINGO FUEL. RECOVER TO MOTHER." | Fuel fraction < 15% capacity | 4.0 s |
+
+Synthesis parameters for 1980s military cockpit voice synthesis:
+- Rate: `1.15`
+- Pitch: `1.25`
+- Volume: `0.95`
+- Voice filter: English (`en-US`), prioritizing female voices (`Samantha`, `Victoria`, `Zira`, or generic `female`).
+

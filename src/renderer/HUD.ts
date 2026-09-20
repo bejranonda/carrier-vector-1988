@@ -135,6 +135,10 @@ export interface HudContext {
      * appears.
      */
     recovery?: { text: string; handover: boolean } | null;
+    /** True when padlock camera is slaved to designated target */
+    isPadlocked?: boolean;
+    /** Remaining arcade 5-second time rewinds */
+    rewindsRemaining?: number;
 }
 
 /**
@@ -805,6 +809,7 @@ export class HUD {
             ['WASD', 'fly'],
             ['SHIFT', 'power'],
             ['T', 'target'],
+            ['V', 'padlock'],
             ['SPACE', 'fire'],
             ['F', assistLabel ?? 'assist'],
             ['TAB', 'deck'],

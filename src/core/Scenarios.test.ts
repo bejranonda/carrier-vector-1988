@@ -456,7 +456,8 @@ describe('progression guidance', () => {
             ...records,
             CARRIER_DEFENSE: { best: 10, completions: 1, attempts: 1 },
             CANYON_STRIKE: { best: 10, completions: 1, attempts: 1 },
-            IRON_HAND: { best: 10, completions: 1, attempts: 1 }
+            IRON_HAND: { best: 10, completions: 1, attempts: 1 },
+            TRAINING_SORTIE: { best: 10, completions: 1, attempts: 1 }
         };
         expect(recommendScenario(withHarderOnly).id).toBe('LAST_STAND');
     });

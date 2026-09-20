@@ -342,6 +342,17 @@ To any human developer or AI agent tasked with modifying this codebase, heed the
 - Debris objects must be allocated from a pre-warmed pool or bounded array to guarantee zero garbage-collection allocations in the hot loop.
 - Screen-shake impulses must decay exponentially over 150ms and scale inversely with distance to the explosion (`impulse / (1 + distance / 500)`).
 
+#### Arcade Time-Rewind ("Oops" Button)
+- Must use a fixed-capacity circular buffer pre-allocated at initialization to avoid dynamic allocations and GC pauses during flight.
+- Sampling rate: 20 Hz over 5.0 seconds (100 snapshot entries).
+- Safety guarantee: Retain current accumulated airframe damage upon rewind to prevent invulnerability exploits during dogfights.
+- Budget: Strictly enforce a maximum of 2 rewind triggers per sortie in ARCADE and ASSIST modes; disable in MANUAL flight assist mode.
+
+#### Rogue-lite Campaign State Machine
+- Must maintain operational fleet persistence (24 F-14, 12 A-6, finite ordnance pools, carrier hull integrity) across sequential sorties.
+- Neutralizing Early Warning Radars in radar-equipped sectors must deterministically apply a 40% attenuation factor (`0.6x`) to enemy interceptor scramble times and SAM density across adjacent sectors.
+- All campaign state logic must remain pure TypeScript with complete serialization support and headless test coverage.
+
 ### 10.3. The 4-Block Master Prompt Formula
 When directing AI assistants on this repository, structure all prompts into 4 explicit blocks:
 1. **Context & Guardrails:** *"Zero runtime dependencies, fixed timestep 1/120s, pure logic in `src/...` decoupled from Canvas2D."*

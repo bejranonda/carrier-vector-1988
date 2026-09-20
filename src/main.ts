@@ -105,7 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (key === 'v') {
             e.preventDefault();
-            game.cycleThreatLevel();
+            if (game.phase === 'ACTIVE' && game.currentView === 'MICRO_FLIGHT') {
+                game.togglePadlock();
+            } else {
+                game.cycleThreatLevel();
+            }
             return;
         }
         if (key === 'k') {
@@ -192,6 +196,15 @@ document.addEventListener('DOMContentLoaded', () => {
             game.training.progress.bayToggled = true;
             game.deck.log(`WEAPONS BAY ${game.physics.bayOpen ? 'OPENED (RCS x4.0)' : 'CLOSED'}`);
             return;
+        }
+
+        // --- Arcade time rewind (5 seconds) ---
+        if (key === 'backspace') {
+            if (game.currentView === 'MICRO_FLIGHT') {
+                e.preventDefault();
+                game.triggerTimeRewind();
+                return;
+            }
         }
 
         // --- Context-sensitive number keys ---
