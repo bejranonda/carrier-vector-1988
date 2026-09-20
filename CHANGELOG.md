@@ -5,6 +5,21 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-09-20
+
+### Fixed
+
+- **Nobody was told the colour-blind palette existed.** It shipped fully
+  working in 1.2.0, entirely undiscoverable, behind `C` in the full control
+  reference. The briefing's secondary options row now names it directly — `C
+  try colour-blind palette` — for as long as the setting has never been
+  touched, and the hint retires itself the instant it has, even to confirm
+  `CLASSIC` is what the player wants. `Theme.storedPalette()` is the new
+  primitive this rests on, and `renderer/BriefingScreen.briefingSecondaryOptions()`
+  is the row's construction pulled out into a pure, tested function so which
+  options appear — and in what order — no longer lives only inside a canvas
+  draw call.
+
 ## [1.2.0] — 2026-09-20
 
 Six items off the open list: the autopilot learns to fly low, the phone learns

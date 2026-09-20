@@ -325,7 +325,7 @@ contact disappears, but you may have to designate one (`T`, or tap it) to read
 its range. That is the intended trade: a readable tag on the nearest threat
 beats four unreadable ones.
 
-## 28. Red and green are load-bearing **[Resolved, with a caveat]**
+## 28. Red and green are load-bearing **[Resolved]**
 
 `C` cycles the palette. The alternative moves the whole conversation onto the
 blue-yellow axis, which deuteranopia and protanopia leave intact: cyan
@@ -335,10 +335,13 @@ separated by lightness as well as hue. Every colour in every palette clears
 friendly/hostile separation so a future palette cannot quietly become another
 red-green pair.
 
-**The caveat:** the classic palette is still the default and still fails that
-test, deliberately - it is the game's identity, and it is no longer the only
-option. There is no in-game prompt offering the alternative to a player who
-needs it; they have to find `C` in the control reference.
+The classic palette is still the default and still fails that test,
+deliberately - it is the game's identity, and it is no longer the only option.
+The briefing's secondary row names the alternative directly (`C  try
+colour-blind palette`) for as long as `Theme.storedPalette()` reports the
+setting has never been touched, and the hint retires itself the instant it
+has, even to confirm CLASSIC is what the player wants - closing the
+discoverability gap this section used to note.
 
 ## 29. The recovery assist flies the ball, not the recovery
 

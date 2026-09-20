@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-738%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-747%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 738 headless Vitest tests
+npm run test     # 747 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -358,7 +358,9 @@ exceeding the mode you picked.
   missions keep their own terrain, because each is about *its* canyon
 - **Colour-blind palette** (`C`): green-for-us against red-for-them is the one pairing a
   deuteranope or protanope cannot separate, so the alternative moves onto the
-  blue-yellow axis — cyan instruments, amber hostiles, violet keycaps
+  blue-yellow axis — cyan instruments, amber hostiles, violet keycaps. The briefing
+  names it directly (`try colour-blind palette`) until the setting has ever been
+  touched, so it isn't a feature you have to already know to go looking for
 - **Flash rate capped at 2.5 Hz** for every blinking warning, under the WCAG 2.3.1 limit
 - **`prefers-reduced-motion` honoured on the canvas**, not just in the CSS: camera shake
   off, impact flash damped, warnings lit rather than blinking
@@ -575,7 +577,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**738 headless tests** across 38 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**747 headless tests** across 38 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor

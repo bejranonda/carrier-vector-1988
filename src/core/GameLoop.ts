@@ -37,7 +37,8 @@ import {
     loadPalette,
     nextPalette,
     paletteSpec,
-    savePalette
+    savePalette,
+    storedPalette
 } from '../renderer/Theme';
 import type { PaletteId } from '../renderer/Theme';
 import {
@@ -1947,7 +1948,8 @@ export class GameLoop {
                 {
                     id: this.selectedMap(),
                     changeable: this.scenario.setup.allowMapChoice === true
-                }
+                },
+                storedPalette() === null
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;

@@ -11,7 +11,8 @@ import {
     loadPalette,
     nextPalette,
     paletteSpec,
-    savePalette
+    savePalette,
+    storedPalette
 } from './Theme';
 
 /**
@@ -235,5 +236,36 @@ describe('palette persistence', () => {
         };
         expect(loadPalette()).toBe(DEFAULT_PALETTE);
         expect(() => savePalette('DEUTERAN')).not.toThrow();
+    });
+
+    /**
+     * `loadPalette()` collapses "never chosen" into the default, which is
+     * right for booting the game and wrong for deciding whether to keep
+     * hinting at the setting. `storedPalette()` is the one that has to tell
+     * the two apart, or the hint either never appears or never goes away.
+     */
+    it('reports no stored choice until one is actually made', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = store();
+        expect(storedPalette()).toBe(null);
+    });
+
+    it('reports a choice once made, even the default one', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = store();
+        savePalette('CLASSIC');
+        expect(storedPalette()).toBe('CLASSIC');
+    });
+
+    it('treats a corrupt stored value as no choice made', () => {
+        const s = store();
+        s.setItem('carrier-vector-1988.palette', 'TEAL');
+        (globalThis as { localStorage?: unknown }).localStorage = s;
+        expect(storedPalette()).toBe(null);
+    });
+
+    it('reports no stored choice when storage throws', () => {
+        (globalThis as { localStorage?: unknown }).localStorage = {
+            getItem: () => { throw new Error('blocked'); }
+        };
+        expect(storedPalette()).toBe(null);
     });
 });

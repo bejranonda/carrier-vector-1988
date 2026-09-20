@@ -574,3 +574,57 @@ level.
 The deck loop's second axis, a second act for the strike missions, campaign
 memory, and the autopilot rework that items 4 and 5 of the open list both
 depend on.
+
+---
+
+## 15. Palette Discoverability (v1.2.1)
+
+**Status:** Complete
+**Trigger:** "Continue all to finish" — closing item 5 of the open list left
+by pass 14, the cheapest of the four that remained.
+**Result:** 747 tests across 38 suites, released as **v1.2.1**
+
+### The defect
+
+The colour-blind palette from pass 14 was fully built, fully tested, and
+entirely invisible: reachable only by pressing `H` for the full control
+reference and reading down to find `C`. A player who needs it has no reason
+to go looking for a setting they do not know exists. FUN_REVIEW had already
+named this — "an accessibility prompt on first run would cost very little" —
+so it was the obvious next item to close.
+
+### The shape of the fix
+
+`Theme.loadPalette()` collapses "never chosen" into `DEFAULT_PALETTE`, which
+is correct for booting the game and wrong for deciding whether to keep
+mentioning the setting. `storedPalette()` is the new primitive that tells the
+two apart — the same shape as `storedAssistLevel()` and
+`storedApproachAssist()`, both already in the codebase for exactly this
+reason.
+
+The briefing's secondary options row gains a `C  try colour-blind palette`
+entry for as long as `storedPalette()` reports `null`, and the entry
+disappears the instant the player touches the setting at all — even cycling
+straight back to `CLASSIC` counts as having seen it. No separate dismiss
+button, no "don't show again" checkbox: the setting confirming itself IS the
+dismissal.
+
+The row's construction was inline in `drawBriefing()`'s canvas code, which
+made it untestable without a rendering harness. It is now
+`briefingSecondaryOptions()`, a pure function returning `[key, label][]`,
+called both by `drawBriefing()` and by a test that checks the hint appears
+and disappears without touching a canvas.
+
+### Verification
+
+- `npx tsc --noEmit`, `npm run test` (747), `npm run build`
+- In Chromium, with `localStorage` cleared: the hint shows on first boot,
+  survives a page reload, and disappears the frame after pressing `C` —
+  checked at 1440 and 800 px, where the row already wraps
+- A smoke test drives the same sequence through `GameLoop` directly, with a
+  scoped `localStorage` stub restored afterward
+
+### Left open
+
+Unchanged from pass 14: the deck loop's second axis, a second act for the
+strike missions, campaign memory, and the autopilot rework.

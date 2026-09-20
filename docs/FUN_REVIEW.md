@@ -195,9 +195,6 @@ What changed, and the reasoning that is worth keeping:
    §19). That is what stops the recovery assist being a "take me home" button,
    and it is the one piece of unfinished engineering the rest of this list keeps
    running into.
-5. **Nothing offers the colour-blind palette to the player who needs it.** It
-   exists and it works; it is behind a key in the control reference. An
-   accessibility prompt on first run would cost very little.
 
 A combo multiplier, medals and local leaderboards were all considered and
 deliberately left out; the daily sortie was judged the one retention hook worth
@@ -206,9 +203,13 @@ building first.
 **Closed since this list was written:** designation ignoring line of sight (see
 the later addition at the end of §3); the autopilot climbing over terrain
 rather than threading it; landing on a phone being brutal; carrier defence
-being locked to one map; difficulty being fixed per scenario; and red and green
-being load-bearing. Five of the eight, and the three that remain are the three
-that are really design work rather than engineering.
+being locked to one map; difficulty being fixed per scenario; red and green
+being load-bearing; and nobody being told the colour-blind palette existed —
+the briefing's secondary row now offers it by name, `C  try colour-blind
+palette`, for as long as `Theme.storedPalette()` reports the setting has never
+been touched, and it retires itself the instant it has, even to confirm
+CLASSIC. Seven of eleven, and the four that remain are the four that are
+really design work rather than engineering.
 
 ---
 

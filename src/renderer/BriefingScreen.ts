@@ -72,6 +72,40 @@ export function briefingHitAreas(
     return { compact, selectorY, pills, daily, cta };
 }
 
+/**
+ * The briefing's secondary options row, as data.
+ *
+ * Pure and exported so the one rule that matters here - which options appear,
+ * and in what order - is testable without a canvas. `showPaletteHint` is true
+ * only until the player has ever touched the palette setting (see
+ * `Theme.storedPalette()`): the colour-blind palette shipped fully working and
+ * entirely undiscoverable, reachable only through the full control reference.
+ * The hint retires itself the moment the setting is touched, even to confirm
+ * CLASSIC is what the player wants, so it never nags someone who has already
+ * seen it.
+ */
+export function briefingSecondaryOptions(opts: {
+    pacingLabel: string;
+    threatLabel: string;
+    mapChangeable: boolean;
+    showPaletteHint: boolean;
+}): [string, string][] {
+    return [
+        ['←  →', 'change mission'],
+        ...(opts.mapChangeable
+            ? [['↑  ↓', 'change map'] as [string, string]]
+            : []),
+        ['H', 'all controls'],
+        ['S', 'skip to airborne'],
+        ['O', opts.pacingLabel],
+        ['V', opts.threatLabel],
+        ...(opts.showPaletteHint
+            ? [['C', 'try colour-blind palette'] as [string, string]]
+            : []),
+        ['P', 'screen style']
+    ];
+}
+
 /** Gap between two options in the briefing's secondary row. */
 const SEC_GAP = 18;
 /** Vertical pitch when that row has to wrap. */
@@ -210,7 +244,9 @@ export class BriefingScreen {
          * allowed to change it. Only the endless mode is - see
          * `ScenarioSetup.allowMapChoice`.
          */
-        mapChoice: { id: MapId; changeable: boolean } | null = null
+        mapChoice: { id: MapId; changeable: boolean } | null = null,
+        /** See `briefingSecondaryOptions` - true until the palette is touched. */
+        showPaletteHint = false
     ) {
         ctx.save();
         noGlow(ctx);
@@ -364,17 +400,12 @@ export class BriefingScreen {
             return;
         }
         ctx.textBaseline = 'middle';
-        const secs: [string, string][] = [
-            ['←  →', 'change mission'],
-            ...(mapChoice?.changeable
-                ? [['↑  ↓', 'change map'] as [string, string]]
-                : []),
-            ['H', 'all controls'],
-            ['S', 'skip to airborne'],
-            ['O', pacingLabel],
-            ['V', threatLabel],
-            ['P', 'screen style']
-        ];
+        const secs = briefingSecondaryOptions({
+            pacingLabel,
+            threatLabel,
+            mapChangeable: mapChoice?.changeable === true,
+            showPaletteHint
+        });
 
         /**
          * WRAPPED, not clipped.
