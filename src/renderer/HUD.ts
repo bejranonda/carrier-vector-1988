@@ -38,6 +38,7 @@ import { angleDelta } from '../flight/FlightAssist';
 import { HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
 import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
+import { timeToImpact } from '../tactics/MissileGuidance';
 import type { MotionSettings } from '../core/Accessibility';
 import { placeLabels } from './LabelDeclutter';
 import type { LabelBox, LabelCandidate, PlacedLabel } from './LabelDeclutter';
@@ -1400,7 +1401,19 @@ export class HUD {
 
         const rwrBanner = sensors.masterRwrState === 'LAUNCH' || sensors.masterRwrState === 'TRACK';
         if (sensors.masterRwrState === 'LAUNCH') {
-            banner('▼ MISSILE INBOUND! DIVE BELOW MOUNTAIN RIDGE TO MASK ▼', THEME.alert, 400);
+            // Time to impact from the nearest missile actually in flight -
+            // not just "in LAUNCH state", which can mean the site is about to
+            // fire rather than already has. A player told "inbound" with
+            // nothing to time it against cannot decide whether to keep
+            // attacking for one more second or bail immediately.
+            let soonest: number | null = null;
+            for (const threat of sensors.activeThreats) {
+                if (!threat.missileActive || !threat.missilePos || !threat.missileVel) continue;
+                const tti = timeToImpact(threat.missilePos, threat.missileVel, physics.position);
+                if (tti !== null && (soonest === null || tti < soonest)) soonest = tti;
+            }
+            const suffix = soonest !== null ? ` — ${soonest.toFixed(1)}s — BREAK OR CHAFF [X]` : '';
+            banner(`▼ MISSILE INBOUND${suffix} — DIVE BELOW RIDGE ▼`, THEME.alert, 400);
         } else if (sensors.masterRwrState === 'TRACK') {
             banner('▼ RADAR LOCK: DIVE INTO VALLEYS TO BREAK LOCK ▼', THEME.caution, 0);
         } else {
@@ -1481,15 +1494,22 @@ export class HUD {
             const tx = rwrX + Math.sin(rad) * contactR;
             const ty = rwrY - Math.cos(rad) * contactR;
 
-            const color = threat.state === 'LAUNCH' ? THEME.alert
+            // A decoyed missile is still nominally "LAUNCH" for a few seconds -
+            // the seeker hasn't given up, it is just chasing the wrong thing.
+            // Showing that distinctly is the only confirmation the player gets
+            // that spending a cartridge actually worked.
+            const color = threat.isDecoyed ? THEME.muted
+                : threat.state === 'LAUNCH' ? THEME.alert
                 : threat.state === 'TRACK' ? THEME.caution
                     : THEME.phosphor;
-            const symbol = threat.state === 'LAUNCH' ? 'M' : threat.state === 'TRACK' ? 'T' : 'S';
+            const symbol = threat.isDecoyed ? 'X'
+                : threat.state === 'LAUNCH' ? 'M'
+                : threat.state === 'TRACK' ? 'T' : 'S';
 
             ctx.fillStyle = color;
             ctx.strokeStyle = color;
             ctx.font = font(11, 700);
-            if (threat.state === 'LAUNCH') glow(ctx, color, 8);
+            if (threat.state === 'LAUNCH' && !threat.isDecoyed) glow(ctx, color, 8);
             ctx.fillText(symbol, tx, ty);
             noGlow(ctx);
             if (threat.state !== 'SEARCH') {

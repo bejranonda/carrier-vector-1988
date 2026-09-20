@@ -16,6 +16,7 @@ import { VectorRenderer, WireframeModels } from '../renderer/VectorRenderer';
 import { HUD } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
+import { SAM_MISSILE } from '../tactics/MissileGuidance';
 import { DeckManager } from '../carrier/DeckManager';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
@@ -2357,10 +2358,16 @@ export class GameLoop {
             this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, WORLD.hostile);
 
             if (sam.missileActive && sam.missilePos && sam.missileVel) {
+                // Length and speed both come from SAM_MISSILE now, rather
+                // than a hardcoded 480 duplicating tactics/MissileGuidance.ts.
+                // A tuning change to the missile's speed used to silently
+                // desync the drawn tracer's length from its real flight
+                // path - the round would fly at one speed and paint itself
+                // as though it flew at another.
                 const tail: Vector3 = {
-                    x: sam.missilePos.x - (sam.missileVel.x / 480) * 8,
-                    y: sam.missilePos.y - (sam.missileVel.y / 480) * 8,
-                    z: sam.missilePos.z - (sam.missileVel.z / 480) * 8
+                    x: sam.missilePos.x - (sam.missileVel.x / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength,
+                    y: sam.missilePos.y - (sam.missileVel.y / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength,
+                    z: sam.missilePos.z - (sam.missileVel.z / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength
                 };
                 this.renderer.drawLine(tail, sam.missilePos, camPos, camPitch, camYaw, camRoll, WORLD.missile, 2.8);
             }

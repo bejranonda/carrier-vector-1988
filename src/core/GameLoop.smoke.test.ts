@@ -1770,6 +1770,31 @@ describe('GameLoop integration smoke test', () => {
         expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
     });
 
+    it('renders the missile-inbound banner with a time-to-impact readout, without throwing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        const sam = game.sensors.samSites[0];
+        expect(sam).toBeDefined();
+        // Force a live engagement: this exercises the exact draw() path that
+        // reads threat.missileActive/missilePos/missileVel to compute the
+        // countdown, which nothing else in this file's frame-running loop
+        // happens to trigger reliably.
+        game.physics.position = { x: sam.position.x + 500, y: sam.position.y + 200, z: sam.position.z };
+        game.physics.velocity = { x: 0, y: 0, z: 0 };
+
+        expect(() => {
+            for (let i = 0; i < 10; i++) {
+                game.sensors.update(1 / 60, game.physics);
+                game['draw'](1 / 60);
+            }
+        }).not.toThrow();
+
+        expect(game.sensors.masterRwrState).toBe('LAUNCH');
+    });
+
     it('releases chaff, spends a cartridge and breaks a tracking SAM lock', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
