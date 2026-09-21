@@ -451,3 +451,33 @@ it every sortie so a stale cause can never be shown.
 **A first flight that cannot fail.** `combatShielded` now also catches a descent into the
 sea (the wingman hauls the jet clear) and floors fuel, while leaving the glideslope near the
 boat alone, since that is the lesson.
+
+## 9. Flight Kinematics, Radar Minimap & Entertainment UX (v1.6.0-dev)
+
+### Coordinated Bank-to-Turn Aerodynamics
+Fixed-wing aircraft turn because the tilted lift vector has a horizontal component
+$F_{\text{horizontal}} = L \sin(\phi)$. For a balanced turn with no sideslip, the yaw turn rate is:
+
+$$\dot{\psi} = \frac{g \cdot \tan(\phi)}{V} \cdot \cos(\theta)$$
+
+where $\phi$ is bank angle (`this.roll`), $\theta$ is pitch angle (`this.pitch`), $g = 9.80665\text{ m/s}^2$, and $V$ is true airspeed. In `AircraftPhysics.update(dt)`, this angular velocity is integrated directly into `this.yaw`:
+
+$$\Delta \psi = \dot{\psi} \cdot \Delta t \cdot \text{controlAuthority}$$
+
+This allows standard roll input (`A`/`D`, `ArrowLeft`/`ArrowRight`) to steer the aircraft without requiring manual rudder input.
+
+### Tactical Radar Coordinate Transformation
+The radar scope represents a top-down, aircraft-heading-up tactical display with range radius $R_{\text{scope}}$. For an entity at world position $(x_w, z_w)$ relative to aircraft $(x_{\text{ac}}, z_{\text{ac}})$ with aircraft yaw $\psi$:
+
+$$\Delta x = x_w - x_{\text{ac}}, \quad \Delta z = z_w - z_{\text{ac}}$$
+
+Rotated into aircraft body coordinates (where forward is along $+Z$ body axis):
+$$x_{\text{body}} = \Delta x \cos(\psi) - \Delta z \sin(\psi)$$
+$$z_{\text{body}} = \Delta x \sin(\psi) + \Delta z \cos(\psi)$$
+
+Projected onto the 2D circular HUD radar scope of pixel radius $r_{\text{radar}}$ and world range limit $R_{\text{max}}$:
+$$x_{\text{screen}} = x_{\text{center}} + \left(\frac{x_{\text{body}}}{R_{\text{max}}}\right) r_{\text{radar}}$$
+$$y_{\text{screen}} = y_{\text{center}} - \left(\frac{z_{\text{body}}}{R_{\text{max}}}\right) r_{\text{radar}}$$
+
+Contacts outside $R_{\text{max}}$ are clamped to the outer rim of the scope with a hollow chevron icon.
+

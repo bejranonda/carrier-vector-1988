@@ -273,3 +273,34 @@ wearing a feature's clothes, and it should be scheduled as one.
   kill, 9.6 s against no kill in two minutes" is a result. The same applies to
   the mix, which is verified by instrumenting Web Audio in a real browser
   rather than by listening once and deciding it sounds fine.
+
+---
+
+## 7. The Turn & Burn Pass: Where the Fun Broke (v1.6.0-dev)
+
+### The Lesson: A Flight Game Where You Cannot Turn Is Not a Game
+A human playtester gave the project its most important design revelation:
+*"I cannot turn left or right, or even turn around by climbing top backward. The jet can only go north."*
+
+The codebase had spent months perfecting linear algebra, swept-sphere proximity fuzes,
+and acoustic formants, while the fundamental physical act of **banking the stick to carve
+a turn** was completely absent. Rolling tilted the wireframe wings, but the aircraft's
+velocity vector remained bolted to a North-bound track because yaw was only wired to
+rudder pedals (`Q`/`E`).
+
+**The Fun Rule:** In any flight game, **banking IS turning**. When a player presses Left Arrow,
+they want to carve through the sky, pull high Gs, and swing their crosshairs onto a target.
+Aerodynamic bank-to-turn coupling ($\dot{\psi} \propto \tan\phi$) is not a luxury; it is the
+very source of joy in 3D flight.
+
+### The Radar Lesson: Give the Player Eyes
+A scope that only shows military threat letters (`S`, `T`, `M`) while hiding home base,
+enemy aircraft, and waypoints makes the player feel blind. Transforming the scope into an
+**Integrated Tactical Radar / Minimap** gives the player agency: they can see where the
+carrier is, hunt bandits, and plan attack runs.
+
+### The Rookie Guidance Lesson: Dynamic Prompts Over Static Manuals
+A beginner in combat cannot remember 40 keys from a briefing screen. A single dynamic
+prompt on the bottom of the HUD (`[T] LOCK BANDIT`, `[SPACE] FIRE`, `[X] DEPLOY CHAFF`)
+transforms cognitive paralysis into immediate, thrilling action.
+

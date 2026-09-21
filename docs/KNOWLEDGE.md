@@ -1154,3 +1154,38 @@ line of sight; `null` when it is not closing (a countdown must not show).
 
 ### Chaff coasting
 A decoyed missile at 480 m/s covers ~1.7 km in the 3.5 s window - enough to overshoot.
+
+## 19. Coordinated Flight Dynamics & Radar Math (v1.6.0-dev)
+
+### Coordinated Turn Integration
+$$\dot{\psi} = \frac{g \cdot \tan(\phi)}{V} \cdot \cos(\theta)$$
+
+- $\phi$: Bank roll angle (`AircraftPhysics.roll`, radians)
+- $\theta$: Pitch elevation angle (`AircraftPhysics.pitch`, radians)
+- $V$: True airspeed (`AircraftPhysics.airSpeed`, m/s)
+- $g$: Gravitational acceleration ($9.80665\text{ m/s}^2$)
+
+In simulation integration step $\Delta t$:
+$$\Delta \psi = \dot{\psi} \cdot \Delta t \cdot \text{controlAuthority}$$
+$$\text{yaw} = (\text{yaw} + \Delta \psi) \pmod{2\pi}$$
+
+### Tactical Radar 2D Screen Projection
+For target world position $\mathbf{P}_{\text{tgt}} = (x_t, y_t, z_t)$, aircraft position $\mathbf{P}_{\text{ac}} = (x_a, y_a, z_a)$, and aircraft heading yaw $\psi$:
+
+Relative horizontal vector:
+$$\Delta x = x_t - x_a, \quad \Delta z = z_t - z_a$$
+
+Body-relative coordinates (aircraft nose along $+Z$ axis):
+$$x_{\text{rel}} = \Delta x \cos(\psi) - \Delta z \sin(\psi)$$
+$$z_{\text{rel}} = \Delta x \sin(\psi) + \Delta z \cos(\psi)$$
+
+Polar range and normalized display radius:
+$$\rho = \sqrt{x_{\text{rel}}^2 + z_{\text{rel}}^2}$$
+$$r_{\text{norm}} = \min\left(1.0, \frac{\rho}{R_{\text{radar\_max}}}\right)$$
+
+Scope coordinates (screen center $(x_0, y_0)$, scope radius $R_{\text{px}}$):
+$$x_{\text{radar}} = x_0 + \left(\frac{x_{\text{rel}}}{\max(\rho, 1)}\right) \cdot r_{\text{norm}} \cdot R_{\text{px}}$$
+$$y_{\text{radar}} = y_0 - \left(\frac{z_{\text{rel}}}{\max(\rho, 1)}\right) \cdot r_{\text{norm}} \cdot R_{\text{px}}$$
+
+Carrier is clamped to homeplate icon, bandits to directional chevrons, and active SAM locks to flashing outer perimeter strobes.
+

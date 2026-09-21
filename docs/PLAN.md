@@ -743,3 +743,28 @@ remapping, touch chaff/HARM, the autopilot coordinated-turn rework. See KNOWN_IS
 
 ### Verification
 `npx tsc --noEmit` clean; 874 tests; `npm run build`.
+
+## 13. Follow-up Pass — Turn & Burn: Steering, Radar & Guidance (v1.6.0-dev)
+
+### The trigger
+Live human playtesting revealed six critical blockers:
+1. Cannot turn left/right (the jet can only go North) due to decoupled Euler roll/yaw.
+2. Pitch clamped at 88° prevents vertical loops and Immelmann turns.
+3. The bottom-right RWR is confused for a radar/minimap; it hides carrier, bandits, and terrain.
+4. Sudden deaths from behind snap instantly to the carrier deck with no in-flight casualty sequence.
+5. Fjord map is a 1D 500m straight corridor with 1800m vertical walls.
+6. Beginners suffer cognitive paralysis with 22 dials and zero dynamic in-flight prompts.
+
+### Roadmap Tiers
+- **Tier 0 (P0 — Urgent Flight Fixes):**
+  - Couple bank angle $\phi$ into yaw rate $\dot{\psi}$ in `AircraftPhysics.ts`.
+  - Remove 88° pitch clamp to restore full 360° acrobatic loops and Immelmann turns.
+- **Tier 1 (P0 — Radar & HUD Usability):**
+  - Upgrade the RWR into a Unified Tactical Radar / Minimap (Carrier, Bandits, Waypoints).
+  - Dynamic "Rookie Copilot" contextual prompts (`[T] LOCK`, `[SPACE] FIRE`, `[X] CHAFF`, `[L] LAND`).
+- **Tier 2 (P1 — Combat Legibility & Victory Pacing):**
+  - In-flight death slow-motion / explosion sequence and clear casualty banner.
+  - Novice milestone progression and first-sortie victory debrief.
+- **Tier 3 (P2 — Terrain Topography):**
+  - Multi-channel branching fjords and island archipelago.
+

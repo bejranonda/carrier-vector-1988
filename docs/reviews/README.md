@@ -12,19 +12,18 @@ Future AI development agents and human contributors must consult this repository
 | :--- | :---: | :---: | :---: | :--- | :--- |
 | **`v1.3.0`** | 2026-09-20 | Archived Baseline | **5.71 / 10** | • **12-Dimensional Holistic Evaluation** (Loops, Voice, Padlock, Churn, Thermals)<br>• Live GitHub Pages playtest & onboarding failure analysis (Issue #32)<br>• Zero-dependency 6-DOF math engine review<br>• Blueprints for Bitchin' Betty Voice, Padlock Camera, Rogue-lite Campaign & Vector Juice | • [12-Dimension Review](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.4.0`** | 2026-09-20 | Archived | **8.85 / 10** (Tech)<br>**6.32 / 10** (Player) | • **15-Dimensional Player Entertainment & Usability Review**<br>• Critique of Beginner Complexity & Screen Cognitive Overload (22 dials)<br>• Desktop Mode Mouse Interactivity Failure Analysis<br>• Rookie Onboarding Trap (`DEFAULT_SCENARIO` SAM ambush)<br>• Blueprints for Clean Arcade HUD, Mouse Hit-Areas & Dopamine Pacing | • [Release Verification](v1.4.0/RELEASE_NOTES_AND_VERIFICATION.md)<br>• [Player Experience Review](v1.4.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Recommendations & Roadmap](v1.4.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & AI Prompts](v1.4.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
-| **`v1.5.0`** | 2026-09-21 | **Current Release** (scores below are the PRE-fix baseline; findings addressed in this release - see CHANGELOG) | **9.00 / 10** (Engineering)<br>**5.20 / 10** (Player)<br>**5.76 / 10** (Composite) | • **First review driven by verbatim human playtest evidence**<br>• Framework extended 15 → **21 dimensions** (Counterplay, Convention Conformance, Toolset Completeness, Teachability, Failure Legibility, Accessibility)<br>• **BLOCKER:** `recommendScenario()` routes first-time pilots past `TRAINING_SORTIE` into combat<br>• **BLOCKER:** tutorial teaches `[A]` for autopilot — `[A]` is roll-left<br>• **Zero countermeasures exist**; SAM missile is infinite-turn-rate pure pursuit<br>• `IRON_HAND` SEAD mission ships with no anti-radiation weapon | • [21-Dimension Review](v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)<br>• [**Player Questions Answered**](v1.5.0-dev/PLAYER_QUESTIONS_ANSWERED.md)<br>• [Recommendations & Roadmap](v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Prompt Guidelines](v1.5.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.5.0`** | 2026-09-21 | Archived Baseline | **9.00 / 10** (Engineering)<br>**5.20 / 10** (Player)<br>**5.76 / 10** (Composite) | • **First review driven by verbatim human playtest evidence**<br>• Framework extended 15 → 21 dimensions<br>• Addressed missing countermeasures (`X` chaff), HARM anti-radiation missile (`4`), debrief post-mortem, and stick inversion on briefing | • [21-Dimension Review](v1.5.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Player Questions Answered](v1.5.0/PLAYER_QUESTIONS_ANSWERED.md)<br>• [Recommendations & Roadmap](v1.5.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Guidelines](v1.5.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.6.0-dev`** | 2026-09-21 | **Active Working-Tree Review** | **7.67 / 10** (Engineering)<br>**4.32 / 10** (Player)<br>**4.99 / 10** (Composite) | • **Second human playtest evaluation** (GitHub Pages post-v1.5.0)<br>• Framework extended 21 → **25 dimensions** (Bank-to-Turn Aerodynamics, Tactical Radar vs RWR, On-Screen Guidance, Victory Pacing)<br>• **CRITICAL:** Decoupled Euler angles prevent turning via roll; pitch clamped at 88° prevents looping (jet only goes North)<br>• **CRITICAL:** Cryptic RWR conflatable with radar; lacks carrier, bandits, and terrain<br>• **CRITICAL:** Silent hit-scan cannon attrition from astern; instant cut to deck on death | • [**25-Dimension Review**](v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md)<br>• [**Player Questions Answered**](v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md)<br>• [**Roadmap & Code Blueprints**](v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [**Frank Suggestions & AI Prompts**](v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 
 ### Score Trend
 
 ```
-Engineering  8.85 ██████████████████▏  →  9.00 ██████████████████▌   +0.15
-Player       6.32 ████████████▋        →  5.20 ██████████▍           -1.12  ← REGRESSION
+Engineering  9.00 ██████████████████▌  →  7.67 ███████████████▍      -1.33  (Decoupled Euler turn model flaw)
+Player       5.20 ██████████▍          →  4.32 ████████▋             -0.88  (Heading lock & death confusion)
+Composite    5.76 ███████████▌         →  4.99 █████████▊            -0.77
 ```
 
-> **Why the player score fell while engineering rose:** v1.4.0 built a safe
-> tutorial mission, a pitch-inversion toggle, and an arcade HUD — then left all
-> three unreachable by default, and shipped the tutorial with a wrong key.
-> **The project's deficit is not missing features; it is unreachable ones.**
+> **Why the score fell:** While v1.5.0 delivered countermeasures and HARMs, human playtesting revealed a fundamental aerodynamic barrier: rolling does not steer the aircraft, and pitch is clamped at 88°. Players are physically trapped flying North into lethal fire, while an electronic warfare RWR is mistaken for a navigation radar.
 
 ---
 
@@ -33,34 +32,40 @@ Player       6.32 ████████████▋        →  5.20 █�
 ```
 docs/reviews/
 ├── README.md                                  # This master registry and SOP hub
-├── REVIEW_TEMPLATE.md                         # Standardized 21-dimensional review protocol
+├── REVIEW_TEMPLATE.md                         # Standardized review protocol
 │
 ├── v1.3.0/                                    # Version 1.3.0 Evaluation Suite (Baseline)
-│   ├── COMPREHENSIVE_GAME_REVIEW.md           # 12-Dimensional critique, scores & Good vs. Bad
-│   ├── RECOMMENDATIONS_AND_ROADMAP.md         # Voice alerts, padlock view, juice & Rogue-lite design
-│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Creator critique & copy-paste AI master prompts
+│   ├── COMPREHENSIVE_GAME_REVIEW.md
+│   ├── RECOMMENDATIONS_AND_ROADMAP.md
+│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md
 │
-├── v1.4.0/                                    # Version 1.4.0 Evaluation & Player Experience Suite
-│   ├── RELEASE_NOTES_AND_VERIFICATION.md      # Technical validation (800 tests passing, 6 systems)
-│   ├── COMPREHENSIVE_GAME_REVIEW.md           # 15-Dimensional player review, complexity & mouse critique
-│   ├── RECOMMENDATIONS_AND_ROADMAP.md         # Desktop mouse hit-areas, Dual HUD & onboarding blueprints
-│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Frank blame, opposite thinking & AI master prompts
+├── v1.4.0/                                    # Version 1.4.0 Evaluation Suite
+│   ├── RELEASE_NOTES_AND_VERIFICATION.md
+│   ├── COMPREHENSIVE_GAME_REVIEW.md
+│   ├── RECOMMENDATIONS_AND_ROADMAP.md
+│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md
 │
-└── v1.5.0-dev/                                # Working-tree review (post-v1.4.0, unreleased)
-    ├── COMPREHENSIVE_GAME_REVIEW.md           # 21-Dimensional review, verified defects, good vs. bad
-    ├── PLAYER_QUESTIONS_ANSWERED.md           # Human playtest questions traced to file:line evidence
-    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Tiered fixes sorted by player impact ÷ lines of code
-    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Process critique, opposite thinking, prompt redesign
+├── v1.5.0/                                    # Version 1.5.0 Evaluation Suite (Archived)
+│   ├── COMPREHENSIVE_GAME_REVIEW.md
+│   ├── PLAYER_QUESTIONS_ANSWERED.md
+│   ├── RECOMMENDATIONS_AND_ROADMAP.md
+│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md
+│
+└── v1.6.0-dev/                                # Working-tree review (post-v1.5.0 active evaluation)
+    ├── COMPREHENSIVE_GAME_REVIEW.md           # 25-Dimensional review, good vs. bad, scores
+    ├── PLAYER_QUESTIONS_ANSWERED.md           # 6 Playtest questions answered with exact code evidence
+    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Tiered fixes: Bank-to-Turn math, Radar, HUD Guidance
+    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Frank blame, opposite thinking, AI master prompts
 ```
 
 ### Which document do I read first?
 
 | I am... | Read this |
 | :--- | :--- |
-| An AI agent about to implement fixes | [`v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md`](v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) — Tier 0 first, in order |
-| Wondering why a player was confused | [`v1.5.0-dev/PLAYER_QUESTIONS_ANSWERED.md`](v1.5.0-dev/PLAYER_QUESTIONS_ANSWERED.md) |
-| Assessing overall project health | [`v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md`](v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md) §0 |
-| Planning the next review | [`REVIEW_TEMPLATE.md`](REVIEW_TEMPLATE.md) + [`v1.5.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`](v1.5.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) §3 |
+| An AI agent about to implement fixes | [`v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md`](v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) — Tier 0 first |
+| Wondering why the jet only goes North | [`v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md`](v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md) Q1 |
+| Assessing project health & UX | [`v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md`](v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md) §0–§3 |
+| Prompting an AI for the next sprint | [`v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`](v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) §4 |
 
 ---
 

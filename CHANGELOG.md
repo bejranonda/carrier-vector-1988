@@ -5,6 +5,28 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0-dev] — 2026-09-21
+
+**"Turn and Burn: Entertainment, Steering & Radar Redesign."** Following live playtesting on GitHub
+Pages, human telemetry identified six critical blockers: the jet physically cannot steer via banking
+(decoupled Euler roll/yaw), pitch is clamped at 88° preventing loops, the RWR is confused for a
+radar, enemies hit-scan from behind with instant cuts to the carrier deck on death, terrain is a 500m
+straight trench, and beginners face cognitive paralysis with zero in-flight guidance prompts.
+
+### Documented & Diagnosed
+
+- **Mathematical Proof of Heading Lock (Issue #49):** Traced "jet can only go North" to
+  `AircraftPhysics.ts:89, 181`. Rolling wings produces 0 deg/s yaw; yaw only responds to `Q`/`E`.
+- **Pitch Loop Ceiling (Issue #50):** Traced vertical freeze to `maxPitch = 88 * Math.PI / 180` clamp.
+- **RWR vs Radar Conflation (Issue #51):** Traced player disorientation to `HUD.ts:1454` displaying
+  military EW characters (`S/T/M/X`) while concealing the carrier, bandits, and terrain.
+- **Death Disorientation (Issue #52):** Traced sudden failure confusion to `replaceAirframe()` instantly
+  switching view to `MACRO_DECK` upon 100 damage with no in-flight casualty sequence.
+- **25-Dimensional Review Suite:** Established `docs/reviews/v1.6.0-dev/` with complete playtest
+  evidence, categorical scoring, Good vs. Bad breakdown, and implementation blueprints for Tier 0-3.
+
+---
+
 ## [1.5.0] — 2026-09-21
 
 **"Fight Back."** A playtester asked three questions - how do I defend against a missile, how do I

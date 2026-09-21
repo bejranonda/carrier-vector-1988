@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-800%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-874%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -596,7 +596,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**758 headless tests** across 38 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**874 headless tests** across 48 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -614,28 +614,29 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#55) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [docs/reviews/](docs/reviews/README.md) | **Comprehensive Review Hub:** 12-Dimensional evaluation, version registry, and copy-paste AI master prompts |
-| [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized 12-Pillar evaluation protocol for benchmarking future releases |
+| [docs/reviews/](docs/reviews/README.md) | **Comprehensive Review Hub:** 25-Dimensional evaluation, version registry, and copy-paste AI master prompts |
+| [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized 25-Pillar evaluation protocol for benchmarking future releases |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
 ## Future Roadmap
 
-Shipped through v1.5.0: the guided training sortie (and routing new pilots to it), cockpit voice
-warnings, the padlock camera, vector debris, time rewind, chaff, a beatable SAM, the AGM-88 HARM and
-the death post-mortem. What is next, ranked by what it buys a new player
-([review](docs/reviews/v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)):
+Shipped through v1.5.0: the guided training sortie, cockpit voice warnings, the padlock camera,
+vector debris, time rewind, chaff, a beatable SAM, the AGM-88 HARM and debrief post-mortem.
+Active development sprint (`v1.6.0-dev`), ranked by what it buys a new player
+([review](docs/reviews/v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md)):
 
-1. **Touch controls for chaff and HARM** — phones can fly and fight but cannot yet press `X` or select `4`
-2. **Key remapping** — `main.ts` and `Controls.ts` must be unified first (see KNOWN_ISSUES)
-3. **A "call the boat" cruise-missile strike** — the standoff weapon a playtester asked for
-4. **Autopilot coordinated turns** so the recovery assist can be a real "take me home" button (KNOWN_ISSUES #19)
-5. **Persistent campaign** — carry airframe and hull losses between missions
-6. **Gun-camera replay export** for sharing
+1. **Coordinated Bank-to-Turn Aerodynamics (P0)** — couple roll angle $\phi$ into yaw rate $\dot{\psi}$ so rolling turns the jet across the landscape (Issue #49)
+2. **Loop & Vertical Flight Authority (P0)** — eliminate the $\pm 88^\circ$ pitch ceiling so pilots can loop over backward into Immelmanns (Issue #50)
+3. **Integrated Tactical Radar / Minimap (P0)** — replace the cryptic RWR letters with a clear situational display showing Carrier, Bandits, and Waypoints (Issue #51)
+4. **Dynamic Rookie Copilot HUD Guidance (P0)** — contextual bottom-center prompt (`[T] LOCK`, `[SPACE] FIRE`, `[X] CHAFF`, `[L] LAND`) (Issue #54)
+5. **Death Slow-Mo & Casualty Legibility (P1)** — in-flight death sequence with crash banner before transitioning to deck (Issue #52)
+6. **Novice Milestone & Victory Pacing (P1)** — clear micro-rewards and achievable first-flight qualification victory (Issue #55)
+7. **Branching Canyon Archipelago (P2)** — exciting multi-channel topography replacing the 1D straight slot (Issue #53)
 
 ---
 

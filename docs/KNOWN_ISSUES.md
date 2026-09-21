@@ -582,3 +582,75 @@ against the SHATTERED_RIDGE belt. Expect a balance pass.
 Cruise-missile fire support (`Z`), progressive control disclosure by mission, struggle detection
 (auto-offering the stick flip after repeated pitch reversals), key remapping, and the autopilot
 coordinated-turn rework (#19). Cut deliberately when the scope was simplified.
+
+---
+
+# New findings from human playtest (v1.6.0-dev)
+
+## 49. Decoupled Euler Roll and Yaw: Bank-to-turn does not exist **[P0 — Critical]**
+
+In `src/flight/AircraftPhysics.ts:163-185`, roll input (`A`/`D` or `Left`/`Right`) only increments
+`this.roll`. Bank angle does not couple into `this.yaw` at all, so rolling the wings creates zero
+heading change. Yaw is only updated via `applyYawInput()`, which is bound exclusively to `Q` and `E`
+(rudder). Because `forwardVector` is derived from `yaw` and `pitch`, thrust acts purely down the initial
+heading vector.
+
+**Consequence:** A player who flies using standard arrow keys or WASD rolls sideways but the jet
+continues flying North forever. This directly breaks the universal flight-genre convention of
+coordinated bank-to-turn.
+
+## 50. Pitch clamped to ±88° prevents loops and Immelmann turns **[P0 — Critical]**
+
+In `src/flight/AircraftPhysics.ts:155`, pitch is clamped:
+```ts
+const maxPitch = 88 * (Math.PI / 180);
+if (this.pitch > maxPitch) this.pitch = maxPitch;
+if (this.pitch < -maxPitch) this.pitch = -maxPitch;
+```
+To avoid Euler gimbal singularities, pitch cannot exceed 88°.
+
+**Consequence:** When a player attempts to turn around by pulling back into an inside loop, Split-S,
+or Immelmann, the jet hits an invisible ceiling at 88° (near-vertical), bleeds all airspeed, stalls,
+and slides backward while still facing North.
+
+## 51. RWR masquerading as a tactical radar **[P0 — Critical UX]**
+
+The bottom-right scope (`src/renderer/HUD.ts:1454`) is an electronic warfare Radar Warning Receiver (RWR)
+displaying cryptic military letters (`S` for search, `T` for track, `M` for missile, `X` for decoyed).
+Players expect a **Tactical Radar / Minimap**.
+
+**Consequence:** The scope does not display the aircraft carrier (home base), airborne enemy contacts
+(MiGs, bombers), mission waypoints, or terrain boundaries. Players feel completely blind and disoriented.
+
+## 52. Instant snap to 2D deck on airframe destruction **[P1]**
+
+When `this.physics.damage >= 100` (`src/core/GameLoop.ts:1967`), `replaceAirframe()` immediately sets
+`this.currentView = 'MACRO_DECK'`.
+
+**Consequence:** The 3D cockpit view vanishes instantly without an in-flight explosion camera, slow-motion
+failure cadence, or prominent HUD crash banner. The player is abruptly teleported to the carrier deck
+maintenance screen with no emotional closure on why they died.
+
+## 53. 1-Dimensional Fjord bowling alley **[P1]**
+
+In `src/tactics/TerrainProfiles.ts:60-79`, the signature map `FJORD` restricts navigable flight to a
+500-metre wide corridor ($|X| < 500$ m). Beyond 500 m, terrain rises precipitously to 1800 m vertical
+walls.
+
+**Consequence:** Combined with the inability to steer via roll (#49), the player is funnelled down a
+narrow gutter directly into enemy missile envelopes.
+
+## 54. Cognitive overload and absence of dynamic contextual HUD guidance **[P0]**
+
+The HUD displays up to 22 instruments simultaneously, while zero contextual prompts exist in combat.
+Beginners do not know which key to press when a bandit merges or when an attack run starts.
+
+**Fix:** Default to a clean Arcade HUD and introduce a dynamic "Rookie Copilot" prompt at bottom-center
+(`[T] LOCK BANDIT`, `[SPACE] FIRE`, `[X] DEPLOY CHAFF`, `[L] APPROACH CARRIER`).
+
+## 55. Lack of beginner milestone progression and victory feedback **[P1]**
+
+The game does not provide intermediate micro-rewards (e.g. drone splash confirmation fanfare, waypoint
+milestone chimes, or a short novice qualification mission). Players experience repeated failure without
+feeling any sense of mastery.
+

@@ -389,3 +389,21 @@ When directing AI assistants on this repository, structure all prompts into 4 ex
   briefing until the setting is touched, then retire. Prefer that to a modal question.
 - **One look.** Do not add a second screen style; every style is another thing a beginner
   must understand before flying.
+
+## 12. Rules added in v1.6.0-dev (Flight Ergonomics & Player Entertainment)
+
+- **Rolling must turn the aircraft.** Any fixed-wing flight simulation must implement
+  coordinated bank-to-turn ($\dot{\psi} \propto \frac{g \tan\phi}{V}$). Decoupling roll from yaw
+  forces players onto rudder pedals, breaking universal genre expectations and trapping pilots on
+  a straight heading.
+- **Never clamp pitch at vertical.** An artificial ceiling at $\pm 88^\circ$ prevents loops,
+  Immelmann turns, and Split-S manoeuvres. The physics engine must allow clean acrobatic passage
+  through the vertical.
+- **A minimap must show the world, not just threat letters.** Do not present an electronic
+  warfare RWR as the primary tactical sensor. A radar scope must clearly show the carrier,
+  hostile bandits, and mission waypoints.
+- **Never snap views on death.** The transition from cockpit flight to carrier deck must include
+  an in-flight casualty sequence (slow-motion, explosion view, and a prominent casualty banner) so
+  the player understands why they died.
+- **Dynamic guidance must lead the player.** Do not rely on static briefing cards. The HUD must
+  display contextual prompts (`[T] LOCK`, `[SPACE] FIRE`, `[X] CHAFF`) at the exact moment of combat.
