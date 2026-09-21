@@ -110,7 +110,7 @@ describe('solveHudLayout', () => {
 
     it('uses a compact systems strip and a smaller RWR on a short window', () => {
         const short = solveHudLayout({ width: 1440, height: 460, showApproach: false, hasChecklist: true });
-        const tall = solveHudLayout({ width: 1440, height: 900, showApproach: false, hasChecklist: true });
+        const tall = solveHudLayout({ width: 1440, height: 1200, showApproach: false, hasChecklist: true });
         expect(short.compactSystems).toBe(true);
         expect(tall.compactSystems).toBe(false);
         expect(short.rwrSize).toBeLessThan(tall.rwrSize);

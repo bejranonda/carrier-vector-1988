@@ -17,6 +17,12 @@ consequence rather than a post-effect bolted onto a modern engine.
 layer reports them. Nothing is faked for effect: when the RWR screams, a real
 line-of-sight ray actually connects a SAM to your aircraft.
 
+**Balancing Simulation with Entertainment.** (New in v1.7.0). While zero-dependency
+fidelity is the engineering goal, the user experience must account for cognitive
+load. A pure simulation is intimidating; therefore, presentation layers (like radar
+size and HUD clutter) must prioritize readability and beginner accessibility,
+bridging the gap between a hardcore flight model and arcade enjoyment.
+
 **Mechanics must have consequence.** The most important lesson from this
 codebase's history: a system that is beautifully implemented but wired to
 nothing is worth zero. The radar, RCS and terrain-masking model was

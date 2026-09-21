@@ -637,6 +637,8 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 
 ## Future Roadmap
 
+Shipped in v1.7.0: Increased the size of the radar for readability, added a comprehensive review on balancing complexity with entertainment for beginners (`docs/reviews/review-v1.7.0.md`).
+
 Shipped in v1.6.0 ("Turn and Burn"): banking turns the jet (and the orientation bug that pushed lift the
 wrong way is fixed), loops and Immelmanns work, a real tactical radar, a slow-motion death sequence that
 names the killer, fairer enemy guns with a warning, attack coaching, and first-time milestones. See the

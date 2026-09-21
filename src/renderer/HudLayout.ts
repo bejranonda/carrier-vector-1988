@@ -42,8 +42,8 @@ export const HUD_METRICS = {
      */
     compactSystemsHeight: 560,
     /** Full-size RWR scope side; shrunk on short viewports. */
-    rwrMax: 156,
-    rwrMin: 104,
+    rwrMax: 240,
+    rwrMin: 160,
     /**
      * Height claimed by the objective strip in touch mode. The instruments
      * are centred in what is left between this and the thumb band.

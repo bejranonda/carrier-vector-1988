@@ -3,6 +3,11 @@
 Honest accounting of current limitations. Items marked **[By design]** are
 conscious decisions, not defects — please don't "fix" them without discussion.
 
+## 1. High Cognitive Load for Beginners **[Active Issue]**
+
+The game drops new players into a complex cockpit with minimal pacing, requiring them to learn aerodynamics, energy management, and radar mechanics simultaneously. While this honors the hardcore simulation roots, it sacrifices immediate entertainment value and can alienate casual players. 
+**Mitigation:** We are actively reviewing the onboarding experience (`docs/reviews/review-v1.7.0.md`) to balance simulation depth with arcade fun. Radar size has been increased in v1.7.0 for better readability.
+
 ---
 
 ## 1. Browser Web Audio autoplay policy
