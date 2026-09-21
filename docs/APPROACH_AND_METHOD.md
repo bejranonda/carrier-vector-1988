@@ -500,3 +500,104 @@ an instant cut were changed to sit through the 2.6 s - and to assert the cockpit
 
 An aim time (a warning) and a hit chance (a miss you can hear). Together they turn "I was dead" into
 "something lined me up, I could have broken" without touching the AI's steering.
+
+---
+
+## 10. Instrumented Playtesting (v1.9.0)
+
+The method that found five shipped defects in an afternoon, after five suites of
+source-reading review (3,438 lines) had missed all of them.
+
+### Why source review was not enough
+
+Every prior review reasoned from code. Code review answers *"what does this
+function do?"* — it cannot answer *"what does the player see?"*, because the
+answer to that is the composition of twenty-seven independent draw calls onto one
+surface. Four pairs of HUD elements were being drawn into the same rectangle on
+every frame at 1440×900, and there is no way to notice that by reading
+`HUD.ts` top to bottom. You have to look at the picture.
+
+The same is true of the test suite. 921 tests were green throughout.
+
+### The harness
+
+Headless Chromium (pre-installed at `/opt/pw-browsers`) driving the real build.
+Two servers, for two different purposes:
+
+* **`vite preview`** — the production bundle. This is what the player gets, and
+  the only honest target for screenshots.
+* **`vite dev`** — exposes `window.__game` (`main.ts` publishes it under
+  `import.meta.env.DEV`, and the bundler strips it from production). This is the
+  telemetry probe: real physics state, sampled at will, from the actual running
+  game rather than a reconstruction of it.
+
+Keeping both matters. The dev build tells you *what the simulation is doing*; the
+production build tells you *what the player sees*. A defect can live in either.
+
+### The three things it measures
+
+1. **Screenshots at every screen and every viewport.** Boot, briefing, deck,
+   cockpit clean, cockpit under threat, help overlay, debrief — at desktop
+   (1440×900, 1280×720) and phone (844×390, 390×844). Overlaps, truncation and
+   contradictions are visible immediately and invisible any other way.
+
+2. **State sampling on a timer.** A snapshot function reads phase, scenario,
+   attitude, energy, fuel, hull, contacts, the active objective and the active
+   hint. Printed once a second while an input is held, it turns "the jet feels
+   unresponsive" into `8 °/s, roll pinned at −75°, throttle parked at 1.5`.
+
+3. **The idle test.** Press nothing. Wait thirty seconds on the first screen a
+   beginner sees, because that is what a beginner does — they read. This one
+   found the training sortie taking 15% off the carrier's hull at T+20s. No
+   input-driven test would ever have produced it.
+
+### Rules the method follows
+
+* **Play as the player, not as the author.** Hold the intuitive key, not the
+  correct one. Wait on the screen, do not skip it. Use the default settings.
+* **Every claim gets a number or a screenshot**, and the numbers live in a file
+  with no opinions in it (`PLAYTEST_EVIDENCE.md`). An agent acting on the review
+  needs facts it can trust without re-deriving them.
+* **Measure before believing the diagnosis.** Two findings in this review were
+  overturned by measurement: the v1.8.0 first-run routing claim was read as false
+  and turned out to be true, and "hold W to tighten the turn" was read as wrong
+  advice and measured as correct (7.2 → 9.5 °/s). Reviews are reliable about what
+  a player felt and unreliable about why — see Guidelines §12.
+* **Convert every finding into a test before fixing it.** A screenshot proves a
+  defect once; a test keeps it fixed. The overlap findings became
+  `bandRects()` / `bottomStackRects()` plus six disjointness assertions, so the
+  class of bug cannot return silently.
+
+### Cost
+
+About twenty minutes to write, seconds to run. It belongs in the repo. See
+[R-Tier 5](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md#tier-5--worth-building-not-urgent).
+
+---
+
+## 11. Layout as a Testable Invariant, Revisited (v1.9.0)
+
+§5 records that responsive layout was made a solved problem by extracting pure
+solvers. v1.9.0 found the limit of that solution: **the solvers placed the side
+instruments, and seven elements drawn directly in `HUD.ts` did not use them.**
+
+The fix generalises the original insight rather than patching the symptom.
+Vertical position is now a *band*, and a band's top is derived from its
+predecessor's bottom:
+
+```ts
+const OBJECTIVE_TOP = 54;
+const COMPASS_TOP   = OBJECTIVE_TOP + BAND_H.objective + BAND_GAP;
+const WARNING_TOP   = COMPASS_TOP   + BAND_H.compass   + BAND_GAP;
+const COACH_TOP     = WARNING_TOP   + BAND_H.warning   + BAND_GAP;
+```
+
+The same shape applies at the bottom of the screen, measured up from whatever the
+touch controls have reserved (`HudLayout.BOTTOM_STACK`). Both stacks export their
+rectangles, and the tests assert pairwise disjointness across every viewport
+height and every touch reserve.
+
+The principle: **a layout constant that another constant should have determined
+is a latent overlap.** Hand-picked numbers agree with each other until one of
+them changes; `BAND.objective` grew from 40 px to 54 px at some point and
+`BAND.compass` stayed at 96, and nothing anywhere could notice.

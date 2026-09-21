@@ -174,6 +174,13 @@ export function generateWave(waveNumber: number, rng: () => number): InboundStri
     return packages;
 }
 
+/**
+ * How long a shielded scenario's target drone takes to re-fly its pattern after
+ * completing a pass. Long enough that the deck's threat panel is not churning,
+ * short enough that a pilot who dawdles still has something to shoot at.
+ */
+const TRAINING_PATTERN_SECONDS = 90;
+
 export class DeckManager {
     public inventory: CarrierInventory = {
         fuelLiters: 180000,
@@ -187,6 +194,16 @@ export class DeckManager {
     public aircraftState: AircraftDeckState = 'CATAPULT_READY';
     public currentTaskProgress: number = 100; // 0 to 100%
     public currentTaskDuration: number = 0;
+
+    /**
+     * This scenario's contacts are target drones and cannot hurt anything.
+     *
+     * Set from `ScenarioSetup.combatShielded`. The flag already existed and
+     * already ghosted the rounds a shielded contact fired at the player - but
+     * the deck's own damage path never consulted it, so a training drone could
+     * still strafe CV-68 for 15% of its hull.
+     */
+    public combatShielded = false;
 
     // Next sortie planned loadout
     public plannedLoadout: AircraftLoadout = {
@@ -398,6 +415,30 @@ export class DeckManager {
 
             // Consequence accounting: Bomber arrives and strikes carrier!
             if (pkg.etaSeconds <= 0) {
+                /**
+                 * A shielded scenario's contacts are target drones.
+                 *
+                 * `combatShielded` ghosted every round the training MiG fired
+                 * at the PLAYER, but nothing stopped the same contact running
+                 * the deck-damage path here - so the sortie whose own tagline
+                 * reads "Zero combat hostiles" took 15% off CV-68's hull at
+                 * T+20s while a first-time pilot was still reading the deck
+                 * screen.
+                 *
+                 * The drone re-flies its pattern rather than being marked
+                 * `hasAttacked`. That matters beyond the hull: a package with
+                 * `hasAttacked` set is skipped by
+                 * `GameLoop.buildTargetsFromTimeline`, so retiring the drone
+                 * here would let the tutorial's SPLASH THE DRONE phase - which
+                 * completes on `contactsAlive === 0` - satisfy itself for a
+                 * pilot who never fired a shot. The drone stays on the board
+                 * until the player actually kills it.
+                 */
+                if (this.combatShielded) {
+                    pkg.etaSeconds = TRAINING_PATTERN_SECONDS;
+                    this.log('GHOST-LEAD: DRONE COMPLETED ITS PASS. RE-ENTERING THE PATTERN.');
+                    continue;
+                }
                 pkg.hasAttacked = true;
                 if (pkg.aircraftType === 'Tu-22') {
                     const dmg = 35;

@@ -147,6 +147,30 @@ Rules:
   training checklist at 900x700. Both solvers are pure and both have tests
   asserting that nothing overlaps and nothing leaves the viewport — extend those
   matrices when adding a panel.
+
+  **This rule was written, and then broken seven times.** The solvers place the
+  *side* instruments; seven elements drawn directly in `HUD.ts` — the objective
+  strip, the compass tape, the warning banner, the coach ticker, the pill bar,
+  the assist annunciator and the keycap strip — carried their own hand-written
+  offsets, and by v1.8.0 four pairs of them were being drawn into the same
+  rectangle on every frame at 1440x900 (see Known Issues #62). So, explicitly:
+
+  - **Vertical position is a band, and bands are derived.** `HUD.BAND` (top
+    stack) and `HudLayout.BOTTOM_STACK` (bottom stack) compute each band's top
+    from its predecessor's bottom plus a gap. Never write a literal `y` for a
+    HUD element; add it to the stack.
+  - **A band's height belongs to the stack too.** `BAND_H.objective` is what
+    `drawObjectiveStrip` draws AND what the overlap test measures. The moment a
+    draw call uses a height the stack does not know about, the test is checking
+    fiction.
+  - **Every stack exports its rectangles** (`bandRects()`,
+    `bottomStackRects()`) and has a test asserting they are pairwise disjoint,
+    at every viewport height and every touch reserve.
+  - **Reserving space for decluttering is not the same as placing an element.**
+    `HUD.instrumentBoxes()` already reserved the annunciator's band — but only
+    so floating contact labels would avoid it. The pill bar and the keycap strip
+    never consulted it and printed straight through. A reservation that only one
+    consumer honours is not a layout.
 - **The camera transform is derived from the aircraft's own basis vectors.**
   `transformToCamera()` projects onto the same right / up / forward vectors
   `AircraftPhysics` uses for lift and thrust. It previously composed rotation
@@ -416,3 +440,68 @@ When directing AI assistants on this repository, structure all prompts into 4 ex
   chaffs. Two hints that told the player different things at the same moment (banner vs. ticker) is a bug.
 - **Give a first time its own moment.** A one-shot latch, persisted, on the channel the player is already
   watching. Do not build a menu for it.
+
+
+## 13. Rules added in v1.9.0 (each one encodes a bug that already shipped)
+
+Found by the first review to run the live build in a browser and look at
+rendered frames. Five suites of source-reading review had missed all of them.
+
+- **Look at the pixels.** A rendering defect is invisible to source review and to
+  a passing test suite. 921 tests were green while the mission order and the
+  compass tape were printed through each other at the default desktop size. Run
+  the build, screenshot every screen, at desktop and phone size, before claiming
+  a UI works. The twenty-minute Playwright harness that found this is worth more
+  than the next thousand lines of review.
+
+- **A "decluttering" change must not delete an instrument the player flies by.**
+  ARCADE mode suppressed the whole pitch ladder to keep the centre clean, which
+  also deleted the artificial horizon — so the default HUD had no attitude
+  reference at all. Clutter is a `PADLOCK` pill that is always on screen. A
+  horizon line is not clutter. When hiding a group, enumerate what is inside it.
+
+- **A coaching rule must not be true by construction.** `distanceToCarrier < 2500
+  && airSpeed > 95` describes a landing approach and also describes *every
+  catapult launch ever made*, so the game's most-seen hint told beginners to
+  decelerate into a stall. Before shipping a hint, ask what other states satisfy
+  its predicate — especially the states the game itself creates.
+
+- **Two instructions on screen at once is a bug, even when both are correct.**
+  `CLIMB TO 2,500 FT` above `REDUCE TO BELOW 90 M/S` is not dense UI, it is
+  contradictory UI. The objective strip, the coach ticker, the warning banner and
+  the contact tags need one arbiter, not four independent ones.
+
+- **A safety flag has to be honoured everywhere the danger lives.**
+  `combatShielded` was checked in four places, all protecting the player's
+  aircraft, and nowhere in the deck's own damage path — so the "zero hostiles"
+  tutorial took 15% of the player's carrier. When adding a flag that means
+  "nothing here can hurt anything", grep every site that reduces a health value.
+
+- **A scenario's prose is a contract the code must keep.** "Zero combat
+  hostiles", "Running out of fuel is the only way to end this badly", "the blast
+  doors close in four minutes" — a test should assert each of these against
+  behaviour. Prose that the simulation contradicts is worse than no prose,
+  because the player trusts it.
+
+- **A test must cover the state the game actually produces.**
+  `BankToTurn.test.ts` asserts bank-and-pull out-turns bank alone, using 0.6
+  stick for 6 s from 220 m/s. True there; the game gives full deflection from a
+  nose-high state at decaying speed, where heading change falls to ~0.25 deg/s.
+  When a test encodes a player-facing promise, pin it at the input the player
+  actually uses, from the state the game actually starts them in.
+
+- **If the phone build is clearer than the desktop build, the desktop build is
+  wrong.** The deck screen renders as 8 panels and ~35 numbers on desktop and as
+  4 panels and one LAUNCH button on a phone, from the same code. Constraints
+  produced the better design. Ship it everywhere and gate the dense version on
+  player experience, not on viewport width.
+
+- **Every beginner feature that adds to the screen must name what it removes.**
+  Thirteen consecutive accessibility features all added a HUD element. The screen
+  ran out of room and elements began to overlap. A new pill, ticker or banner
+  needs a deletion attached to it in the same pull request.
+
+- **A release that changes a documented limitation updates the limitation in the
+  same commit.** `KNOWN_ISSUES.md` claimed pitch was clamped at +-88 degrees for
+  two releases after v1.7.0 removed the clamp. Stale docs are read by humans and
+  by AI agents, and both act on them.

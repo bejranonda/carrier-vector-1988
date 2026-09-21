@@ -3,15 +3,10 @@
 Honest accounting of current limitations. Items marked **[By design]** are
 conscious decisions, not defects — please don't "fix" them without discussion.
 
-## 1. High Cognitive Load for Beginners **[Mitigated in v1.8.0]**
-
-The game previously dropped new players into a complex cockpit with minimal pacing, requiring them to learn aerodynamics, energy management, and radar mechanics simultaneously.
-**Mitigations Shipped:**
-- **v1.7.0:** Increased radar size (125–185 px) with enhanced grid spacing.
-- **v1.8.0:** Default first-sortie routing to `TRAINING_SORTIE`; smart target auto-acquisition on takeoff (`ASSIST`) and during autopilot (`AUTO`); anti-stall cruise throttle protection; intuitive `FUEL %` readout; prioritized emergency warnings; 3.8× camera trauma and 28-piece debris explosion for satisfying feedback.
-See `docs/reviews/v1.7.0/RECONSIDERATION_AND_ENTERTAINMENT_AUDIT.md`.
-
----
+> **Numbering note:** two different sections were both numbered `## 1.` until
+> v1.9.0. The beginner-cognitive-load entry that occupied the first slot has
+> moved to [#61](#61-high-cognitive-load-for-beginners-partly-fixed-in-190),
+> where it belongs alongside the measurements that finally quantified it.
 
 ## 1. Browser Web Audio autoplay policy
 
@@ -20,15 +15,27 @@ first `keydown` or `mousedown` (`src/main.ts`), and `SoundFX.init()` calls
 `ctx.resume()` when suspended. **Consequence:** the game is silent until the
 player presses a key. This is unavoidable under current browser policy.
 
-## 2. Euler angles and gimbal lock
+## 2. Euler angles and gimbal lock **[Corrected in v1.9.0 — this entry was stale]**
 
-Orientation uses Euler angles rather than quaternions. Pitch is clamped to
-±88° in `applyPitchInput()` to avoid the singularity at ±90°.
+Orientation uses Euler angles rather than quaternions.
 
-**Consequence:** true vertical flight (pure loops through the zenith) is not
-possible, and yaw becomes ill-conditioned at extreme pitch. A quaternion
-rewrite is the correct long-term fix but would ripple through the renderer,
-HUD symbology and enemy AI.
+**This entry previously claimed pitch is clamped to ±88° in `applyPitchInput()`
+and that loops are impossible. That has been false since v1.7.0.** The clamp was
+removed and replaced by `AircraftPhysics.foldPastVertical()`, which re-expresses
+the same attitude past the vertical (pitch folds back, heading and roll each turn
+half a circle). Loops, Immelmanns and Split-S manoeuvres all work, with no NaN
+and no discontinuity — asserted in `BankToTurn.test.ts` ("pitch is never clamped
+and passes over the top without NaN").
+
+**What remains true:** yaw is still ill-conditioned very near the vertical, where
+`applyPitchInput` divides by `max(0.2, cos(pitch))`. A quaternion rewrite is
+still the correct long-term fix and would still ripple through the renderer, HUD
+symbology and enemy AI.
+
+**Lesson recorded:** this entry survived two releases after the code changed
+underneath it. Standing rule: a release that changes a documented limitation must
+update the limitation in the same commit. See the v1.9.0 review's
+"Docs vs. code honesty" dimension.
 
 ## 3. Frustum clipping is near-plane only
 
@@ -418,7 +425,7 @@ unreachable.
 **Fix:** add an explicit `isFirstFlight` flag to `TRAINING_SORTIE` and match on
 it, plus a regression test asserting
 `recommendScenario(emptyRecords()).id === 'TRAINING_SORTIE'`. See
-[`docs/reviews/v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md`](reviews/v1.5.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) T0-1.
+[`docs/reviews/v1.5.0/RECOMMENDATIONS_AND_ROADMAP.md`](reviews/v1.5.0/RECOMMENDATIONS_AND_ROADMAP.md) T0-1.
 
 **Process note:** this issue was closed on the basis that the feature was
 *built*, not that it was *reachable*. Verify user-facing outcomes, not
@@ -440,7 +447,7 @@ Resolved via `VectorDebrisSystem` in `src/renderer/VectorDebris.ts`. Exploding e
 
 # Defects Found in the v1.5.0-dev Review (2026-09-20)
 
-Full analysis: [`docs/reviews/v1.5.0-dev/`](reviews/v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)
+Full analysis: [`docs/reviews/v1.5.0/`](reviews/v1.5.0/COMPREHENSIVE_GAME_REVIEW.md)
 
 ## 36. Tutorial teaches the wrong autopilot key **[Resolved in v1.5.0]**
 
@@ -687,3 +694,174 @@ In response to playtesting feedback indicating high cognitive load, lack of kine
 - **HUD Decluttering:** Percentage fuel readout (`FUEL 86%`) in `ARCADE` mode.
 - **First Flight Guidance:** `TRAINING_SORTIE` automatically recommended on launch for first-time pilots.
 
+
+---
+
+# Found by the v1.9.0 browser playtest
+
+The first review to run the live build in a real browser and inspect rendered
+frames. Everything below is measured, not inferred — see
+[`docs/reviews/v1.9.0/PLAYTEST_EVIDENCE.md`](reviews/v1.9.0/PLAYTEST_EVIDENCE.md).
+
+## 61. High cognitive load for beginners **[Partly fixed in 1.9.0]**
+
+The long-running entry, now with numbers behind it. Measured at 1440×900,
+default settings: **27 simultaneous draw regions, 33 labelled values, 29 key
+bindings** in the help overlay, 8 deck panels with ~35 numbers, and 14 distinct
+keys shown on the briefing screen before the player has flown.
+
+The root cause turned out not to be density alone. **Four pairs of HUD elements
+were being drawn into the same rectangle** (#62), so the screen was not merely
+full — it was printed on top of itself.
+
+**Fixed in v1.9.0:** all four collisions (#62), the horizon restored to ARCADE
+(#63), the false launch hint (#64), shorter control labels.
+**Still open:** the element count itself. The fix is
+[R1, the `FIRST FLIGHT` HUD](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md#tier-1--the-big-one) —
+show five things, hide the other twenty-two, on by default until the first
+sortie is complete.
+
+**Prior mitigations that remain valid:** v1.7.0 radar sizing; v1.8.0
+`TRAINING_SORTIE` routing, auto-acquisition, anti-stall floor, `FUEL %` readout.
+
+## 62. Four HUD element pairs shared the same pixels **[Fixed in 1.9.0]**
+
+All unconditional, all at the default desktop size, all present since at least
+v1.7.0:
+
+| Collision | Ranges (at 1440×900) |
+| :-- | :-- |
+| Objective strip ∩ compass tape | 54–108 vs. 76–108 |
+| Pill bar ∩ assist annunciator ∩ keycap strip | 848–882 vs. 848–870 vs. ~873–883 |
+| Score chip ∩ top-right button row | 18–44 vs. 16–44 |
+| Help-overlay FLIGHT labels ∩ SYSTEM keycaps | unbounded `fillText` past `colW` |
+
+**Cause:** the project built pure layout solvers (`HudLayout`, `DeckLayout`,
+`TouchLayout`) precisely so that "no two instruments overlap" would be testable,
+then positioned these seven elements with hand-written offsets that bypassed
+them. `HUD.instrumentBoxes()` even *reserved* the annunciator band — but only for
+floating-label decluttering; the pill bar and keycap strip never consulted it.
+
+**Fix:** `HUD.BAND` and `HudLayout.BOTTOM_STACK` are now derived — each band's
+top is its predecessor's bottom plus a gap — and exported as `bandRects()` /
+`bottomStackRects()`. Six tests in `HudLayout.test.ts` assert both stacks are
+disjoint at every viewport height and touch reserve.
+
+## 63. The default HUD had no attitude reference **[Fixed in 1.9.0]**
+
+`drawPitchLadder` returned immediately in ARCADE (the default), which removed the
+zero rung — the artificial horizon — along with the ladder. In a 75° bank with
+the real horizon off-screen, the only attitude cue on the entire display was the
+three-stroke waterline glyph.
+
+This is the direct cause of *"it is hard to understand how to control the jet"*:
+a held bank and back-stick from a nose-high state produces almost no heading
+change (#65), and the explanation — a 36° nose-up attitude — was not displayed
+anywhere.
+
+**Fix:** `HUD.drawArcadeHorizon()` — the ladder's zero rung and a signed pitch
+number, using the same exact `fov · tan(δ)` projection, pinned and dimmed when
+the horizon leaves the glass. Nothing else from the ladder.
+
+## 64. `TOO FAST FOR THE TRAP` fired on every launch **[Fixed in 1.9.0]**
+
+The rule was `distanceToCarrier < 2500 && airSpeed > 95`. A catapult shot leaves
+the boat fast, from zero range, so both clauses are true by construction for the
+first seconds of every launch in every scenario. Measured 4 s after the training
+cat shot at 201 m altitude: the objective strip read `CLIMB TO 2,500 FT` and the
+hint 60 px below it read `REDUCE TO BELOW 90 M/S`. Obeying it stalls the jet.
+
+**Fix:** the rule now also requires `closingOnCarrier` (supplied from
+`HUD.isOnApproach`), `altitudeAgl < 400` and a non-climbing vertical speed. Two
+regression tests cover the launch and departure cases.
+
+## 65. Turn rate and roll feel **[Open — needs an owner's decision]**
+
+Supersedes and quantifies #56. Measured in-browser, held input, 200 m/s at
+2500 m:
+
+| Input | Assist | Turn rate | 180° reversal |
+| :-- | :-- | --: | --: |
+| Bank only | ASSIST | 7.2 °/s | ~25 s |
+| Bank + pull | ASSIST | 9.5 °/s | ~19 s |
+| Bank + pull | MANUAL | 10.3 °/s | ~17 s |
+
+Bank-and-pull **is** faster than bank alone, so the control reference's "hold W
+to tighten" is correct — this was checked because it felt wrong in play and the
+measurement said otherwise.
+
+Two open problems:
+
+1. **Roll snaps to the 75° cap instantly** and pins there. There is no
+   proportional bank feel and no way to hold an intermediate angle.
+2. **From a nose-high, energy-bleeding state** — exactly the state a beginner is
+   in off the catapult with the throttle parked at 150% AB (#66) — eight seconds
+   of held bank and back-stick produced **2° of heading change**. This is
+   aerodynamically correct (the turn is going into the vertical plane) but reads
+   as broken input.
+
+**Not changed in v1.9.0**, deliberately: turn rate is the number every mission's
+timing budget is built on. Three options in
+[R2](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md#r2--turn-rate-and-roll-feel);
+the recommended one (ease the roll to the cap over ~0.4 s) changes no mission
+timing.
+
+## 66. The anti-stall throttle floor never retards **[Open]**
+
+`FlightAssist.ts` raises throttle to 0.7 when airspeed decays below 130 m/s, and
+nothing ever lowers it. Measured: a new pilot who touches no throttle key flies
+the entire sortie at **150% afterburner**, burning 138 L in 25 s while climbing
+steeply — which is how they arrive in the nose-high state of #65.
+
+Fix is symmetrical to the floor that already exists: in `ASSIST`, with no pilot
+throttle input and airspeed above ~200 m/s, ease the demand back toward 0.85.
+See R3.
+
+## 67. The training sortie damaged the player's carrier **[Fixed in 1.9.0]**
+
+`TRAINING_SORTIE` declares `combatShielded: true`, a tagline of *"Zero combat
+hostiles"* and a loss condition of *"Running out of fuel or ditching in the
+fjord"*. Measured on a stock first run with the player idle on the deck:
+**hull 100% → 85% at T+20s**, logged as
+`WARNING: MiG-23 STRAFING RUN ON FLIGHT DECK!`.
+
+`combatShielded` was consulted in four places in `GameLoop.ts`, all protecting
+the *player's aircraft*. `DeckManager.update()` ran the package-reaches-the-
+carrier damage path without ever checking it.
+
+**Fix:** `DeckManager.combatShielded`, set from the scenario in `applyScenario`.
+A shielded package logs a completed drone pass and deals no damage. Three
+regression tests.
+
+## 68. The deck screen contradicts itself **[Open]**
+
+Two contradictions visible in a single frame on the training mission:
+
+* `NEXT SORTIE PAYLOAD` offers `MK.82 IRON BOMB 2 / 4` while `STRIKE GROUP
+  STATUS` lists stock `0` — and the scenario's `inventory` declares
+  `ironBombs: 0`.
+* `EARLY WARNING RADAR` labels the training drone `1 INBOUND / FIGHTER 0:18` in
+  red, on the mission that promised zero hostiles. `DeckManager` now knows about
+  `combatShielded`, so labelling it `TARGET DRONE` in a neutral colour is a
+  small change.
+
+See R6.
+
+## 69. The desktop deck screen is worse than the phone one **[Open — by accident]**
+
+Desktop: 8 panels, ~35 numbers, 4 progress-bar groups. Phone landscape: 4 panels
+and one large `LAUNCH` button, from the same code via `DeckLayout`'s priority
+shedding. The phone version is clearer for a first-time player **on any device**.
+
+The simplified deck screen this game needs already exists and already ships — it
+is just gated on viewport size instead of on player experience. See R5.
+
+## 70. `BankToTurn.test.ts` does not cover the saturated case **[Open]**
+
+The test *"bank and pull swings the nose round faster than the bank alone"*
+exercises 0.6 stick deflection for 6 s from 220 m/s, where the property holds.
+The game gives 1.0 deflection from 180 m/s decaying to 126 over 8+ s from a
+nose-high start, where heading change falls to ~0.25 °/s (#65).
+
+Not a false test — an incomplete one. 921 green tests made the gap invisible.
+Add the saturated case and assert whatever the intended behaviour actually is.

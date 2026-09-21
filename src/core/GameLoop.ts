@@ -550,6 +550,10 @@ export class GameLoop {
         }
 
         this.deck = new DeckManager(this.pacedThreat(setup.threat, seedOverride));
+        // A shielded scenario's contacts are drones: they fly the pattern, they
+        // do not strafe the boat. The deck has to know, because it owns the
+        // package-reaches-the-carrier damage path.
+        this.deck.combatShielded = setup.combatShielded === true;
         this.sensors = new SensorTacticsManager(this.terrain);
         if (setup.noSamSites) this.sensors.samSites.length = 0;
         this.weapons = new WeaponsSystem();
@@ -2332,6 +2336,9 @@ export class GameLoop {
             damage: this.physics.damage,
             distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
             isAirborne: true,
+            // The trap-speed warning is for a recovery, not for the cat shot
+            // that necessarily happens fast and at zero range from the boat.
+            closingOnCarrier: HUD.isOnApproach(this.physics),
             bayOpen: this.physics.bayOpen,
             gunsTracking: this.gunsWarningTimer > 0,
             bandit: this.nearestBandit()

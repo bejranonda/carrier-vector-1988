@@ -74,8 +74,17 @@ export const HUD_METRICS = {
      * button. `solveArcadeBar` below is now the single source of truth.
      */
     arcadeBar: {
-        /** Distance of the bar's top edge from the bottom of the viewport. */
-        y: 52,
+        /**
+         * Distance of the bar's top edge from the bottom of the viewport.
+         *
+         * 52 put the pills in 848..882 on a 900 px window, where the keycap
+         * cheat strip (`height - 22`) and the assist annunciator
+         * (`height - 52`) were also drawn. Three independent HUD elements
+         * shared one 34 px band and printed straight through each other.
+         * The bottom stack is now: pills, then the cheat strip beneath them,
+         * with the annunciator lifted clear above - see `BOTTOM_STACK`.
+         */
+        y: 58,
         pillH: 34,
         startX: 24,
         /** Standard horizontal gap between two adjacent pills. */
@@ -95,6 +104,43 @@ export const HUD_METRICS = {
         edgeMargin: 24
     }
 } as const;
+
+/**
+ * The bottom-of-screen stack, in CSS px measured up from the bottom edge (or
+ * up from whatever the touch controls have reserved there).
+ *
+ * These three elements used to be positioned independently, in three different
+ * methods, against three hand-written offsets - and overlapped. They are one
+ * stack now, and `HudLayout.test.ts` asserts it stays disjoint.
+ */
+export const BOTTOM_STACK = {
+    /** Keycap cheat strip: text centre line. */
+    keyBarCentre: 14,
+    keyBarH: 16,
+    /** Arcade pill bar (mirrors `HUD_METRICS.arcadeBar`). */
+    pillsTop: HUD_METRICS.arcadeBar.y,
+    pillsH: HUD_METRICS.arcadeBar.pillH,
+    /** Assist / recovery annunciator, lifted clear of the pill bar. */
+    annunciatorTop: 94,
+    annunciatorH: 22
+} as const;
+
+/**
+ * Bottom-stack element rectangles for a viewport of `height`, expressed as
+ * absolute y. `reserve` is the space the touch controls have claimed.
+ */
+export function bottomStackRects(
+    height: number,
+    reserve = 0
+): { id: string; top: number; bottom: number }[] {
+    const base = height - reserve;
+    const b = BOTTOM_STACK;
+    return [
+        { id: 'annunciator', top: base - b.annunciatorTop, bottom: base - b.annunciatorTop + b.annunciatorH },
+        { id: 'pills', top: base - b.pillsTop, bottom: base - b.pillsTop + b.pillsH },
+        { id: 'keyBar', top: base - b.keyBarCentre - b.keyBarH / 2, bottom: base - b.keyBarCentre + b.keyBarH / 2 }
+    ];
+}
 
 export interface HudLayout {
     cx: number;

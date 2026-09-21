@@ -1242,3 +1242,121 @@ resets the timer.
 `DEATH_SEQUENCE_SECONDS = 2.6`, `DEATH_TIME_SCALE = 0.3`. The countdown is in real time; the world runs at
 0.3x. Controls, the coach and further damage are ignored while `dying`. The cause captured at the start
 is restored before the deck cut so a second hit cannot rewrite it.
+
+---
+
+## 20. Measured Flight & HUD Constants (v1.9.0)
+
+Everything here was **measured on the running game in a browser**, not derived
+from the source. Where a measurement contradicts a formula elsewhere in this
+document, the measurement is what the player experiences.
+Method: [`APPROACH_AND_METHOD.md` §10](APPROACH_AND_METHOD.md).
+
+### 20.1 Sustained turn performance
+
+Held input, sampled once per second. Start state: 2,500 m, 200 m/s, wings level,
+full throttle, `turnAssist = 1`.
+
+| Input | Assist law | Turn rate | 180° reversal | Final speed |
+| :-- | :-- | --: | --: | --: |
+| Bank only | `ASSIST` | 7.2 °/s | ~25 s | 186 m/s |
+| Bank + back-stick | `ASSIST` | 9.5 °/s | ~19 s | 134 m/s |
+| Bank only | `MANUAL` | 8.3 °/s | ~22 s | 166 m/s |
+| Bank + back-stick | `MANUAL` | 10.3 °/s | ~17 s | 120 m/s |
+| Bank + back-stick | `AUTO` | 9.6 °/s | ~19 s | 146 m/s |
+
+**Back-stick does tighten the turn** (+2.0 to +2.3 °/s), confirming the control
+reference. The cost is airspeed: ~50 m/s over eight seconds.
+
+### 20.2 The degenerate case — turning in the vertical plane
+
+From a nose-high, energy-bleeding state (pitch 35°, 154 m/s, throttle 1.5), eight
+seconds of held bank **and** held back-stick produced **2° of heading change**
+(~0.25 °/s) and ended in a stall warning.
+
+This is correct: at 75° of bank with the nose 35° above the horizon, the turn
+goes into the vertical plane and heading barely moves. It is also the state the
+game reliably puts a beginner in straight off the catapult (§20.3), and before
+v1.9.0 nothing on the default HUD displayed the pitch attitude that explains it.
+
+### 20.3 Throttle behaviour with no pilot input
+
+`FlightAssist` raises the throttle demand to 0.7 when airspeed decays below
+130 m/s in `ASSIST` and never lowers it. Measured: a pilot who touches no
+throttle key sits at **throttle = 1.5 (150%, full afterburner)** from the
+catapult stroke onward, burning ~138 L in 25 s. Known Issues #66.
+
+### 20.4 Roll response
+
+`applyRollInput` rate = `2.4 · qFactor · controlAuthority` rad/s, with
+`qFactor = clamp(speed/150, 0.2, 1.3)`. At 200 m/s that is ~2.9 rad/s, so the
+75° upright cap (`turnAssist > 0`) is reached in **~0.45 s** and then pinned.
+Measured: `roll = −75°` at t = 1 s and at every subsequent sample. There is no
+proportional bank feel; the key behaves as a toggle between 0° and 75°.
+
+### 20.5 HUD vertical band stack
+
+Derived, not hand-picked. `BAND_GAP = 8`. `HUD.bandRects()` exports these and
+`HudLayout.test.ts` asserts they are pairwise disjoint.
+
+| Band | Height | Top | Bottom |
+| :-- | --: | --: | --: |
+| Objective strip | 54 | 54 | 108 |
+| Compass tape (plate) | 32 | 116 | 148 |
+| Warning banner | 28 | 156 | 184 |
+| Coach ticker | 26 | 192 | 218 |
+
+> Pre-v1.9.0, `BAND.compass` was 96, putting the tape's plate at 76–108 —
+> entirely inside the objective strip. Both strings were unreadable on every
+> frame at every resolution.
+
+### 20.6 HUD bottom stack
+
+Measured up from the viewport bottom, or from the top of whatever the touch
+controls reserve. `HudLayout.bottomStackRects(height, reserve)`.
+
+| Element | Offset from base | Height |
+| :-- | --: | --: |
+| Assist annunciator | 94 | 22 |
+| Arcade pill bar | 58 | 34 |
+| Keycap cheat strip (centre line) | 14 | 16 |
+
+> Pre-v1.9.0 these were `52`/`22`, `52`/`34` and `22`/`16` — three elements in
+> one 35 px band, printing through each other.
+
+### 20.7 Arcade horizon projection
+
+`HUD.drawArcadeHorizon` uses the same exact projection as the pitch ladder's zero
+rung, so the bar sits on the true horizon rather than approximating it:
+
+```
+yOffset = fov · tan(pitch)        [px from screen centre, pre-roll-rotation]
+```
+
+Drawn only when `|pitch| ≤ 1.45 rad` (≈83°). Beyond `±0.34 · height` the bar is
+clamped to that edge and drawn at 45% alpha, so a steep attitude reads as
+"the horizon is that way" rather than as an empty screen. A signed pitch number
+is drawn beside it whenever `|pitch| ≥ 5°`.
+
+### 20.8 Screen inventory, 1440×900, default settings
+
+| Quantity | Count |
+| :-- | --: |
+| Simultaneous cockpit draw regions (ARCADE) | ~27 |
+| Distinct labelled values on the glass | 33 |
+| Key bindings in the help overlay | 29 |
+| Deck screen panels (desktop) | 8 |
+| Deck screen panels (phone landscape) | **4** |
+| Keys shown on the briefing before first flight | 14 |
+| Boot → briefing | 1.8 s (`BriefingScreen.WARMUP_DURATION`) |
+| Page load → first flying-like moment | ~75 s, mostly reading |
+
+### 20.9 Build metrics (v1.9.0)
+
+| Metric | Value |
+| :-- | --: |
+| Tests | 932 passing, 51 files |
+| Non-test source | 19,680 lines |
+| Test source | 10,971 lines |
+| Runtime dependencies | 0 |
+| Bundle | 235.2 kB raw / 75.8 kB gzip |

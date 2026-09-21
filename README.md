@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-921%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-932%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -272,12 +272,12 @@ automatically from a rolling frame-time average.
 | `F` | Cycle flight assist — `MANUAL` / `ASSIST` / `AUTOPILOT` |
 | `G` | Autopilot terrain following (hug the valleys; on by default) |
 | `L` | Recovery assist — flies the ball and the speed, hands back at short final |
-| `V` | Toggle padlock camera (track designated target) |
+| `V` | Padlock camera onto the locked target |
 | `U` | Toggle HUD density — `ARCADE` / `PRO` |
 | `I` | Flip the stick: `UP` = climb (default) or `UP` = dive (flight-sim style) |
 | `BACKSPACE` | Time rewind (5 seconds flight restore, 2 uses per sortie) |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
-| `C` | Cycle colour palette — classic phosphor / blue-amber |
+| `C` | Cycle colour palette — classic phosphor / colour-blind |
 | `K` | Cycle controls — `AUTO` / `TOUCH` / `KEYBOARD` |
 
 ### Flight Deck
@@ -310,9 +310,17 @@ automatically from a rolling frame-time average.
 | `H` / `F1` | Control reference overlay |
 | `ESC` | Close overlay |
 | `M` | Mute / unmute |
-| `C` | Cycle colour palette — classic phosphor / blue-amber |
+| `C` | Cycle colour palette — classic phosphor / colour-blind |
 
-> Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
+> **Every binding above is defined once** in [`src/core/Controls.ts`](src/core/Controls.ts)
+> and consumed by the input handler, the help overlay and the briefing, so a key
+> can never mean two different things in two different places.
+>
+> The *prose* in this table is hand-written, and is deliberately more expansive
+> than the in-game labels (which must fit a narrow column). It can therefore
+> drift; `markdownControlTable()` in the same module regenerates the canonical
+> version if you want to check it. Earlier text here claimed the table "cannot
+> drift from the code" — that was never true, and is corrected in v1.9.0.
 
 ## Features
 
@@ -626,16 +634,37 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#55) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#70) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [docs/reviews/](docs/reviews/README.md) | **Comprehensive Review Hub:** 25-Dimensional evaluation, version registry, and copy-paste AI master prompts |
-| [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized 25-Pillar evaluation protocol for benchmarking future releases |
+| [**docs/reviews/v1.9.0/**](docs/reviews/v1.9.0/README.md) | **Current review suite** — first browser-instrumented playtest. Start with [PLAYTEST_EVIDENCE.md](docs/reviews/v1.9.0/PLAYTEST_EVIDENCE.md) |
+| [docs/reviews/](docs/reviews/README.md) | Review hub: version registry, score trend, and the standing rules every review must follow |
+| [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized **12-dimension** evaluation protocol (cut from 25 in v1.9.0) |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
 ## Future Roadmap
+
+Shipped in v1.9.0 ("Look at the Pixels") — the first release driven by a
+browser-instrumented playtest rather than a source review:
+- **Four pairs of HUD elements were being drawn into the same rectangle.** The
+  mission order printed through the compass tape; the pill bar, the assist
+  annunciator and the keycap strip shared one 35 px band; the score sat under the
+  `DECK` button; help-overlay labels ran into the next column. All fixed, and the
+  band stacks are now derived and covered by disjointness tests.
+- **The default HUD had no artificial horizon.** ARCADE suppressed the whole pitch
+  ladder — including its zero rung — so a banked jet with the horizon off-screen
+  had no attitude reference at all. A horizon bar with a signed pitch readout is
+  back.
+- **`TOO FAST FOR THE TRAP` fired on every launch**, contradicting the objective
+  strip above it and stalling beginners who obeyed it. It now requires an actual
+  approach.
+- **The "zero combat hostiles" training sortie took 15% of your carrier's hull at
+  T+20s.** `combatShielded` is now honoured by the deck's damage path.
+- Shorter control labels throughout, from the single source of truth.
+
+See the [v1.9.0 review suite](docs/reviews/v1.9.0/README.md).
 
 Shipped in v1.8.0 ("Visceral Feedback & Beginner Accessibility"):
 - Smart target auto-acquisition in `ASSIST` (initial threat lock on takeoff) and `AUTO` (continuous pursuit navigation) modes so beginners don't fly past enemies without locking on.
@@ -652,14 +681,23 @@ wrong way is fixed), loops and Immelmanns work, a real tactical radar, a slow-mo
 names the killer, fairer enemy guns with a warning, attack coaching, and first-time milestones. See the
 [changelog](CHANGELOG.md) and the [review corrections](docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md).
 
-Next, ranked by what it buys a new player:
+Next, ranked by player impact ÷ lines of code — see the full list in
+[Recommendations & Roadmap](docs/reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md).
 
-1. **A "first sortie" qualification debrief** — `TRAINING_SORTIE` exists; give finishing it a fanfare and
-   a "WINGS" moment (#55).
-2. **Branching archipelago map** — a new map, with the scenarios re-balanced for it (#53).
-3. **Altitude on the radar**, a **guns-lock tone**, and a **setting to turn the turn assist off** (#51, #57, #59).
-4. **Tune the turn** — ~9°/s held-bank and a ~19 s sustained 180° are energy-limited; try a lower assist
-   alpha target with a stick in hand (Known Issues #56).
+1. **A `FIRST FLIGHT` HUD** — horizon, speed, altitude, one objective line, one
+   key hint. Nothing else, on by default until the first sortie is complete.
+   Every component already exists; this is a visibility predicate, ~150 lines.
+   *This is the single most important item on the list.*
+2. **Promote the phone deck layout to the default everywhere** — 4 panels and one
+   big `LAUNCH` button instead of 8 panels and ~35 numbers. The layout already
+   ships; it is gated on viewport width instead of on player experience (#69).
+3. **Delete the keycap cheat strip and the always-on `REWIND` / `PADLOCK`
+   pills** — duplicated elsewhere, and half of the bottom-band collision.
+4. **Retard the anti-stall throttle floor** — a new pilot currently flies the
+   entire sortie at 150% afterburner without touching a key (#66).
+5. **Decide what to do about the turn** — measured at 7–10 °/s, a 180° reversal
+   in 17–25 s, with the roll snapping instantly to its 75° cap. Three options,
+   one of which changes no mission timing (#65).
 
 ---
 

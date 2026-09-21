@@ -70,13 +70,53 @@ describe('Contextual flight coach', () => {
         expect(hint?.text).toContain('BAY DOORS OPEN');
     });
 
-    it('coaches the approach when close to the boat and too fast', () => {
-        const hint = getContextualHint({ ...nominal(), distanceToCarrier: 1500, airSpeed: 140 });
+    it('coaches the approach when descending onto the boat too fast', () => {
+        const hint = getContextualHint({
+            ...nominal(),
+            distanceToCarrier: 1500,
+            airSpeed: 140,
+            altitudeAgl: 180,
+            verticalSpeed: -4,
+            closingOnCarrier: true
+        });
         expect(hint?.text).toContain('TOO FAST');
     });
 
+    /**
+     * Regression: the trap-speed rule used to be
+     * `distanceToCarrier < 2500 && airSpeed > 95`, which is true by
+     * construction for the first seconds of EVERY catapult shot. A brand-new
+     * pilot was told to decelerate below 90 m/s at 200 m off the bow while the
+     * objective strip above it said CLIMB - and would have stalled if obeyed.
+     */
+    it('never nags about trap speed during the climb-out off the catapult', () => {
+        const justLaunched: CoachSnapshot = {
+            ...nominal(),
+            distanceToCarrier: 400,
+            airSpeed: 180,
+            altitudeAgl: 200,
+            verticalSpeed: 28,
+            closingOnCarrier: false
+        };
+        expect(getContextualHint(justLaunched)?.text ?? '').not.toContain('TOO FAST');
+    });
+
+    it('does not nag about trap speed while flying away from the boat', () => {
+        const departing: CoachSnapshot = {
+            ...nominal(),
+            distanceToCarrier: 1500,
+            airSpeed: 200,
+            altitudeAgl: 300,
+            verticalSpeed: 0,
+            closingOnCarrier: false
+        };
+        expect(getContextualHint(departing)?.text ?? '').not.toContain('TOO FAST');
+    });
+
     it('switches to meatball guidance once on-speed near the boat', () => {
-        const hint = getContextualHint({ ...nominal(), distanceToCarrier: 1500, airSpeed: 85 });
+        const hint = getContextualHint({
+            ...nominal(), distanceToCarrier: 1500, airSpeed: 85, closingOnCarrier: true
+        });
         expect(hint?.text).toContain('MEATBALL');
     });
 });

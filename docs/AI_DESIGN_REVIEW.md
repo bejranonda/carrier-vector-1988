@@ -1,6 +1,23 @@
 # Carrier Vector 1988: Game Design Review & Development Roadmap
 
-> **Note:** This review evaluates the current state of *Carrier Vector: 1988*. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
+> ## ⚠️ Superseded — read the v1.9.0 suite first
+>
+> This document is kept as a historical snapshot. The current evaluation is
+> [**`docs/reviews/v1.9.0/`**](reviews/v1.9.0/README.md), the first review to run
+> the live build in a real browser and inspect rendered frames rather than
+> reasoning from source.
+>
+> It found what every source-reading review before it had missed: **four pairs of
+> HUD elements being drawn into the same rectangle**, a tutorial that damaged the
+> player's own carrier, and a coaching hint that was wrong on every launch.
+> Start with [**`PLAYTEST_EVIDENCE.md`**](reviews/v1.9.0/PLAYTEST_EVIDENCE.md) —
+> measurements only, no opinions — then the
+> [roadmap](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md).
+>
+> **Scores below are stale.** Current: Engineering 8.17, Player 6.67,
+> Composite 7.20.
+
+> **Note:** This review evaluates the state of *Carrier Vector: 1988* as of v1.6.0. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
 >
 > 📁 **Detailed Review Suite:** For the systematic review collection and version archive, see [`docs/reviews/`](reviews/README.md), containing:
 > - [`v1.6.0 Active Review Suite`](reviews/v1.6.0/COMPREHENSIVE_GAME_REVIEW.md) (25-dimensional review: Bank-to-Turn aerodynamics, Tactical Radar, In-flight guidance)
@@ -9,7 +26,8 @@
 > - [`v1.5.0 Archived Baseline`](reviews/v1.5.0/COMPREHENSIVE_GAME_REVIEW.md) (Countermeasures, HARM missile, death post-mortem)
 > - [`v1.4.0 Archived Review`](reviews/v1.4.0/COMPREHENSIVE_GAME_REVIEW.md) (Desktop mouse interactivity, Dual HUD)
 > - [`v1.3.0 Archived Review`](reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) (Multi-dimensional baseline critique)
-> - [`Standard Review Template`](reviews/REVIEW_TEMPLATE.md) (Standardized 25-pillar protocol)
+> - [`v1.9.0 Current Review Suite`](reviews/v1.9.0/README.md) (**current** — browser-instrumented playtest, 12 dimensions)
+> - [`Standard Review Template`](reviews/REVIEW_TEMPLATE.md) (Standardized 12-dimension protocol, cut from 25 in v1.9.0)
 
 ## 1. Current State Critique & Scoring
 

@@ -15,16 +15,26 @@ Future AI development agents and human contributors must consult this repository
 | **`v1.5.0`** | 2026-09-21 | Archived Baseline | **9.00 / 10** (Engineering)<br>**5.20 / 10** (Player)<br>**5.76 / 10** (Composite) | • **First review driven by verbatim human playtest evidence**<br>• Framework extended 15 → 21 dimensions<br>• Addressed missing countermeasures (`X` chaff), HARM anti-radiation missile (`4`), debrief post-mortem, and stick inversion on briefing | • [21-Dimension Review](v1.5.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Player Questions Answered](v1.5.0/PLAYER_QUESTIONS_ANSWERED.md)<br>• [Recommendations & Roadmap](v1.5.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Guidelines](v1.5.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.6.0`** | 2026-09-21 | **Implemented in v1.6.0** (review scores are the pre-fix baseline) | **7.67 / 10** (Engineering)<br>**4.32 / 10** (Player)<br>**4.99 / 10** (Composite) | • **Second human playtest evaluation** (GitHub Pages post-v1.5.0)<br>• Framework extended 21 → **25 dimensions** (Bank-to-Turn Aerodynamics, Tactical Radar vs RWR, On-Screen Guidance, Victory Pacing)<br>• **CRITICAL:** Decoupled Euler angles prevent turning via roll; pitch clamped at 88° prevents looping (jet only goes North)<br>• **CRITICAL:** Cryptic RWR conflatable with radar; lacks carrier, bandits, and terrain<br>• **CRITICAL:** Silent hit-scan cannon attrition from astern; instant cut to deck on death | • [**25-Dimension Review**](v1.6.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [**Player Questions Answered**](v1.6.0/PLAYER_QUESTIONS_ANSWERED.md)<br>• [**Roadmap & Code Blueprints**](v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [**Frank Suggestions & AI Prompts**](v1.6.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md)<br>• [**Implementation & Corrections (read first)**](v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md) |
 | **`v1.7.0`** | 2026-09-21 | **Released** / Under Reconsideration | **8.50 / 10** (Tech)<br>**5.50 / 10** (Beginner)<br>**7.00 / 10** (Composite) | • Enlarged Tactical Radar / RWR display (+50% area for combat readability)<br>• Beginner Onboarding & Cognitive Load Reconsideration<br>• Root Cause Analysis of Default Scenario Onboarding Trap<br>• Blueprints for Auto-Targeting, Stall Diagnosis & Visceral Combat Feedback | • [v1.7.0 Release Review](review-v1.7.0.md)<br>• [**Reconsideration & Entertainment Audit**](v1.7.0/RECONSIDERATION_AND_ENTERTAINMENT_AUDIT.md) |
+| **`v1.9.0`** | 2026-09-21 | **Released** | **8.17 / 10** (Engineering)<br>**6.67 / 10** (Player)<br>**7.20 / 10** (Composite) | • **First review to run the live build in a real browser and inspect rendered frames**<br>• Framework CUT 25 → **12 dimensions** (standing rule #8 finally honoured)<br>• **CRITICAL:** four pairs of HUD elements drawn into the same rectangle (objective strip ∩ compass tape; pill bar ∩ annunciator ∩ keycap strip; score chip ∩ buttons; help labels ∩ keycaps)<br>• **CRITICAL:** the "Zero combat hostiles" training sortie took 15% of the carrier's hull at T+20s<br>• **CRITICAL:** `TOO FAST FOR THE TRAP` fired on every launch, contradicting the objective and stalling beginners<br>• ARCADE HUD had deleted the artificial horizon — no attitude reference at all<br>• All five fixed, 11 regression tests added | • [**Suite index (read first)**](v1.9.0/README.md)<br>• [**Playtest Evidence**](v1.9.0/PLAYTEST_EVIDENCE.md)<br>• [12-Dimension Review](v1.9.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Recommendations & Roadmap](v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Prompt Critique](v1.9.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 
 ### Score Trend
 
 ```
-Engineering  9.00 ██████████████████▌  →  7.67 ███████████████▍      -1.33  (Decoupled Euler turn model flaw)
-Player       5.20 ██████████▍          →  4.32 ████████▋             -0.88  (Heading lock & death confusion)
-Composite    5.76 ███████████▌         →  4.99 █████████▊            -0.77
+             v1.5.0   v1.6.0   v1.7.0   v1.8.0*  v1.9.0
+Engineering   9.00  →  7.67  →  8.50  →  7.00  →  8.17   ██████████████████▍
+Player        5.20  →  4.32  →  5.50  →  5.94  →  6.67   ██████████████▊
+Composite     5.76  →  4.99  →  7.00  →  6.31  →  7.20   ████████████████▏
+
+* v1.8.0 is scored as-found by the v1.9.0 review, not by a review of its own.
 ```
 
-> **Why the score fell (a recalibration, not a regression — no code got worse; see the corrections doc):** While v1.5.0 delivered countermeasures and HARMs, human playtesting revealed a fundamental aerodynamic barrier: rolling does not steer the aircraft, and pitch is clamped at 88°. Players are physically trapped flying North into lethal fire, while an electronic warfare RWR is mistaken for a navigation radar.
+> **Why v1.8.0's engineering score sits below v1.7.0's:** no code got worse. v1.9.0
+> is the first review to run the live build in a browser and look at rendered
+> frames, and it found four shipped HUD collisions, a tutorial that damaged the
+> player's own carrier, and a coaching hint that was wrong on every launch. Those
+> defects were present in v1.7.0 too — five previous review suites simply could
+> not see them, because they only ever read source. This is a measurement
+> improvement, not a regression.
 
 ---
 
@@ -52,18 +62,32 @@ docs/reviews/
 │   ├── RECOMMENDATIONS_AND_ROADMAP.md
 │   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md
 │
-└── v1.6.0/                                    # Second human-playtest review, and what came of it
-    ├── IMPLEMENTATION_AND_CORRECTIONS.md      # READ FIRST: what the review got wrong, what shipped, frank feedback
-    ├── COMPREHENSIVE_GAME_REVIEW.md           # 25-Dimensional review, good vs. bad, scores
-    ├── PLAYER_QUESTIONS_ANSWERED.md           # 6 Playtest questions answered with exact code evidence
-    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Tiered fixes: Bank-to-Turn math, Radar, HUD Guidance
-    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Frank blame, opposite thinking, AI master prompts
+├── v1.6.0/                                    # Second human-playtest review, and what came of it
+│   ├── IMPLEMENTATION_AND_CORRECTIONS.md      # READ FIRST: what the review got wrong, what shipped, frank feedback
+│   ├── COMPREHENSIVE_GAME_REVIEW.md           # 25-Dimensional review, good vs. bad, scores
+│   ├── PLAYER_QUESTIONS_ANSWERED.md           # 6 Playtest questions answered with exact code evidence
+│   ├── RECOMMENDATIONS_AND_ROADMAP.md         # Tiered fixes: Bank-to-Turn math, Radar, HUD Guidance
+│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Frank blame, opposite thinking, AI master prompts
+│
+├── v1.7.0/                                    # Radar readability & entertainment audit
+│   └── RECONSIDERATION_AND_ENTERTAINMENT_AUDIT.md
+│
+└── v1.9.0/                                    # First browser-instrumented playtest review
+    ├── README.md                              # Suite index and headline numbers
+    ├── PLAYTEST_EVIDENCE.md                   # READ FIRST: measurements only, zero opinions
+    ├── COMPREHENSIVE_GAME_REVIEW.md           # 12-Dimensional review, scores, central critique
+    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Ranked by impact / LOC; shipped vs. ready vs. needs-decision
+    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Blunt feedback, opposite thinking, prompt critique
 ```
 
 ### Which document do I read first?
 
 | I am... | Read this |
 | :--- | :--- |
+| **Anyone, starting now** | [`v1.9.0/README.md`](v1.9.0/README.md) — the current suite |
+| **An AI agent about to change code** | [`v1.9.0/PLAYTEST_EVIDENCE.md`](v1.9.0/PLAYTEST_EVIDENCE.md) for facts, then [`v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md) for the ranked backlog |
+| Wondering what to build next | [R1 — the FIRST FLIGHT HUD](v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md#tier-1--the-big-one) |
+| Wondering why the jet feels unresponsive | [`v1.9.0/PLAYTEST_EVIDENCE.md`](v1.9.0/PLAYTEST_EVIDENCE.md) §4 and §6 |
 | Anyone about to act on the v1.6.0 review | [`v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md`](v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md) — several of its claims were stale or wrong |
 | An AI agent about to implement fixes | [`v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md) — but read the corrections first |
 | Wondering why the jet only went North | [`v1.6.0/PLAYER_QUESTIONS_ANSWERED.md`](v1.6.0/PLAYER_QUESTIONS_ANSWERED.md) Q1 (and the deeper cause in the corrections §2) |
@@ -120,6 +144,32 @@ onboarding trap, and it survived into v1.5.0-dev anyway.
 
 11. **If the review is longer than the fix, the review is the problem.**
     Cap comprehensive reviews at ~400 lines.
+
+### Standing Rules Added After the v1.9.0 Browser Playtest
+
+These exist because five review suites (3,438 lines) read the source carefully
+and none of them noticed that four pairs of HUD elements were being drawn into
+the same rectangle on every frame at the default desktop resolution.
+
+12. **A review without a rendered frame is not a review.**
+    Every review must run the live build in a real browser, at a minimum of one
+    desktop and one phone viewport, and inspect actual pixels. Source reading
+    finds what the code *says*; only a screenshot finds what the player *sees*.
+    A review that cannot show a frame must say so at the top and be down-weighted
+    exactly as an empty Player Evidence section is.
+
+13. **Every review must propose more deletions than additions.**
+    Rule #10 asked for two deletions; it was not enough. Thirteen consecutive
+    "make it easier for beginners" features all *added* something to the screen,
+    and the screen ran out of room. If a review proposes a new UI element, it
+    must name the element being removed to pay for it.
+
+14. **Fix count beats finding count.**
+    A review that ships three tested fixes beats one that catalogues thirty
+    problems. Close the loop or do not open it. State plainly which findings you
+    fixed, which you chose not to, and why — a finding left unfixed because it
+    needs an owner's decision is a legitimate outcome; a finding left unfixed
+    because cataloguing was easier is not.
 
 ---
 

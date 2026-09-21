@@ -32,6 +32,12 @@ export interface CoachSnapshot {
     distanceToCarrier: number;// metres
     isAirborne: boolean;
     bayOpen: boolean;
+    /**
+     * The jet is flying toward the carrier, not away from it. Undefined is
+     * treated as "not approaching", so a caller that has not measured closure
+     * cannot accidentally re-enable the launch-time false positive.
+     */
+    closingOnCarrier?: boolean;
     /** A fighter has held a guns solution on the player within the last few seconds. */
     gunsTracking?: boolean;
     /** The nearest live hostile aircraft, or null when the sky is empty. */
@@ -83,7 +89,23 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
         hint: { text: 'BAY DOORS OPEN - RCS x4.0, CLOSE THEM [B]', severity: 'WARNING' }
     },
     {
-        match: (s) => s.distanceToCarrier < 2500 && s.airSpeed > 95,
+        /**
+         * Only when the pilot is actually recovering.
+         *
+         * `distanceToCarrier < 2500 && airSpeed > 95` is true BY CONSTRUCTION
+         * for the first several seconds of every catapult shot in the game -
+         * you leave the boat fast and you leave it from nought metres away. So
+         * the single most-seen hint in the game fired on every launch, told a
+         * brand-new pilot to decelerate below 90 m/s while the objective strip
+         * directly above it said CLIMB, and would have stalled them if obeyed.
+         * Requiring a descent toward the deck confines it to the one phase of
+         * flight it was written for.
+         */
+        match: (s) => s.distanceToCarrier < 2500
+            && s.airSpeed > 95
+            && s.closingOnCarrier === true
+            && s.altitudeAgl < 400
+            && s.verticalSpeed < 2,
         hint: { text: 'TOO FAST FOR THE TRAP - REDUCE TO BELOW 90 M/S [CTRL]', severity: 'WARNING' }
     },
     {

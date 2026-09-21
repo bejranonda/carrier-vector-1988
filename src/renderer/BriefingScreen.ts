@@ -745,7 +745,10 @@ export class BriefingScreen {
                 ctx.font = font(12);
                 ctx.fillStyle = THEME.muted;
                 ctx.textAlign = 'left';
-                ctx.fillText(b.label, x + 124, y);
+                // Clipped to the column. Unbounded, the longest label ("Rudder
+                // left (fine aim only - you do not need it to turn)") ran past
+                // colW and printed through the SYSTEM column's keycaps.
+                ctx.fillText(fitText(ctx, b.label, colW - 124 - 8), x + 124, y);
                 y += ROW_H;
             }
             y += GROUP_GAP;

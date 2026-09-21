@@ -35,7 +35,7 @@ import type { TargetSolution } from '../tactics/TargetDesignation';
 import type { ControlDemand } from '../flight/FlightAssist';
 import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
-import { HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
+import { BOTTOM_STACK, HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
 import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
 import { timeToImpact } from '../tactics/MissileGuidance';
@@ -200,14 +200,71 @@ const ASSIST_BAND_HALF_W = 210;
  */
 const TOUCH_TOP_RIGHT_RESERVE = 104;
 
-/** Vertical instrument bands, in CSS px from top of screen. */
-const BAND = {
-    top: 20,
+/**
+ * The top-right corner stack: the DECK / HUD / STICK button row, and the score
+ * chip on the row beneath it.
+ *
+ * They used to be drawn at y=16 (h 28) and y=18 (h 26), both flush to the right
+ * edge - the same rectangle. The chip was drawn first, so on every desktop
+ * frame the player's score and rank were printed underneath the DECK button.
+ */
+const TOP_RIGHT = {
+    buttonsY: 16,
+    buttonsH: 28,
+    gap: 8
+} as const;
+const SCORE_CHIP_Y = TOP_RIGHT.buttonsY + TOP_RIGHT.buttonsH + TOP_RIGHT.gap;
+
+/**
+ * Vertical instrument bands, in CSS px from the top of the screen.
+ *
+ * DERIVED, never hand-tuned. The previous table was five hand-picked numbers
+ * and two of them were wrong: the objective strip is 54 px tall and started at
+ * 54, so it ran to 108, while the compass tape's plate started at
+ * `compass - 20` = 76. The heading tape was drawn *inside* the objective strip
+ * on every frame, at every resolution - which is why the mission order and the
+ * heading numerals were both unreadable in the default view.
+ *
+ * Each band's top is now its predecessor's bottom plus a gap, so the class of
+ * bug cannot come back. `HudLayout.test.ts` asserts the whole stack is disjoint.
+ */
+export const BAND_H = {
     objective: 54,
-    compass: 96,
-    warning: 132,
-    coach: 168
+    /** The tape's plate; `drawCompassTape` draws it at `BAND.compass - 20`. */
+    compass: 32,
+    warning: 28,
+    coach: 26
+} as const;
+
+/** Clearance between two stacked bands. */
+export const BAND_GAP = 8;
+
+const OBJECTIVE_TOP = 54;
+const COMPASS_TOP = OBJECTIVE_TOP + BAND_H.objective + BAND_GAP;
+const WARNING_TOP = COMPASS_TOP + BAND_H.compass + BAND_GAP;
+const COACH_TOP = WARNING_TOP + BAND_H.warning + BAND_GAP;
+
+export const BAND = {
+    top: 20,
+    objective: OBJECTIVE_TOP,
+    /** `drawCompassTape` subtracts 20 to get its plate's top edge. */
+    compass: COMPASS_TOP + 20,
+    warning: WARNING_TOP,
+    coach: COACH_TOP
 };
+
+/**
+ * Top edge of each band, as drawn. Exported so the overlap test reads the same
+ * numbers the draw calls do rather than restating them.
+ */
+export function bandRects(): { id: string; top: number; bottom: number }[] {
+    return [
+        { id: 'objective', top: BAND.objective, bottom: BAND.objective + BAND_H.objective },
+        { id: 'compass', top: BAND.compass - 20, bottom: BAND.compass - 20 + BAND_H.compass },
+        { id: 'warning', top: BAND.warning, bottom: BAND.warning + BAND_H.warning },
+        { id: 'coach', top: BAND.coach, bottom: BAND.coach + BAND_H.coach }
+    ];
+}
 
 export class HUD {
     public width: number;
@@ -255,6 +312,7 @@ export class HUD {
         noGlow(ctx);
 
         // --- Flight symbology (centre of the screen, drawn in the beam colour) ---
+        if (this.hudDensity === 'ARCADE') this.drawArcadeHorizon(ctx, physics, renderer, layout);
         this.drawPitchLadder(ctx, physics, renderer, layout);
         this.drawFlightPathMarker(ctx, physics, renderer);
         this.drawWaterline(ctx, layout.cx, layout.cy);
@@ -295,7 +353,7 @@ export class HUD {
         if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
-            context.terrainFollowing ?? false, context.recovery ?? null
+            context.terrainFollowing ?? false, context.recovery ?? null, layout
         );
         if (!layout.touchMode) this.drawKeyBar(ctx, context.assistLabel);
         this.drawTopRightControls(ctx, layout, context);
@@ -353,9 +411,9 @@ export class HUD {
          */
         boxes.push({
             x: layout.cx - ASSIST_BAND_HALF_W,
-            y: this.height - 56,
+            y: this.height - layout.reserve.bottom - BOTTOM_STACK.annunciatorTop - 4,
             w: ASSIST_BAND_HALF_W * 2,
-            h: 30
+            h: BOTTOM_STACK.annunciatorH + 8
         });
 
         if (layout.touchMode) {
@@ -443,7 +501,7 @@ export class HUD {
             this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
-        const h = 54;
+        const h = BAND_H.objective;
         const x = cx - w / 2;
         const y = BAND.objective;
 
@@ -502,11 +560,11 @@ export class HUD {
         const w = ctx.measureText(text).width + 26;
         const x = cx - w / 2;
 
-        plate(ctx, { x, y: BAND.coach, w, h: 26 }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
+        plate(ctx, { x, y: BAND.coach, w, h: BAND_H.coach }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, cx, BAND.coach + 14);
+        ctx.fillText(text, cx, BAND.coach + BAND_H.coach / 2);
         ctx.restore();
     }
 
@@ -968,8 +1026,8 @@ export class HUD {
         ctx.textAlign = 'center';
 
         const btnW = 100;
-        const btnH = 28;
-        const y = 16;
+        const btnH = TOP_RIGHT.buttonsH;
+        const y = TOP_RIGHT.buttonsY;
 
         // [DECK (TAB)]
         const deckX = this.width - btnW - 20;
@@ -1016,7 +1074,7 @@ export class HUD {
         noGlow(ctx);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
-        const y = this.height - 22;
+        const y = this.height - BOTTOM_STACK.keyBarCentre;
         const pairs: [string, string][] = [
             ['WASD', 'fly'],
             ['SHIFT', 'power'],
@@ -1153,7 +1211,8 @@ export class HUD {
         hasDesignation: boolean,
         cx: number,
         terrainFollowing: boolean,
-        recovery: { text: string; handover: boolean } | null
+        recovery: { text: string; handover: boolean } | null,
+        layout: HudLayout
     ) {
         const caption = recovery
             ? { text: recovery.text, tone: recovery.handover ? 'CAUTION' as const : 'INFO' as const }
@@ -1168,12 +1227,16 @@ export class HUD {
         noGlow(ctx);
         ctx.font = font(11, 700);
         const w = ctx.measureText(caption.text).width + 24;
-        const y = this.height - 52;
-        plate(ctx, { x: cx - w / 2, y, w, h: 22 }, { border: color, radius: 11 });
+        // Above the pill bar, not through it. In touch mode the thumb controls
+        // own the bottom of the screen, so the stack is measured up from what
+        // they reserved rather than from the viewport edge.
+        const y = this.height - layout.reserve.bottom - BOTTOM_STACK.annunciatorTop;
+        plate(ctx, { x: cx - w / 2, y, w, h: BOTTOM_STACK.annunciatorH },
+            { border: color, radius: BOTTOM_STACK.annunciatorH / 2 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(caption.text, cx, y + 11);
+        ctx.fillText(caption.text, cx, y + BOTTOM_STACK.annunciatorH / 2);
         ctx.restore();
     }
 
@@ -1275,11 +1338,13 @@ export class HUD {
         // The menu button lives in the top-right corner in touch mode; the
         // chip has to clear it rather than sit underneath it.
         const x = this.width - w - 20 - (layout.touchMode ? 58 : 0);
-        plate(ctx, { x, y: 18, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
+        // Below the button row, never under it.
+        const y = layout.touchMode ? 18 : SCORE_CHIP_Y;
+        plate(ctx, { x, y, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
         ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, x + w / 2, 31);
+        ctx.fillText(text, x + w / 2, y + 13);
         ctx.restore();
     }
 
@@ -1403,7 +1468,7 @@ export class HUD {
             ctx.font = font(16, 700);
             const w = ctx.measureText(text).width + 30;
             const x = cx - w / 2;
-            plate(ctx, { x, y: BAND.warning, w, h: 28 }, { fill: 'rgba(24,6,8,0.8)', border: color, radius: 4 });
+            plate(ctx, { x, y: BAND.warning, w, h: BAND_H.warning }, { fill: 'rgba(24,6,8,0.8)', border: color, radius: 4 });
             ctx.fillStyle = color;
             glow(ctx, color, 8);
             ctx.textAlign = 'center';
@@ -1941,13 +2006,75 @@ export class HUD {
         ctx.restore();
     }
 
+    /**
+     * ARCADE's attitude reference: a horizon bar and nothing else.
+     *
+     * ARCADE suppressed the whole pitch ladder to keep the centre clean, which
+     * also deleted the only instrument that says which way the jet is pointing.
+     * A new pilot in a 75-degree bank with the real horizon off-screen had a
+     * three-stroke waterline and no other attitude cue anywhere on the glass -
+     * so "I bank, I pull, nothing happens" had no on-screen explanation, even
+     * though the explanation was a 40-degree nose-up attitude.
+     *
+     * This is the ladder's zero rung and its pitch number, and nothing else:
+     * one line, drawn with the same exact `fov * tan(delta)` projection, so it
+     * sits on the true horizon rather than approximating it.
+     */
+    private drawArcadeHorizon(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        renderer: VectorRenderer,
+        layout: HudLayout
+    ) {
+        const { cx, cy, symScale } = layout;
+        const pitchDeg = physics.pitch * (180 / Math.PI);
+        const deltaRad = physics.pitch;
+        if (Math.abs(deltaRad) > 1.45) return;
+
+        const yOffset = renderer.fov * Math.tan(deltaRad);
+        // Off the glass entirely: pin the bar to the edge it left through and
+        // dim it, so a steep attitude still reads as "the horizon is that way"
+        // instead of as an empty screen.
+        const limit = this.height * 0.34;
+        const clamped = Math.max(-limit, Math.min(limit, yOffset));
+        const pinned = Math.abs(yOffset) > limit;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.translate(cx, cy);
+        ctx.rotate(-physics.roll);
+        ctx.globalAlpha = pinned ? 0.45 : 0.85;
+        ctx.strokeStyle = THEME.phosphor;
+        ctx.fillStyle = THEME.phosphor;
+        ctx.lineWidth = 2;
+
+        const far = 170 * symScale;
+        const near = 46 * symScale;
+        ctx.beginPath();
+        ctx.moveTo(-far, clamped);
+        ctx.lineTo(-near, clamped);
+        ctx.moveTo(near, clamped);
+        ctx.lineTo(far, clamped);
+        ctx.stroke();
+
+        // Nose-high or nose-low, in degrees, next to the bar. The single number
+        // that answers "why is my turn not coming round?".
+        if (Math.abs(pitchDeg) >= 5) {
+            ctx.font = font(11, 700);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${pitchDeg > 0 ? '+' : ''}${Math.round(pitchDeg)}\u00B0`, far + 8, clamped);
+        }
+        ctx.restore();
+    }
+
     private drawPitchLadder(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         renderer: VectorRenderer,
         layout: HudLayout
     ) {
-        // In Arcade mode, keep the center of the screen clean and uncluttered!
+        // ARCADE gets the horizon bar only - see drawArcadeHorizon.
         if (this.hudDensity === 'ARCADE') return;
 
         const { cx, cy, symScale } = layout;
@@ -2048,7 +2175,7 @@ export class HUD {
 
         plate(
             ctx,
-            { x: cx - tapeWidth / 2 - 8, y: topY - 20, w: tapeWidth + 16, h: 32 },
+            { x: cx - tapeWidth / 2 - 8, y: topY - 20, w: tapeWidth + 16, h: BAND_H.compass },
             { border: THEME.edgeSoft, radius: 4 }
         );
 
