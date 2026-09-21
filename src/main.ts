@@ -13,6 +13,7 @@
 import './style.css';
 import { GameLoop } from './core/GameLoop';
 import { soundFX } from './audio/SoundFX';
+import { SCENARIOS } from './core/Scenarios';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -88,10 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
             soundFX.toggleMute();
             return;
         }
-        if (key === 'p') {
-            game.cycleDisplayMode();
-            return;
-        }
         if (key === 'o') {
             game.cyclePacing();
             return;
@@ -128,8 +125,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'arrowleft' || key === 'arrowright') {
                 e.preventDefault();
                 game.selectScenario(key === 'arrowleft' ? -1 : 1);
-            } else if (key >= '1' && key <= '9') {
-                // Direct scenario pick by the number shown on its pill.
+            } else if (key === 'i') {
+                // Flip the stick before the first flight, not after fighting it.
+                e.preventDefault();
+                game.togglePitchInversion();
+            } else if (key >= '1' && key <= String(SCENARIOS.length)) {
+                // Direct scenario pick by the number shown on its pill. Bounded
+                // by the real scenario count - this accepted 1-9 while the
+                // control schema documented 1-5, so four of the keys the help
+                // overlay never mentioned silently did nothing.
                 game.selectScenarioByIndex(Number(key) - 1);
             } else if (key === 'd') {
                 // Today's daily sortie: the same seeded run for everyone.
@@ -175,6 +179,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // --- Pitch inversion toggle (I) ---
+        if (key === 'i') {
+            e.preventDefault();
+            game.togglePitchInversion();
+            return;
+        }
+
+        // --- HUD density toggle (U) ---
+        if (key === 'u') {
+            e.preventDefault();
+            game.toggleHudDensity();
+            return;
+        }
+
         // --- Autopilot terrain following ---
         if (key === 'g') {
             e.preventDefault();
@@ -186,6 +204,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === 'l') {
             e.preventDefault();
             game.toggleApproachAssist();
+            return;
+        }
+
+        // --- Chaff ---
+        if (key === 'x') {
+            e.preventDefault();
+            game.releaseChaff();
             return;
         }
 
@@ -213,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (key === '1') game.selectedWeapon = 'GUN';
                 else if (key === '2') game.selectedWeapon = 'AIM9';
                 else if (key === '3') game.selectedWeapon = 'BOMB';
+                else if (key === '4') game.selectedWeapon = 'HARM';
             } else {
                 const deck = game.deck;
                 if (key === '1') deck.plannedFuel = Math.max(1000, deck.plannedFuel - 500);
@@ -304,13 +330,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Keyboard players still get click-to-designate, which costs nothing
         // and is the obvious thing to try with a mouse in hand.
+        // Desktop button clicks (deck & HUD) take priority over designation.
+        if (game.handleDesktopClick(x, y)) return;
         if (game.currentView === 'MICRO_FLIGHT') game.designateAtPoint(x, y);
     });
 
     canvas.addEventListener('pointermove', (e) => {
-        if (game.controlScheme !== 'TOUCH') return;
         const { x, y } = pointAt(e);
-        game.touch.move({ id: e.pointerId, x, y });
+        if (game.controlScheme === 'TOUCH') {
+            game.touch.move({ id: e.pointerId, x, y });
+            return;
+        }
+        // Desktop: show pointer cursor when hovering clickable areas
+        if (game.phase === 'ACTIVE') {
+            canvas.style.cursor = 'default';
+            // A cheap proxy: just set pointer if in the bottom HUD strip or top-right button zone
+            if (game.currentView === 'MICRO_FLIGHT') {
+                const nearBottom = y > game.viewHeight - 60;
+                const topRight = y < 55 && x > game.viewWidth - 320;
+                if (nearBottom || topRight) canvas.style.cursor = 'pointer';
+            } else if (game.currentView === 'MACRO_DECK') {
+                canvas.style.cursor = 'pointer';
+            }
+        }
     });
 
     const releasePointer = (e: PointerEvent) => {

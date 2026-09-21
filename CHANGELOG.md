@@ -5,6 +5,67 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-09-21
+
+**"Fight Back."** A playtester asked three questions - how do I defend against a missile, how do I
+kill a SAM, shouldn't arrow-up pitch down - and all three turned out to be missing features, not
+misunderstandings. This release answers them, and fixes a tutorial that had never worked.
+
+### Added
+
+- **Chaff (`X`).** Twelve cartridges a sortie, always breaks every SAM lock on you, with a recycle
+  delay so it cannot be held down. A decoyed site cannot re-launch while the cloud is up. There were
+  no countermeasures of any kind before.
+- **A SAM you can out-fly.** The missile used to overwrite its velocity toward you every tick - an
+  unbounded turn rate, so no manoeuvre could ever work. It now flies lead pursuit with a turn limit
+  of 0.25 rad/s, measured rather than guessed so that flying straight is fatal, an immediate break
+  beats a distant launch, and a close one still needs chaff.
+- **Time-to-impact** on the missile warning, and a distinct `X` on the RWR once a lock is broken.
+- **AGM-88 HARM (`4`).** Locks the nearest radiating site, no boresight cone; goes ballistic if the
+  site shuts down. IRON HAND's briefing now teaches HARM-first, bombs as the fallback.
+- **Death post-mortem** on the failed debrief: what killed you, and one line of advice.
+- **Stick flip on the briefing.** The flight-sim convention (`UP` = dive) is offered once before the
+  first flight, until the setting has been touched.
+- **Desktop mouse control** of the cockpit HUD and deck (`PointerInteractivity`), the ARCADE/PRO
+  HUD toggle and pitch inversion - all of which sat uncommitted since 1.4.0.
+
+### Changed
+
+- **One screen style.** CLEAN / MODERN / RETRO CRT behind `P` is gone; MODERN is the only look.
+  A value stored under the old ladder falls back to it.
+- **The training sortie cannot kill you.** The wingman hauls the jet clear of the sea, and fuel never
+  drops below 1500 L. Near the boat only the last few metres count, so the glideslope lesson stands.
+
+### Fixed
+
+- **Nobody was routed to the tutorial.** `recommendScenario()` matched the six-step checklist flag,
+  which belongs to CARRIER DEFENSE, so every first-time pilot was sent into endless waves over a live
+  SAM belt. `TRAINING_SORTIE` now carries an explicit `isFirstFlight`.
+- **The tutorial taught the wrong key.** It said `[A]` for autopilot in four places. `[A]` is roll
+  left; the key is `[F]`.
+- **The tutorial's drone never existed.** The opening timeline was empty, so the "splash the drone"
+  step completed itself on a timer. A real target now spawns, and the autopilot step checks the
+  autopilot instead of a clock.
+- **Clicks landed on the wrong HUD pill.** The renderer and the hit-tester each computed the ARCADE bar
+  geometry and had drifted 8 px apart. Both now use one solver, `solveArcadeBar()`.
+- Eight type errors in the 1.4.0 work that vitest cannot see (it does not typecheck).
+- The briefing accepted `1`-`9` while the control schema documented `1`-`5`.
+
+### Guarded
+
+- Two tests assert that every key named in mission prose exists in `CONTROL_SCHEMA` and is the key
+  that actually performs the described action. Reintroducing the `[A]` bug now fails the suite.
+
+### Known limitations
+
+- Chaff and the HARM have no touch controls yet (KNOWN_ISSUES #44).
+
+## [1.4.0] — 2026-09-20
+
+Game feel and onboarding: a non-lethal `TRAINING_SORTIE` with the Ghost-Lead wingman, the cockpit
+voice warning system, the padlock camera (`V`), vector-fragment explosions, camera shake and impact
+flashes, and a 5-second time rewind (`BACKSPACE`, two per sortie).
+
 ## [1.3.0] — 2026-09-20
 
 ### Added

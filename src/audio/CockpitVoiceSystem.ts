@@ -176,6 +176,33 @@ export class CockpitVoiceSystem {
         }
     }
 
+    /**
+     * Speak a radio callout or wingman celebration.
+     */
+    public speakRadioCallout(phrase: string): void {
+        if (!this.synth || this.isMuted) return;
+
+        try {
+            this.synth.cancel();
+            let utterance: SpeechSynthesisUtterance;
+            if (typeof SpeechSynthesisUtterance !== 'undefined') {
+                utterance = new SpeechSynthesisUtterance(phrase);
+                utterance.rate = 1.1;
+                utterance.pitch = 1.05;
+                utterance.volume = 0.95;
+                const voices = this.synth.getVoices();
+                const enVoice = voices.find(v => v.lang.startsWith('en'));
+                if (enVoice) utterance.voice = enVoice;
+            } else {
+                // Test / headless environment: use a plain duck-typed object
+                utterance = { text: phrase, rate: 1.1, pitch: 1.05, volume: 0.95 } as unknown as SpeechSynthesisUtterance;
+            }
+            this.synth.speak(utterance);
+        } catch {
+            // Ignore speech synthesis errors gracefully
+        }
+    }
+
     public setMuted(muted: boolean): void {
         this.isMuted = muted;
         if (muted && this.synth) {

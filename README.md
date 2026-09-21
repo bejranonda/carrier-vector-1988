@@ -70,12 +70,12 @@ cards, and tracks its own ordered objectives.
 
 | # | Mission | Difficulty | Map | What it asks of you |
 | --- | --- | --- | --- | --- |
-| 1 | **CARRIER DEFENSE** | ●●○○○ | BJORNFJORD | The endless mode. Hold CV-68 against escalating waves for as long as you can. This is the one that teaches the game. |
+| 1 | **CARRIER DEFENSE** | ●●○○○ | BJORNFJORD | The endless mode. Hold CV-68 against escalating waves for as long as you can. |
 | 2 | **CANYON STRIKE** | ●●●●● | BJORNFJORD | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
-| 3 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges, four bombs a sortie — trap aboard and rearm as many times as it takes. |
+| 3 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges: lock each radiating site with an **AGM-88 HARM**, and bomb any that go quiet. |
 | 4 | **LAST STAND** | ●●●●● | NORWEGIAN SEA | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
 | 5 | **CARRIER QUALS** | ●○○○○ | NORWEGIAN SEA | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
-| 6 | **TRAINING SORTIE** | ●○○○○ | NORWEGIAN SEA | Non-lethal familiarization flight with Ghost-Lead. Zero combat hostiles — test pitch, roll, throttle, weapons arming, and the recovery pattern safely. |
+| 6 | **TRAINING SORTIE** | ●○○○○ | NORWEGIAN SEA | **Where a new pilot starts.** A guided flight with Ghost-Lead: launch, climb, engage the autopilot, splash a real target drone, trap aboard. Nothing can shoot you and the wingman hauls you clear of the sea, so it cannot end in a crash. |
 
 ### The three maps
 
@@ -111,7 +111,7 @@ asks you to use all three in one run:
 The briefing screen lays this out in three cards; here it is in full.
 
 1. **Boot & mission select** — The display warms up, then the briefing screen
-   offers five missions. `←` / `→` or `1`-`5` picks one; the three cards under
+   offers six missions. `←` / `→` or `1`-`6` picks one; the three cards under
    the selector explain *that* mission. Press `ENTER` (or click) to fly it, or
    `S` to skip straight to airborne.
 2. **On the deck** — The **CURRENT ORDERS** panel at the top of the deck screen
@@ -241,19 +241,14 @@ the first run if you want them.
 > terrain, missile launches and approach guidance as they happen, and `H`
 > shows the full control reference at any time.
 
-### Finding the screen hard to read?
+### One screen style
 
-Press `P` to cycle the display mode:
-
-| Mode | What it does |
-| --- | --- |
-| `CLEAN` | No vector trails, no bloom, no scanlines — maximum legibility, cheapest to draw |
-| `MODERN` | **Default.** Crisp symbology with a light bloom glow and a faint vignette |
-| `RETRO CRT` | The full 1988 phosphor tube: persistence trails, per-stroke glow, scanline mask, vignette |
-
-Your choice is remembered between sessions. On a weak machine the bloom pass also
-backs itself off automatically from a rolling frame-time average, without ever
-exceeding the mode you picked.
+The game has a single look — crisp symbology, a light bloom glow, a faint
+phosphor trail and vignette. There used to be three (`CLEAN` / `MODERN` /
+`RETRO CRT`) behind a key, and a beginner had to pick a look before flying.
+`prefers-reduced-motion` still calms the shake and flashes, `C` still swaps in
+the colour-blind palette, and on a weak machine the bloom pass backs itself off
+automatically from a rolling frame-time average.
 
 ## Controls
 
@@ -269,7 +264,8 @@ exceeding the mode you picked.
 | `SHIFT` | Throttle up (past 100% engages afterburner) |
 | `CTRL` | Throttle down |
 | `SPACE` | Fire selected weapon |
-| `1` / `2` / `3` | Select 20mm Vulcan / AIM-9 Sidewinder / Mk.82 bomb |
+| `1` / `2` / `3` / `4` | Select 20mm Vulcan / AIM-9 Sidewinder / Mk.82 bomb / AGM-88 HARM |
+| `X` | **Release chaff** — breaks every SAM lock on you (12 per sortie, short recycle) |
 | `B` | Toggle weapons bay (open = **RCS ×4.0**) |
 | `T` | Designate next target (`SHIFT`+`T` steps back) |
 | `Y` | Release the designation |
@@ -277,6 +273,8 @@ exceeding the mode you picked.
 | `G` | Autopilot terrain following (hug the valleys; on by default) |
 | `L` | Recovery assist — flies the ball and the speed, hands back at short final |
 | `V` | Toggle padlock camera (track designated target) |
+| `U` | Toggle HUD density — `ARCADE` / `PRO` |
+| `I` | Flip the stick: `UP` = climb (default) or `UP` = dive (flight-sim style) |
 | `BACKSPACE` | Time rewind (5 seconds flight restore, 2 uses per sortie) |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
 | `C` | Cycle colour palette — classic phosphor / blue-amber |
@@ -312,7 +310,6 @@ exceeding the mode you picked.
 | `H` / `F1` | Control reference overlay |
 | `ESC` | Close overlay |
 | `M` | Mute / unmute |
-| `P` | Cycle display mode — `CLEAN` / `MODERN` / `RETRO CRT` |
 | `C` | Cycle colour palette — classic phosphor / blue-amber |
 
 > Control bindings are defined once in [`src/core/Controls.ts`](src/core/Controls.ts) and consumed by the input handler, the help overlay, and the briefing — so this table cannot drift from the code.
@@ -389,7 +386,7 @@ exceeding the mode you picked.
 - **Induced drag scaling with G-load**, so hard turns genuinely bleed energy
 - **Afterburner** with 3.5× fuel burn and a 4× thermal signature
 - **Battle damage model** — degrades control authority and opens fuel leaks
-- Three weapons with real ballistics: 20mm Vulcan, AIM-9 Sidewinder, Mk.82 iron bombs
+- Four weapons with real ballistics and guidance: 20mm Vulcan, AIM-9 Sidewinder, Mk.82 iron bombs, AGM-88 HARM
 
 ### Sensors & Stealth
 - **Radar line-of-sight raycasting** against the terrain heightfield
@@ -455,10 +452,19 @@ exceeding the mode you picked.
   so being shot at and shooting were indistinguishable
 - Still zero audio assets: every sound is oscillators and noise buffers
 
+### Defence & Arsenal
+- **A SAM you can out-fly.** The missile flies lead pursuit under a *bounded turn rate* (0.25 rad/s),
+  tuned by measurement: fly straight and you are hit; break hard at once against a distant launch and
+  you live for free; break late against a close one and you still die — so chaff has a job
+- **Chaff (`X`)** always breaks the lock, 12 cartridges a sortie, with a recycle delay so it cannot be
+  held down. A decoyed site cannot re-launch while the cloud is up
+- **Time-to-impact** on the warning banner, and a muted `X` on the RWR once a lock is broken
+- **AGM-88 HARM (`4`)** locks the nearest *radiating* site with no boresight cone. If the site shuts
+  down mid-flight the round goes ballistic and misses — bait it into emitting, then kill it
+- **A post-mortem** on the failed debrief: what killed you, and one line on what to do differently
+
 ### Presentation & Readability
-- **Three display modes** (`CLEAN` / `MODERN` / `RETRO CRT`) behind one key, covering
-  vector persistence, bloom, per-stroke glow, the scanline mask and the vignette
-  together — and remembered between sessions
+- **One screen style** — no look to choose before flying
 - **Device-pixel-accurate canvas** — the backing store is scaled by `devicePixelRatio`
   so symbology stays sharp on HiDPI displays
 - **Phosphor persistence** — vectors decay with a frame-rate-independent time constant
@@ -529,7 +535,7 @@ src/
 │   ├── TouchLayout.ts     # Pure thumb-control placement and hit-testing
 │   ├── TouchControls.ts   # Thumb-control chrome and the rotate prompt
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
-│   ├── DisplayMode.ts     # CLEAN / MODERN / RETRO ladder (canvas + CSS effects)
+│   ├── DisplayMode.ts     # the single screen style (canvas + CSS effects)
 │   ├── HudLayout.ts       # Pure cockpit instrument placement solver
 │   ├── HUD.ts             # Objective strip, pitch ladder, FPM, tapes, RWR, landing aids
 │   ├── DeckLayout.ts      # Pure responsive panel solver
@@ -619,14 +625,17 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 
 ## Future Roadmap
 
-Following the [12-Dimensional Game Design & Player Psychology Review](docs/reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) and live playtesting, upcoming development centers on 6 core pillars:
+Shipped through v1.5.0: the guided training sortie (and routing new pilots to it), cockpit voice
+warnings, the padlock camera, vector debris, time rewind, chaff, a beatable SAM, the AGM-88 HARM and
+the death post-mortem. What is next, ranked by what it buys a new player
+([review](docs/reviews/v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)):
 
-1. **Non-Lethal Narrative Onboarding (`TRAINING_SORTIE`):** Isolating the tutorial in safe Scottish waters with scripted wingman radio comms ("Ghost-Lead"), resolving Known Issue #32.
-2. **Synthesized Cockpit Voice Warnings ("Bitchin' Betty"):** Zero-dependency robotic voice alerts (*"PULL UP"*, *"WARNING: MISSILE LAUNCH"*, *"STALL"*, *"BINGO FUEL"*) via native Web Speech or procedural formant synthesis.
-3. **Padlock Target-Tracking Camera Mode (`V` Key):** Slaving the view vector toward designated bandits with canopy angle clamping, eliminating the 60° forward boresight blindfold.
-4. **Enhanced Kinetic "Juice" & Vector Debris:** 3D wireframe line fragmentation explosion physics, distance-scaled screen shake, and threat-responsive procedural synthwave audio.
-5. **Persistent Rogue-lite Fleet Campaign:** Node-based Norwegian Sea strategic map with 24 F-14 / 12 A-6 finite airframes, fuel/ordnance logistics, and permanent attrition.
-6. **Retro Gun-Camera VHS Replay Export:** 15-second low-res CRT HUD recording post-sortie for viral social sharing.
+1. **Touch controls for chaff and HARM** — phones can fly and fight but cannot yet press `X` or select `4`
+2. **Key remapping** — `main.ts` and `Controls.ts` must be unified first (see KNOWN_ISSUES)
+3. **A "call the boat" cruise-missile strike** — the standoff weapon a playtester asked for
+4. **Autopilot coordinated turns** so the recovery assist can be a real "take me home" button (KNOWN_ISSUES #19)
+5. **Persistent campaign** — carry airframe and hull losses between missions
+6. **Gun-camera replay export** for sharing
 
 ---
 

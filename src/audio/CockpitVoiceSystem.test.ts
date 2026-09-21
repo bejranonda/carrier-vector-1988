@@ -131,4 +131,17 @@ describe('CockpitVoiceSystem', () => {
         expect(accepted).toBe(false);
         expect(voice.activeQueue.length).toBe(0);
     });
+
+    it('speaks radio callouts when unmuted and suppresses when muted', () => {
+        const mockSynth = createMockSynth();
+        const voice = new CockpitVoiceSystem(mockSynth);
+
+        voice.speakRadioCallout('Splash one bandit!');
+        expect(mockSynth.speak).toHaveBeenCalledTimes(1);
+
+        voice.setMuted(true);
+        voice.speakRadioCallout('Direct hit!');
+        expect(mockSynth.speak).toHaveBeenCalledTimes(1);
+    });
 });
+

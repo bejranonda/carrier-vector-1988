@@ -12,6 +12,8 @@
 import type { VectorRenderer } from './VectorRenderer';
 import { WireframeModels } from './VectorRenderer';
 import type { ScoreKeeper } from '../core/ScoreKeeper';
+import { formatLossCause, postMortemTip } from '../core/PostMortem';
+import type { LossCause } from '../core/PostMortem';
 import { CONTROL_SCHEMA, bindingsFor } from '../core/Controls';
 import type { ControlContext } from '../core/Controls';
 import { THEME, WORLD, fitText, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
@@ -89,6 +91,8 @@ export function briefingSecondaryOptions(opts: {
     threatLabel: string;
     mapChangeable: boolean;
     showPaletteHint: boolean;
+    /** True until the stick setting has been touched. */
+    showStickHint?: boolean;
 }): [string, string][] {
     return [
         ['←  →', 'change mission'],
@@ -102,7 +106,9 @@ export function briefingSecondaryOptions(opts: {
         ...(opts.showPaletteHint
             ? [['C', 'try colour-blind palette'] as [string, string]]
             : []),
-        ['P', 'screen style']
+        ...(opts.showStickHint
+            ? [['I', 'flight-sim stick (UP = dive)'] as [string, string]]
+            : [])
     ];
 }
 
@@ -246,7 +252,9 @@ export class BriefingScreen {
          */
         mapChoice: { id: MapId; changeable: boolean } | null = null,
         /** See `briefingSecondaryOptions` - true until the palette is touched. */
-        showPaletteHint = false
+        showPaletteHint = false,
+        /** See `briefingSecondaryOptions` - true until the stick is touched. */
+        showStickHint = false
     ) {
         ctx.save();
         noGlow(ctx);
@@ -404,7 +412,8 @@ export class BriefingScreen {
             pacingLabel,
             threatLabel,
             mapChangeable: mapChoice?.changeable === true,
-            showPaletteHint
+            showPaletteHint,
+            showStickHint
         });
 
         /**
@@ -801,7 +810,14 @@ export class BriefingScreen {
          * should match - drop the rows that read zero, which are exactly the
          * ones carrying no information.
          */
-        const fullHeight = (n: number) => 112 + (n * 22 + 36) + 118
+        const causeText = formatLossCause(result.cause ?? null);
+        const tipText = postMortemTip(result.cause ?? null);
+        // 20px per line plus 6px of breathing room, only when there is a
+        // cause to show - a win, or a loss with no recorded cause, costs
+        // nothing extra in the layout.
+        const causeBlockH = causeText ? 20 + (tipText ? 20 : 0) + 6 : 0;
+
+        const fullHeight = (n: number) => 112 + causeBlockH + (n * 22 + 36) + 118
             + (result.shareCard ? result.shareCard.split('\n').length * 17 + 46 + 56 : 0);
         let compact = false;
         if (fullHeight(rows.length) > h - 40) {
@@ -818,7 +834,7 @@ export class BriefingScreen {
         // under it: leaving it out of the height left the ENTER prompt drawn
         // straight through the card on a 700px-tall window.
         const cardH = result.shareCard ? result.shareCard.split('\n').length * 17 + 46 : 0;
-        const blockH = 112 + boxH + 118 + (cardH ? cardH + 56 : 0);
+        const blockH = 112 + causeBlockH + boxH + 118 + (cardH ? cardH + 56 : 0);
         const top = Math.max(20, (h - blockH) / 2 - 20);
 
         const headlineColor = won ? THEME.phosphor : THEME.alert;
@@ -839,8 +855,22 @@ export class BriefingScreen {
         ctx.fillStyle = THEME.muted;
         ctx.fillText(result.scenarioName, cx, top + 84);
 
+        // What got you, and what to do differently. Only shown on a loss
+        // with a recorded cause - a win has nothing to explain, and a loss
+        // with no cause on record says nothing rather than guessing.
+        if (causeText) {
+            ctx.font = font(12, 700);
+            ctx.fillStyle = THEME.alert;
+            ctx.fillText(fitText(ctx, causeText, w - 80), cx, top + 100);
+            if (tipText) {
+                ctx.font = font(11);
+                ctx.fillStyle = THEME.muted;
+                ctx.fillText(fitText(ctx, tipText, w - 80), cx, top + 120);
+            }
+        }
+
         const boxX = cx - boxW / 2;
-        const boxY = top + 112;
+        const boxY = top + 112 + causeBlockH;
         plate(ctx, { x: boxX, y: boxY, w: boxW, h: boxH }, { border: THEME.edgeSoft, radius: 5 });
 
         ctx.font = font(12);
@@ -981,6 +1011,8 @@ export interface DebriefResult {
     shareCard?: string | null;
     /** Whether the card has just been copied, for the confirmation line. */
     copied?: boolean;
+    /** What killed the aeroplane, when the mission ended in a loss. */
+    cause?: LossCause | null;
 }
 
 /** What the briefing needs to draw the daily sortie line. */

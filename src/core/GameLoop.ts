@@ -16,9 +16,12 @@ import { VectorRenderer, WireframeModels } from '../renderer/VectorRenderer';
 import { HUD } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { TacticalTerrain, SensorTacticsManager } from '../tactics/RadarLOS';
+import { SAM_MISSILE } from '../tactics/MissileGuidance';
 import { DeckManager } from '../carrier/DeckManager';
 import type { InboundStrikePackage, ThreatProfile } from '../carrier/DeckManager';
 import { WeaponsSystem } from '../flight/Weapons';
+import { createCountermeasureState, tickCountermeasures, dispense, decoyExpiry } from '../flight/Countermeasures';
+import type { CountermeasureState } from '../flight/Countermeasures';
 import { VectorDebrisSystem } from '../renderer/VectorDebris';
 import { CockpitVoiceSystem } from '../audio/CockpitVoiceSystem';
 import { PadlockCamera } from '../renderer/PadlockCamera';
@@ -28,6 +31,7 @@ import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
 import { getContextualHint, TrainingSequence } from './Tutorial';
+import type { LossCause } from './PostMortem';
 import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
@@ -49,9 +53,6 @@ import {
     applyDisplayModeToDocument,
     displayModeSpec,
     loadDisplayMode,
-    nextDisplayMode,
-    saveDisplayMode,
-    storedDisplayMode
 } from '../renderer/DisplayMode';
 import type { DisplayModeId } from '../renderer/DisplayMode';
 import { deckObjective, flightObjective } from './Objectives';
@@ -64,6 +65,10 @@ import {
     scenarioById
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
+import { loadPitchInversion, storedPitchInversion, savePitchInversion } from './Controls';
+
+import { hitTestDeck, hitTestHud } from '../renderer/PointerInteractivity';
+import type { DeckStateSnapshot, HudStateSnapshot } from '../renderer/PointerInteractivity';
 import { StrikeTarget } from '../tactics/StrikeTarget';
 import {
     assistSpec,
@@ -203,12 +208,19 @@ export class GameLoop {
 
     // View & phase state
     public currentView: 'MICRO_FLIGHT' | 'MACRO_DECK' = 'MACRO_DECK';
-    public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' = 'GUN';
+    public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM' = 'GUN';
     public phase: GamePhase = 'BOOT';
     public helpVisible = false;
 
     /** Raw key state, written by the input layer in main.ts. */
     public inputState: Record<string, boolean> = {};
+
+    /**
+     * Whether Up/W pitches the nose DOWN (real aviation stick: pull back to
+     * climb, push forward to dive). False = Direct (Up = climb, natural for
+     * most first-time players). Saved across sessions.
+     */
+    public pitchInverted: boolean = loadPitchInversion();
 
     // Combat Entities
     public airborneTargets: AirborneTarget[] = [];
@@ -351,8 +363,16 @@ export class GameLoop {
     private hitMarker = 0;
     /** Last-seen missileActive per SAM, for launch-edge detection. */
     private samMissileActive = new Map<string, boolean>();
+    /** Chaff dispenser: reload timer. Cartridge count itself lives on the loadout. */
+    private countermeasures: CountermeasureState = createCountermeasureState();
     /** Damage at the last master-caution, so it fires per event not per frame. */
     private lastCautionDamage = 0;
+    /**
+     * What most recently damaged the aeroplane this sortie, for the debrief
+     * post-mortem. Cleared at the start of every sortie so a stale cause from
+     * a previous flight can never be shown against this one's outcome.
+     */
+    private lastLossCause: LossCause | null = null;
 
     /**
      * Wire-catch payoff. The trap used to resolve as an instant view switch
@@ -640,7 +660,8 @@ export class GameLoop {
             traps: this.score.breakdown.traps,
             perfectTraps: this.score.breakdown.perfectTraps,
             bombsRemaining: this.physics.loadout.ironBombs,
-            rwrState: this.sensors.masterRwrState
+            rwrState: this.sensors.masterRwrState,
+            flightAssistMode: this.assistLevel
         };
     }
 
@@ -689,10 +710,6 @@ export class GameLoop {
         this.post.quality = rank[proposed] > rank[this.qualityCeiling]
             ? this.qualityCeiling
             : proposed;
-    }
-
-    public get displayModeLabel(): string {
-        return displayModeSpec(this.displayMode).label;
     }
 
     // -----------------------------------------------------------------
@@ -753,6 +770,8 @@ export class GameLoop {
         this.physics.fuel = fuel;
         this.physics.loadout = { ...loadout };
         this.selectedWeapon = 'GUN';
+        this.countermeasures = createCountermeasureState(loadout.chaff);
+        this.lastLossCause = null;
     }
 
     /** Seed the end-of-catapult-stroke flight state. */
@@ -881,10 +900,6 @@ export class GameLoop {
         // approach and still hands the landing back at short final, so a
         // handset player gets to finish a sortie rather than ditching.
         if (storedApproachAssist() === null) this.approachAssist = true;
-        if (storedDisplayMode() === null) {
-            this.displayMode = 'CLEAN';
-            this.applyDisplayMode();
-        }
     }
 
     /** Cycle AUTO -> TOUCH -> KEYBOARD, for players detection got wrong. */
@@ -993,10 +1008,11 @@ export class GameLoop {
         // A thumb gives an analog demand; a key gives ±1. Both arrive here as
         // the same PilotInput, so the assist laws and the flight model below
         // never learn which one the player used.
+        const rawPitch = this.analog
+            ? this.analog.pitch
+            : (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0);
         const pilot = {
-            pitch: this.analog
-                ? this.analog.pitch
-                : (k['w'] || k['arrowup'] ? 1 : 0) + (k['s'] || k['arrowdown'] ? -1 : 0),
+            pitch: this.pitchInverted ? -rawPitch : rawPitch,
             roll: this.analog
                 ? this.analog.roll
                 : (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
@@ -1428,6 +1444,146 @@ export class GameLoop {
     }
 
     /**
+     * Release a chaff cartridge.
+     *
+     * Always breaks every SAM currently tracking or engaging the aeroplane -
+     * see flight/Countermeasures.ts for why that is deliberate rather than a
+     * missed nuance. Decoys every threatening site rather than only the one
+     * that has actually fired, because from the cockpit there is no way to
+     * tell which site is about to pull the trigger, and a player should never
+     * have to guess which of several red contacts their one countermeasure
+     * key affects.
+     */
+    public releaseChaff(): boolean {
+        if (this.currentView !== 'MICRO_FLIGHT') return false;
+        if (!dispense(this.countermeasures)) {
+            soundFX.playRelayClick();
+            return false;
+        }
+        this.physics.loadout.chaff = this.countermeasures.remaining;
+
+        const until = decoyExpiry(this.sensors.missionSeconds);
+        let decoyedAny = false;
+        for (const sam of this.sensors.samSites) {
+            const threat = this.sensors.activeThreats.find(t => t.id === sam.id);
+            if (threat && (threat.state === 'LAUNCH' || threat.state === 'TRACK')) {
+                sam.decoyedUntil = Math.max(sam.decoyedUntil, until);
+                decoyedAny = true;
+            }
+        }
+
+        soundFX.playCountermeasure(this.placeAt(this.physics.position));
+        this.callouts.push(
+            decoyedAny ? 'CHAFF — LOCK BROKEN' : 'CHAFF',
+            decoyedAny ? 'PRAISE' : 'MODE',
+            `${this.countermeasures.remaining} REMAINING`
+        );
+        this.deck.log(`CHAFF RELEASED. ${this.countermeasures.remaining} REMAINING.`);
+        return true;
+    }
+
+    /**
+     * Toggle pitch inversion. Real-aviation stick: pulling UP arrow / W makes
+     * the nose go DOWN (climb). False = Direct: Up arrow makes nose go UP.
+     * Persisted across sessions so the player never has to set it again.
+     */
+    public togglePitchInversion(): boolean {
+        this.pitchInverted = !this.pitchInverted;
+        savePitchInversion(this.pitchInverted);
+        soundFX.playRelayClick();
+        this.callouts.push(
+            this.pitchInverted ? 'STICK: REAL (UP = DIVE)' : 'STICK: DIRECT (UP = CLIMB)',
+            'MODE'
+        );
+        return this.pitchInverted;
+    }
+
+    /** Toggle HUD density between ARCADE and PRO. */
+    public toggleHudDensity(): 'ARCADE' | 'PRO' {
+        this.hud.toggleHudDensity();
+        soundFX.playRelayClick();
+        this.callouts.push(
+            this.hud.hudDensity === 'ARCADE' ? 'HUD: ARCADE MODE' : 'HUD: PRO MODE',
+            'MODE'
+        );
+        return this.hud.hudDensity;
+    }
+
+    /**
+     * Handle a mouse click on the active desktop view (deck or cockpit HUD).
+     * Returns true if the click was consumed so main.ts can skip designation.
+     */
+    public handleDesktopClick(x: number, y: number): boolean {
+        if (this.phase !== 'ACTIVE') return false;
+        if (this.controlScheme === 'TOUCH') return false;
+
+        if (this.currentView === 'MACRO_DECK') {
+            const deckSnap: DeckStateSnapshot = {
+                aircraftState: this.deck.aircraftState,
+                canRush: this.deck.canRush(),
+                plannedFuel: this.deck.plannedFuel,
+                sidewinders: this.deck.plannedLoadout.sidewinders,
+                ironBombs: this.deck.plannedLoadout.ironBombs
+            };
+            const action = hitTestDeck(x, y, this.viewWidth, this.viewHeight, deckSnap, this.deckView.lastPanels);
+            if (!action) return false;
+            soundFX.playRelayClick();
+            switch (action) {
+                case 'LAUNCH': this.requestCatapultLaunch(); break;
+                case 'RUSH': this.rushTurnaround(); break;
+                case 'FUEL_MINUS': this.deck.plannedFuel = Math.max(1000, this.deck.plannedFuel - 500); break;
+                case 'FUEL_PLUS': this.deck.plannedFuel = Math.min(this.physics.maxFuel, this.deck.plannedFuel + 500); break;
+                case 'AIM9_CYCLE': this.deck.plannedLoadout.sidewinders = (this.deck.plannedLoadout.sidewinders + 2) % 8; break;
+                case 'BOMB_CYCLE': this.deck.plannedLoadout.ironBombs = (this.deck.plannedLoadout.ironBombs + 1) % 5; break;
+                case 'SWITCH_COCKPIT':
+                    this.currentView = 'MICRO_FLIGHT';
+                    break;
+                case 'HELP': this.helpVisible = !this.helpVisible; break;
+            }
+            return true;
+        }
+
+        if (this.currentView === 'MICRO_FLIGHT') {
+            const hudSnap: HudStateSnapshot = {
+                selectedWeapon: this.selectedWeapon,
+                assistLabel: assistSpec(this.assistLevel).label,
+                hudDensity: this.hud.hudDensity,
+                padlockActive: this.padlock.isPadlocked,
+                pitchInverted: this.pitchInverted
+            };
+            // controlScheme is narrowed to KEYBOARD by the guard at the top of
+            // this method, so the touch reserve can never apply here.
+            const layout = this.hud.solveLayout(
+                this.physics,
+                this.training.checklist().length > 0,
+                undefined,
+                false
+            );
+            const action = hitTestHud(x, y, this.viewWidth, this.viewHeight, layout, hudSnap);
+            if (!action) return false;
+            soundFX.playRelayClick();
+            switch (action) {
+                case 'WEAPON_GUN': this.selectedWeapon = 'GUN'; break;
+                case 'WEAPON_AIM9': this.selectedWeapon = 'AIM9'; break;
+                case 'WEAPON_BOMB': this.selectedWeapon = 'BOMB'; break;
+                case 'WEAPON_HARM': this.selectedWeapon = 'HARM'; break;
+                case 'ASSIST_CYCLE': this.cycleAssistLevel(); break;
+                case 'TIME_REWIND': this.triggerTimeRewind(); break;
+                case 'PADLOCK': this.togglePadlock(); break;
+                case 'HUD_MODE': this.toggleHudDensity(); break;
+                case 'PITCH_INVERT': this.togglePitchInversion(); break;
+                case 'SWITCH_DECK':
+                    this.currentView = 'MACRO_DECK';
+                    break;
+                case 'HELP': this.helpVisible = !this.helpVisible; break;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Refresh the designation list. Candidates are live airborne contacts,
      * surviving SAM sites and intact strike targets - exactly the things a
      * weapon can be employed against, so the cycle key never stops on wreckage.
@@ -1599,6 +1755,17 @@ export class GameLoop {
                 (target) => this.visibility.isVisible(target.id)
             );
             if (this.weapons.missiles.length > before) this.shake(SHAKE_SOURCES.missileLaunch);
+        } else if (this.selectedWeapon === 'HARM') {
+            const launched = this.weapons.fireHarm(this.physics, this.sensors.samSites, this.sensors.activeThreats);
+            if (launched) {
+                this.shake(SHAKE_SOURCES.missileLaunch);
+            } else {
+                // Nothing radiating in range - the pilot pulled the trigger on
+                // an empty lock. Distinct from a dry weapon: the round is
+                // still in the rack, only the shot did not happen.
+                soundFX.playRelayClick();
+                this.callouts.push('NO RADAR CONTACT', 'MODE');
+            }
         } else if (this.selectedWeapon === 'BOMB') {
             const before = this.weapons.bombs.length;
             this.weapons.dropBomb(this.physics);
@@ -1717,6 +1884,9 @@ export class GameLoop {
             rwrState: this.sensors.masterRwrState
         });
 
+        // Countermeasure dispenser recycle.
+        tickCountermeasures(this.countermeasures, dt);
+
         // Sensors, RWR and SAM engagements
         this.sensors.update(dt, this.physics);
         soundFX.setRWRState(this.sensors.masterRwrState);
@@ -1727,23 +1897,33 @@ export class GameLoop {
 
         // SAM missile impacts now actually hurt - previously missiles flew
         // straight through the player with no collision check at all.
+        // In combatShielded scenarios (training) impacts are suppressed so
+        // new players can explore without immediately dying to SAMs.
         for (const impact of this.sensors.missileImpacts) {
-            this.physics.applyDamage(impact.damage);
-            this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
-            this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
-            soundFX.playExplosion(this.placeAt(impact.position));
-            soundFX.playMasterCaution();
-            this.shake(SHAKE_SOURCES.damageTaken);
-            this.flash(THEME.alert, 0.5);
-            this.callouts.push('HIT', 'LOSS', `${Math.round(impact.damage)}% AIRFRAME DAMAGE`);
+            if (this.scenario.setup.combatShielded) {
+                this.deck.log(`[TRAINING] SAM from ${impact.samId} ghosted — no damage in combat-shielded sortie.`);
+            } else {
+                this.physics.applyDamage(impact.damage);
+                const sourceSam = this.sensors.samSites.find(s => s.id === impact.samId);
+                this.lastLossCause = { kind: 'SAM', detail: sourceSam?.name ?? impact.samId };
+                this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
+                this.deck.log(`SAM IMPACT FROM ${impact.samId}! AIRFRAME DAMAGE ${Math.round(impact.damage)}%.`);
+                soundFX.playExplosion(this.placeAt(impact.position));
+                soundFX.playMasterCaution();
+                this.shake(SHAKE_SOURCES.damageTaken);
+                this.flash(THEME.alert, 0.5);
+                this.callouts.push('HIT', 'LOSS', `${Math.round(impact.damage)}% AIRFRAME DAMAGE`);
+            }
         }
 
         // Enemy aircraft behaviour (also integrates their positions)
         updateEnemyAI(dt, this.airborneTargets, this.physics, (enemy) => {
             // Simplified hit-scan cannon burst: the alignment/range gate in
             // EnemyAI has already established a valid guns solution.
+            if (this.scenario.setup.combatShielded) return; // ghost in training
             const dmg = 4 + Math.random() * 6;
             this.physics.applyDamage(dmg);
+            this.lastLossCause = { kind: 'CANNON', detail: enemy.name };
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
             soundFX.playIncomingFire(this.placeAt(enemy.position));
             this.shake(SHAKE_SOURCES.damageTaken * 0.5);
@@ -1755,6 +1935,7 @@ export class GameLoop {
             terrain: this.terrain,
             targets: this.airborneTargets,
             samSites: this.sensors.samSites,
+            threats: this.sensors.activeThreats,
             strikeTargets: this.strikeTargets,
             onTargetDestroyed: (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
             onTargetHit: () => {
@@ -1792,10 +1973,35 @@ export class GameLoop {
 
         // Controlled Flight Into Terrain
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        if (this.scenario.setup.combatShielded) {
+            // The training sortie cannot kill you. Shielding used to cover
+            // missiles and cannon only, so a beginner who flew the nose into
+            // the fjord on their very first flight still lost the airframe -
+            // the one lesson the tutorial exists to make safe. The wingman
+            // hauls the jet clear instead, and it costs nothing but a callout.
+            const floor = groundElevation + 150;
+            // Away from the boat, catch a descent early. Near it, the low
+            // glideslope is the point of the lesson, so only the last few
+            // metres above the water count.
+            const nearBoat = Math.hypot(this.physics.position.x, this.physics.position.z) < 1500;
+            const danger = nearBoat ? groundElevation + 4 : groundElevation + 40;
+            if (this.physics.position.y < floor && this.physics.position.y <= danger
+                && this.deck.aircraftState === 'AIRBORNE') {
+                this.physics.position.y = floor;
+                this.physics.pitch = Math.max(this.physics.pitch, 0.15);
+                this.physics.velocity.y = Math.max(this.physics.velocity.y, 0);
+                this.physics.velocity.z = Math.max(this.physics.velocity.z, 0);
+                this.callouts.push('GHOST-LEAD: PULL UP!', 'MODE', 'training - no damage');
+                soundFX.playMasterCaution();
+            }
+            // Never strand a rookie on fumes either.
+            if (this.physics.fuel < 1500) this.physics.fuel = 1500;
+        }
         if (this.physics.position.y <= groundElevation + 2) {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
             this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
             this.physics.position.y = groundElevation + 2;
+            this.lastLossCause = { kind: 'TERRAIN', detail: 'terrain' };
             this.replaceAirframe('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
             return;
         }
@@ -2021,7 +2227,8 @@ export class GameLoop {
                     id: this.selectedMap(),
                     changeable: this.scenario.setup.allowMapChoice === true
                 },
-                storedPalette() === null
+                storedPalette() === null,
+                storedPitchInversion() === null
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
@@ -2034,6 +2241,10 @@ export class GameLoop {
                     outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
                     scenarioName: this.scenario.name,
                     reason: this.missionReason,
+                    // Only surfaced on a failure - a win has no "cause" to
+                    // report, and lastLossCause is reset every sortie so it
+                    // can never point at a hit from a previous flight.
+                    cause: this.missionOutcome === 'FAILED' ? this.lastLossCause : null,
                     title: this.scenario.victoryTitle,
                     missionBest: recordFor(this.missionRecords, this.scenario.id).best,
                     isMissionBest: this.isMissionBest,
@@ -2056,7 +2267,6 @@ export class GameLoop {
                 {
                     objective: this.currentObjective(),
                     hint: this.currentHint,
-                    displayModeLabel: this.displayModeLabel,
                     touchMode: this.controlScheme === 'TOUCH',
                     touchReserveBottom: this.controlScheme === 'TOUCH'
                         ? Math.max(56, this.viewHeight - this.touchLayout.launch.y + 10)
@@ -2123,7 +2333,10 @@ export class GameLoop {
         const loadout = this.physics.loadout;
         drawTouchControls(this.ctx, this.touchLayout, {
             demand: this.touch.demand(this.touchLayout),
-            selectedWeapon: this.selectedWeapon,
+            // HARM has no touch control yet (KNOWN_ISSUES) - a touch pilot who
+            // somehow has it selected still sees a sensible weapon highlighted
+            // rather than the type system being fought with a cast.
+            selectedWeapon: this.selectedWeapon === 'HARM' ? 'GUN' : this.selectedWeapon,
             ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
@@ -2189,10 +2402,16 @@ export class GameLoop {
             this.renderer.renderMesh(this.samMesh, sam.position, 0, camPos, camPitch, camYaw, camRoll, WORLD.hostile);
 
             if (sam.missileActive && sam.missilePos && sam.missileVel) {
+                // Length and speed both come from SAM_MISSILE now, rather
+                // than a hardcoded 480 duplicating tactics/MissileGuidance.ts.
+                // A tuning change to the missile's speed used to silently
+                // desync the drawn tracer's length from its real flight
+                // path - the round would fly at one speed and paint itself
+                // as though it flew at another.
                 const tail: Vector3 = {
-                    x: sam.missilePos.x - (sam.missileVel.x / 480) * 8,
-                    y: sam.missilePos.y - (sam.missileVel.y / 480) * 8,
-                    z: sam.missilePos.z - (sam.missileVel.z / 480) * 8
+                    x: sam.missilePos.x - (sam.missileVel.x / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength,
+                    y: sam.missilePos.y - (sam.missileVel.y / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength,
+                    z: sam.missilePos.z - (sam.missileVel.z / SAM_MISSILE.speed) * SAM_MISSILE.tracerLength
                 };
                 this.renderer.drawLine(tail, sam.missilePos, camPos, camPitch, camYaw, camRoll, WORLD.missile, 2.8);
             }
@@ -2235,13 +2454,13 @@ export class GameLoop {
                 score: this.score,
                 objective: this.currentObjective(),
                 checklist: this.training.checklist(),
-                displayModeLabel: this.displayModeLabel,
                 strikeTargets: this.strikeTargets,
                 bombImpactPoint: this.selectedWeapon === 'BOMB' && this.physics.loadout.ironBombs > 0
                     ? WeaponsSystem.predictBombImpact(this.physics, this.terrain)
                     : null,
                 designated: this.tracker.designated(),
                 isPadlocked: this.padlock.isPadlocked,
+                pitchInverted: this.pitchInverted,
                 rewindsRemaining: this.timeRewind.rewindsRemaining,
                 assistLabel: assistSpec(this.assistLevel).label,
                 assistOverride: this.assistOverride,
@@ -2325,19 +2544,4 @@ export class GameLoop {
         this.post.hardClear();
     }
 
-    /**
-     * Cycle CLEAN -> MODERN -> RETRO. One key now controls every screen
-     * effect (vector trails, bloom, scanlines, vignette) instead of only the
-     * bloom pass, so a player who finds the texture hard to read has a
-     * single, discoverable way to turn it off.
-     */
-    public cycleDisplayMode() {
-        soundFX.playUiMove();
-        this.displayMode = nextDisplayMode(this.displayMode);
-        this.applyDisplayMode();
-        this.post.hardClear();
-        const spec = displayModeSpec(this.displayMode);
-        saveDisplayMode(this.displayMode);
-        this.deck.log(`DISPLAY: ${spec.label} - ${spec.description}`);
-    }
 }

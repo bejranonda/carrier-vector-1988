@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { HUD_METRICS, NO_RESERVE, solveHudLayout } from './HudLayout';
-import type { HudLayout } from './HudLayout';
+import { HUD_METRICS, NO_RESERVE, solveHudLayout, solveArcadeBar } from './HudLayout';
+import type { HudLayout, ArcadeBarSlot } from './HudLayout';
 
 const WIDTHS = [800, 900, 1024, 1100, 1150, 1280, 1440, 1600, 1920, 2560];
 const HEIGHTS = [400, 500, 620, 700, 768, 900, 1080];
@@ -210,5 +210,144 @@ describe('touch-mode instrument placement', () => {
         });
         expect(a).toEqual(b);
         expect(a.touchMode).toBe(false);
+    });
+});
+
+describe('solveArcadeBar', () => {
+    // REGRESSION: HUD.ts (drawing) and PointerInteractivity.ts (hit-testing)
+    // used to each hardcode this row's pixel geometry independently. They
+    // had already drifted apart by 8px at the assist pill before this
+    // solver existed - exactly the class of bug this file makes impossible.
+    function overlaps(a: ArcadeBarSlot, b: ArcadeBarSlot): boolean {
+        return a.rect.x < b.rect.x + b.rect.w && b.rect.x < a.rect.x + a.rect.w;
+    }
+
+    it('never overlaps two slots, at several viewport sizes', () => {
+        for (const width of [800, 1024, 1280, 1440, 1920, 2560]) {
+            for (const height of [500, 700, 900, 1080]) {
+                for (const showCountermeasure of [false, true]) {
+                    const bar = solveArcadeBar({
+                        width, height, weaponCount: 3, showCountermeasure,
+                        showRewind: true, showPadlock: true, statusTextWidth: 220
+                    });
+                    const sorted = [...bar].sort((a, b) => a.rect.x - b.rect.x);
+                    for (let i = 1; i < sorted.length; i++) {
+                        expect(
+                            overlaps(sorted[i - 1], sorted[i]),
+                            `${sorted[i - 1].id}/${sorted[i].id} @ ${width}x${height} cm=${showCountermeasure}`
+                        ).toBe(false);
+                    }
+                }
+            }
+        }
+    });
+
+    it('keeps every slot inside the viewport horizontally', () => {
+        for (const width of [800, 1024, 1280, 1440, 1920, 2560]) {
+            const bar = solveArcadeBar({
+                width, height: 800, weaponCount: 4, showCountermeasure: true,
+                showRewind: true, showPadlock: true, statusTextWidth: 220
+            });
+            for (const s of bar) {
+                expect(s.rect.x, `${s.id} @ ${width}`).toBeGreaterThanOrEqual(0);
+                expect(s.rect.x + s.rect.w, `${s.id} @ ${width}`).toBeLessThanOrEqual(width);
+            }
+        }
+    });
+
+    it('orders slots left to right', () => {
+        const bar = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 4, showCountermeasure: true,
+            showRewind: true, showPadlock: true, statusTextWidth: 220
+        });
+        for (let i = 1; i < bar.length; i++) {
+            expect(bar[i].rect.x, `${bar[i - 1].id}->${bar[i].id}`).toBeGreaterThan(bar[i - 1].rect.x);
+        }
+    });
+
+    it('adds a 4th weapon slot without overlapping anything else', () => {
+        const three = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true
+        });
+        const four = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 4, showCountermeasure: false,
+            showRewind: true, showPadlock: true
+        });
+        expect(three.filter(s => s.id.startsWith('WEAPON_'))).toHaveLength(3);
+        expect(four.filter(s => s.id.startsWith('WEAPON_'))).toHaveLength(4);
+        expect(four.find(s => s.id === 'WEAPON_3')).toBeDefined();
+
+        const sorted = [...four].sort((a, b) => a.rect.x - b.rect.x);
+        for (let i = 1; i < sorted.length; i++) {
+            expect(overlaps(sorted[i - 1], sorted[i]), `${sorted[i - 1].id}/${sorted[i].id}`).toBe(false);
+        }
+    });
+
+    it('only shows the countermeasure slot when requested', () => {
+        const without = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true
+        });
+        const withCm = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 3, showCountermeasure: true,
+            showRewind: true, showPadlock: true
+        });
+        expect(without.find(s => s.id === 'COUNTERMEASURE')).toBeUndefined();
+        expect(withCm.find(s => s.id === 'COUNTERMEASURE')).toBeDefined();
+    });
+
+    it('reproduces the exact current geometry for 3 weapons, no countermeasure', () => {
+        const bar = solveArcadeBar({
+            width: 1280, height: 720, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true
+        });
+        const barY = 720 - HUD_METRICS.arcadeBar.y;
+        const byId = (id: string) => bar.find(s => s.id === id)!.rect;
+
+        expect(byId('WEAPON_0')).toEqual({ x: 24, y: barY, w: 78, h: 34 });
+        expect(byId('WEAPON_1')).toEqual({ x: 110, y: barY, w: 78, h: 34 });
+        expect(byId('WEAPON_2')).toEqual({ x: 196, y: barY, w: 78, h: 34 });
+        expect(byId('ASSIST')).toEqual({ x: 290, y: barY, w: 110, h: 34 });
+        expect(byId('REWIND')).toEqual({ x: 408, y: barY, w: 84, h: 34 });
+        expect(byId('PADLOCK')).toEqual({ x: 500, y: barY, w: 80, h: 34 });
+    });
+
+    it('omits the status pill when it would overflow the viewport', () => {
+        const narrow = solveArcadeBar({
+            width: 620, height: 720, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true, statusTextWidth: 400
+        });
+        const wide = solveArcadeBar({
+            width: 1440, height: 720, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true, statusTextWidth: 400
+        });
+        expect(narrow.find(s => s.id === 'STATUS')).toBeUndefined();
+        expect(wide.find(s => s.id === 'STATUS')).toBeDefined();
+    });
+
+    it('omits the status pill entirely when no text width is given', () => {
+        const bar = solveArcadeBar({
+            width: 2560, height: 900, weaponCount: 3, showCountermeasure: false,
+            showRewind: true, showPadlock: true
+        });
+        expect(bar.find(s => s.id === 'STATUS')).toBeUndefined();
+    });
+
+    it('drops the rewind and padlock slots when hidden', () => {
+        const bar = solveArcadeBar({
+            width: 1440, height: 900, weaponCount: 3, showCountermeasure: false,
+            showRewind: false, showPadlock: false
+        });
+        expect(bar.find(s => s.id === 'REWIND')).toBeUndefined();
+        expect(bar.find(s => s.id === 'PADLOCK')).toBeUndefined();
+    });
+
+    it('is deterministic for identical input', () => {
+        const input = {
+            width: 1440, height: 900, weaponCount: 4, showCountermeasure: true,
+            showRewind: true, showPadlock: true, statusTextWidth: 220
+        };
+        expect(solveArcadeBar(input)).toEqual(solveArcadeBar(input));
     });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { SCENARIOS } from '../core/Scenarios';
 import { briefingHitAreas, briefingSecondaryOptions } from './BriefingScreen';
 
 
@@ -9,8 +10,8 @@ describe('briefingHitAreas', () => {
 
     it('gives one pill per scenario, in order, without overlaps', () => {
         for (const [w, h] of SIZES) {
-            const { pills } = briefingHitAreas(w, h, 5, true);
-            expect(pills).toHaveLength(5);
+            const { pills } = briefingHitAreas(w, h, SCENARIOS.length, true);
+            expect(pills).toHaveLength(SCENARIOS.length);
             for (let i = 1; i < pills.length; i++) {
                 expect(pills[i].x, `${w}x${h}`).toBeGreaterThanOrEqual(pills[i - 1].x + pills[i - 1].w);
             }
@@ -19,7 +20,7 @@ describe('briefingHitAreas', () => {
 
     it('keeps every interactive area inside the viewport', () => {
         for (const [w, h] of SIZES) {
-            const areas = briefingHitAreas(w, h, 5, true);
+            const areas = briefingHitAreas(w, h, SCENARIOS.length, true);
             const all = [...areas.pills, areas.cta, areas.daily!];
             for (const r of all) {
                 expect(r.x, `${w}x${h}`).toBeGreaterThanOrEqual(0);
@@ -32,7 +33,7 @@ describe('briefingHitAreas', () => {
 
     it('never lets the daily line and the pills collide', () => {
         for (const [w, h] of SIZES) {
-            const { pills, daily } = briefingHitAreas(w, h, 5, true);
+            const { pills, daily } = briefingHitAreas(w, h, SCENARIOS.length, true);
             expect(daily!.y + daily!.h).toBeLessThanOrEqual(pills[0].y);
         }
     });
@@ -56,7 +57,7 @@ describe('briefingHitAreas', () => {
 
     it('puts the call to action at the bottom, clear of the pills', () => {
         for (const [w, h] of SIZES) {
-            const { pills, cta } = briefingHitAreas(w, h, 5, true);
+            const { pills, cta } = briefingHitAreas(w, h, SCENARIOS.length, true);
             expect(cta.y, `${w}x${h}`).toBeGreaterThan(pills[0].y + pills[0].h);
         }
     });
@@ -65,10 +66,20 @@ describe('briefingHitAreas', () => {
 describe('briefingSecondaryOptions', () => {
     const base = { pacingLabel: 'ARCADE pacing', threatLabel: 'REGULAR threat' };
 
-    it('always leads with changing the mission and ends with the screen style', () => {
+    it('always leads with changing the mission, and offers no screen-style choice', () => {
         const opts = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
         expect(opts[0]).toEqual(['←  →', 'change mission']);
-        expect(opts[opts.length - 1]).toEqual(['P', 'screen style']);
+        // One screen style only - it is no longer something to pick.
+        expect(opts.some(([k]) => k === 'P')).toBe(false);
+    });
+
+    // Arrow-up defaults to CLIMB; a pilot with flight-sim habits expects the
+    // opposite and used to have to discover the flip among forty bindings.
+    it('offers the stick flip only until it has been touched', () => {
+        const shown = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false, showStickHint: true });
+        const hidden = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false, showStickHint: false });
+        expect(shown.some(([k]) => k === 'I')).toBe(true);
+        expect(hidden.some(([k]) => k === 'I')).toBe(false);
     });
 
     it('only offers the map change on a scenario that allows it', () => {

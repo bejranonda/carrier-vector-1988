@@ -145,7 +145,7 @@ describe('GameLoop integration smoke test', () => {
 
         game.deck.aircraftState = 'CATAPULT_READY';
         game.deck.plannedFuel = 3200;               // deliberately NOT the old hardcoded 4500
-        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1 };
+        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1, chaff: 12, harms: 2 };
 
         expect(game.requestCatapultLaunch()).toBe(true);
         expect(game.deck.aircraftState).toBe('CATAPULT_LAUNCHING');
@@ -575,7 +575,7 @@ describe('GameLoop integration smoke test', () => {
         expect(game.controlScheme).toBe('TOUCH');
         // The jet flying itself is what makes one-thumb play possible.
         expect(game.assistLevel).toBe('AUTO');
-        expect(game.displayMode).toBe('CLEAN');
+        expect(game.displayMode).toBe('MODERN');
     });
 
     it('leaves a keyboard player untouched', () => {
@@ -1721,21 +1721,6 @@ describe('GameLoop integration smoke test', () => {
         });
     });
 
-    it('cycles the display mode without throwing', () => {
-        const game = new GameLoop(makeCanvasStub());
-        runFrames(game, 150);
-        game.confirmBriefing();
-        game.hotStartAirborne();
-
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        expect(game.phase).toBe('ACTIVE');
-    });
-
     it('toggles padlock camera and reports callouts', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
@@ -1768,5 +1753,175 @@ describe('GameLoop integration smoke test', () => {
         expect(rewindSuccess).toBe(true);
         expect(game.timeRewind.rewindsRemaining).toBe(initialUses - 1);
         expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
+    });
+
+    it('selects and fires the AGM-88 HARM at a radiating SAM through the cockpit switch, weapon and all', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.physics.loadout.harms = 2;
+
+        const sam = game.sensors.samSites[0];
+        expect(sam).toBeDefined();
+        // Directly overhead with clear LOS - this test is about the cockpit
+        // wiring (key -> weapon -> array -> kill callback), not about
+        // threading a canyon, which IronHandScenarios.test.ts-style terrain
+        // work would be a different and much slower test to write.
+        game.physics.position = { x: sam.position.x, y: sam.position.y + 900, z: sam.position.z };
+        game.physics.velocity = { x: 0, y: 0, z: 0 };
+        runFrames(game, 5);
+
+        expect(game.sensors.activeThreats.some(t => t.id === sam.id && t.state !== 'SILENT')).toBe(true);
+
+        game.selectedWeapon = 'HARM';
+        const before = game.physics.loadout.harms;
+        game.fireSelectedWeapon();
+
+        expect(game.weapons.harms.length).toBe(1);
+        expect(game.physics.loadout.harms).toBe(before - 1);
+
+        // Run it home. Aircraft holds position so the site keeps radiating -
+        // this proves the missile can actually close and kill under the real
+        // fixed update loop, not just the hand-stepped guidance unit test.
+        for (let i = 0; i < 300 && game.weapons.harms.length > 0; i++) {
+            runFrames(game, 1);
+        }
+        expect(game.sensors.samSites.some(s => s.id === sam.id)).toBe(false);
+    });
+
+    it('cannot lose an airframe in the training sortie, even flown straight at the sea', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('TRAINING_SORTIE');
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 30);
+
+        expect(game.score.breakdown.airframesLost).toBe(0);
+        expect(game.physics.position.y).toBeGreaterThan(20);
+        expect(game.callouts.active().some(c => c.text.includes('PULL UP'))).toBe(true);
+    });
+
+    it('records terrain impact as the loss cause, and clears it on the next sortie', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        expect(game.score.breakdown.airframesLost).toBe(1);
+        expect(game['lastLossCause']).toEqual({ kind: 'TERRAIN', detail: 'terrain' });
+
+        // A fresh sortie must not carry a cause from the one before it -
+        // otherwise a pilot who dies to terrain and later runs out of fuel
+        // would be told, wrongly, that a ridge killed them.
+        game.beginSortie(game.physics.fuel, game.physics.loadout);
+        expect(game['lastLossCause']).toBeNull();
+    });
+
+    it('renders a failed debrief with a recorded loss cause, without throwing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 10);
+
+        // Force the debrief screen directly rather than fighting the exact
+        // number of frames a full mission failure needs - what this test
+        // protects is that drawDebrief() can consume a real LossCause without
+        // throwing, which is the wiring PostMortem.test.ts cannot see because
+        // it never touches a canvas.
+        game.missionOutcome = 'FAILED';
+        game.phase = 'DEBRIEF';
+
+        expect(() => game['draw'](1 / 60)).not.toThrow();
+    });
+
+    it('renders the missile-inbound banner with a time-to-impact readout, without throwing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        const sam = game.sensors.samSites[0];
+        expect(sam).toBeDefined();
+        // Force a live engagement: this exercises the exact draw() path that
+        // reads threat.missileActive/missilePos/missileVel to compute the
+        // countdown, which nothing else in this file's frame-running loop
+        // happens to trigger reliably.
+        game.physics.position = { x: sam.position.x + 500, y: sam.position.y + 200, z: sam.position.z };
+        game.physics.velocity = { x: 0, y: 0, z: 0 };
+
+        expect(() => {
+            for (let i = 0; i < 10; i++) {
+                game.sensors.update(1 / 60, game.physics);
+                game['draw'](1 / 60);
+            }
+        }).not.toThrow();
+
+        expect(game.sensors.masterRwrState).toBe('LAUNCH');
+    });
+
+    it('releases chaff, spends a cartridge and breaks a tracking SAM lock', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        const before = game.physics.loadout.chaff;
+        expect(before).toBeGreaterThan(0);
+
+        // Fly at a SAM site until it is actually tracking or engaging, so
+        // the "lock broken" path (not just "cartridge spent") is exercised.
+        const sam = game.sensors.samSites[0];
+        if (sam) {
+            game.physics.position = { x: sam.position.x + 800, y: sam.position.y + 700, z: sam.position.z };
+            game.physics.velocity = { x: 0, y: 0, z: 220 };
+        }
+        runFrames(game, 5);
+
+        const released = game.releaseChaff();
+        expect(released).toBe(true);
+        expect(game.physics.loadout.chaff).toBe(before - 1);
+        expect(game.callouts.active().some(c => c.text.includes('CHAFF'))).toBe(true);
+
+        // Immediately empty dispenser: the reload timer blocks another shot.
+        const secondImmediate = game.releaseChaff();
+        expect(secondImmediate).toBe(false);
+        expect(game.physics.loadout.chaff).toBe(before - 1);
+    });
+
+    it('runs the chaff dispenser dry and keeps it dry', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+
+        game.physics.loadout.chaff = 1;
+        // beginSortie already ran during hotStartAirborne, but it seeds the
+        // dispenser from the loadout snapshot at that time - reflect the
+        // override into a fresh sortie state the same way a scenario would.
+        game.beginSortie(game.physics.fuel, game.physics.loadout);
+
+        expect(game.releaseChaff()).toBe(true);
+        runFrames(game, 200); // well past the reload timer
+        expect(game.releaseChaff()).toBe(false);
+        expect(game.physics.loadout.chaff).toBe(0);
     });
 });

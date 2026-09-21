@@ -10,6 +10,8 @@
  */
 
 import type { AircraftPhysics, Vector3 } from '../flight/AircraftPhysics';
+import { SAM_MISSILE, guideMissile } from './MissileGuidance';
+import { isDecoyed } from '../flight/Countermeasures';
 import { WORLD } from '../renderer/Theme';
 import type { VectorRenderer } from '../renderer/VectorRenderer';
 import { DEFAULT_MAP, mapById } from './TerrainProfiles';
@@ -36,6 +38,8 @@ export interface ThreatContact {
     azimuthDeg: number; // -180 to +180 relative to aircraft nose
     distance: number;   // meters
     isTerrainMasked: boolean;
+    /** True while this site's seeker is chasing a chaff cloud. */
+    isDecoyed: boolean;
     missileActive: boolean;
     missilePos?: Vector3;
     missileVel?: Vector3;
@@ -163,6 +167,14 @@ export class SAMSite {
     public missileVel: Vector3 = { x: 0, y: 0, z: 0 };
     public missileFuel = 12.0; // seconds
     public strafeDamage = 0; // accumulated 20mm hits; site is destroyed at 40
+    /**
+     * Mission time until which this site's seeker is chasing a chaff cloud.
+     *
+     * Absolute rather than a countdown so the flag can be written by the
+     * weapons bridge and read by the sensor tick without a second timer to
+     * keep in step. Zero means "never decoyed".
+     */
+    public decoyedUntil = 0;
 
     constructor(id: string, name: string, x: number, z: number, terrain: TacticalTerrain) {
         this.id = id;
@@ -188,6 +200,16 @@ export class SensorTacticsManager {
      * these each tick.
      */
     public missileImpacts: MissileImpact[] = [];
+
+    /**
+     * Seconds of simulation this manager has run, advanced by `update()`.
+     *
+     * Owned here rather than passed in because the only thing that reads it is
+     * the chaff decoy expiry, and threading mission time through every call
+     * site to serve one flag would couple the sensor model to the mission
+     * director for no gain. One clock per mechanic (GUIDELINES §9).
+     */
+    public missionSeconds = 0;
 
     /** Proximity fuze radius in metres. Beyond this the warhead does nothing. */
     public static readonly FUZE_RADIUS = 40;
@@ -275,6 +297,7 @@ export class SensorTacticsManager {
      * Update sensor network and calculate RWR signals
      */
     public update(dt: number, aircraft: AircraftPhysics) {
+        this.missionSeconds += dt;
         this.activeThreats = [];
         this.missileImpacts = [];
         let maxStateScore = 0;
@@ -306,13 +329,19 @@ export class SensorTacticsManager {
 
             let threatState: RadarThreatState = 'SILENT';
 
+            // A seeker chasing a chaff cloud cannot start a new engagement
+            // either. Without this the site simply re-launched on the next
+            // tick and the cartridge bought nothing.
+            const decoyed = isDecoyed(sam.decoyedUntil, this.missionSeconds);
+
             if (hasLOS) {
                 if (distance <= launchRange) {
                     threatState = 'LAUNCH';
-                    if (!sam.missileActive) {
+                    if (!sam.missileActive && !decoyed) {
                         sam.missileActive = true;
                         sam.missilePos = { ...sam.position };
-                        sam.missileFuel = 10.0;
+                        sam.missileVel = { x: 0, y: 0, z: 0 };
+                        sam.missileFuel = SAM_MISSILE.fuelSeconds;
                     }
                 } else if (distance <= trackRange) {
                     threatState = 'TRACK';
@@ -327,22 +356,24 @@ export class SensorTacticsManager {
             // Update missile physics if in flight
             if (sam.missileActive && sam.missilePos) {
                 sam.missileFuel -= dt;
-                if (sam.missileFuel <= 0 || !hasLOS) {
-                    // Lost track or burnt out
+                if (sam.missileFuel <= 0 || !hasLOS || decoyed) {
+                    // Burnt out, lost line of sight, or went for the chaff.
+                    // These are the three ways a player survives a launch, and
+                    // for a long time only the first two existed.
                     sam.missileActive = false;
                 } else {
-                    // Guide towards aircraft
-                    const mdx = aircraft.position.x - sam.missilePos.x;
-                    const mdy = aircraft.position.y - sam.missilePos.y;
-                    const mdz = aircraft.position.z - sam.missilePos.z;
-                    const mDist = Math.hypot(mdx, mdy, mdz);
-
-                    const missileSpeed = 480; // m/s (~Mach 1.5)
-                    sam.missileVel = {
-                        x: (mdx / mDist) * missileSpeed,
-                        y: (mdy / mDist) * missileSpeed,
-                        z: (mdz / mDist) * missileSpeed
-                    };
+                    // Lead pursuit with a bounded turn rate. This used to
+                    // overwrite the velocity with a vector pointing straight
+                    // at the aeroplane, which gave the round an unbounded turn
+                    // rate and made it impossible to out-fly. See
+                    // tactics/MissileGuidance.ts for why that mattered.
+                    sam.missileVel = guideMissile(
+                        sam.missilePos,
+                        sam.missileVel,
+                        aircraft.position,
+                        aircraft.velocity,
+                        dt
+                    );
 
                     const prevPos: Vector3 = { ...sam.missilePos };
                     sam.missilePos.x += sam.missileVel.x * dt;
@@ -413,6 +444,7 @@ export class SensorTacticsManager {
                 azimuthDeg: relAzimuthDeg,
                 distance,
                 isTerrainMasked,
+                isDecoyed: decoyed,
                 missileActive: sam.missileActive,
                 missilePos: sam.missilePos,
                 missileVel: sam.missileVel

@@ -712,3 +712,34 @@ rework. Recorded honestly rather than attempted: touch parity for the deck
 screen (KNOWN_ISSUES §31) was pre-existing and out of scope for this item,
 since fixing it means giving the whole deck screen real touch controls, not
 only this one.
+
+## 12. Follow-up Pass — Fight Back (v1.5.0)
+
+### The trigger
+A playtester asked how to defend against a missile, how to kill a SAM, and whether arrow-up
+should pitch down. A source audit (`docs/reviews/v1.5.0-dev/`) found all three were missing
+features, plus a tutorial that had never worked: unreachable, teaching the wrong key, and
+built around a drone that never spawned.
+
+### Work completed
+- Phase 0: route rookies to `TRAINING_SORTIE` (`isFirstFlight`); `[A]`->`[F]`; spawn a real
+  drone; validate the autopilot step; two key-drift guard tests; make the stranded 1.4.0
+  work typecheck and commit it.
+- Phase 1: bounded-turn lead-pursuit SAM; chaff; time-to-impact and decoy cue; post-mortem.
+- Phase 2: AGM-88 HARM.
+- Phase 3: stick-flip hint; un-crashable training sortie.
+- Simplification (user request): one screen style.
+- Phase 4: `solveArcadeBar` shared by renderer and hit-tester (had drifted 8 px).
+
+### Deliberately not done
+Cruise-missile fire support, progressive control disclosure, struggle detection, key
+remapping, touch chaff/HARM, the autopilot coordinated-turn rework. See KNOWN_ISSUES #44-#48.
+
+### What the work found
+- The HARM first launched along the nose and diverged; a smoke test caught it.
+- The envelope tuning was backwards on the first attempt (turning died, fleeing lived) until
+  the probe modelled the pilot's reaction time rather than a turn from t=0.
+- Three tests had encoded the bugs they should have caught.
+
+### Verification
+`npx tsc --noEmit` clean; 874 tests; `npm run build`.

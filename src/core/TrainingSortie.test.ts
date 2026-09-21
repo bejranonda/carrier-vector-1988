@@ -30,6 +30,7 @@ function makeSnapshot(overrides: Partial<MissionSnapshot> = {}): MissionSnapshot
         perfectTraps: 0,
         bombsRemaining: 0,
         rwrState: 'SILENT',
+        flightAssistMode: 'ASSIST',
         ...overrides
     };
 }
@@ -41,8 +42,18 @@ describe('TRAINING_SORTIE', () => {
         expect(scenario.id).toBe('TRAINING_SORTIE');
         expect(scenario.difficulty).toBe(1);
         expect(scenario.setup.noSamSites).toBe(true);
-        expect(scenario.setup.threat.openingTimeline).toHaveLength(0);
+        expect(scenario.setup.combatShielded).toBe(true);
         expect(scenario.setup.threat.endlessWaves).toBe(false);
+    });
+
+    // REGRESSION: the timeline was empty, so `contactsAlive` was always zero
+    // while DRONE_SPLASH told the pilot a drone had spawned and completed
+    // itself on a timer. The tutorial's only combat lesson never happened.
+    it('spawns exactly one target drone for the pilot to shoot', () => {
+        const timeline = scenario.setup.threat.openingTimeline ?? [];
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0].count).toBe(1);
+        expect(timeline[0].aircraftType).toBe('MiG-23');
     });
 
     it('has 5 sequential phases from launch to recovery', () => {
@@ -70,15 +81,40 @@ describe('TRAINING_SORTIE', () => {
         status = director.update(makeSnapshot({ hasLaunched: true, isAirborne: true, altitudeAgl: 750 }));
         expect(status.phaseIndex).toBe(2); // Advances to AUTOPILOT_CHECK
 
-        // Autopilot cruise check
+        // Flying fast for a while is NOT engaging the autopilot. This used
+        // to advance the phase and announce AUTOPILOT VERIFIED.
         status = director.update(makeSnapshot({
             hasLaunched: true,
             isAirborne: true,
             altitudeAgl: 750,
             airSpeed: 160,
-            missionSeconds: 25
+            missionSeconds: 25,
+            flightAssistMode: 'ASSIST',
+            contactsAlive: 1
+        }));
+        expect(status.phaseIndex).toBe(2); // Still AUTOPILOT_CHECK
+
+        // Actually engaging it advances the phase.
+        status = director.update(makeSnapshot({
+            hasLaunched: true,
+            isAirborne: true,
+            altitudeAgl: 750,
+            airSpeed: 160,
+            missionSeconds: 25,
+            flightAssistMode: 'AUTO',
+            contactsAlive: 1
         }));
         expect(status.phaseIndex).toBe(3); // Advances to DRONE_SPLASH
+
+        // A live drone holds the phase - no more completing on a timer.
+        status = director.update(makeSnapshot({
+            hasLaunched: true,
+            isAirborne: true,
+            flightAssistMode: 'AUTO',
+            contactsAlive: 1,
+            missionSeconds: 40
+        }));
+        expect(status.phaseIndex).toBe(3);
 
         // Target drone splashed
         status = director.update(makeSnapshot({
@@ -86,6 +122,7 @@ describe('TRAINING_SORTIE', () => {
             isAirborne: true,
             altitudeAgl: 750,
             airSpeed: 160,
+            flightAssistMode: 'AUTO',
             contactsAlive: 0,
             missionSeconds: 40
         }));

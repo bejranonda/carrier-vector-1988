@@ -35,9 +35,10 @@ import type { TargetSolution } from '../tactics/TargetDesignation';
 import type { ControlDemand } from '../flight/FlightAssist';
 import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
-import { HUD_METRICS, solveHudLayout } from './HudLayout';
-import type { HudLayout, HudReserve } from './HudLayout';
+import { HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
+import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
+import { timeToImpact } from '../tactics/MissileGuidance';
 import type { MotionSettings } from '../core/Accessibility';
 import { placeLabels } from './LabelDeclutter';
 import type { LabelBox, LabelCandidate, PlacedLabel } from './LabelDeclutter';
@@ -94,7 +95,6 @@ export interface HudContext {
     score: ScoreKeeper;
     objective: ObjectiveStep;
     checklist: ChecklistItem[];
-    displayModeLabel: string;
     /** Hardened ground targets the active scenario wants destroyed. */
     strikeTargets?: StrikeTarget[];
     /** Where the currently selected Mk.82 would land, if one is selected. */
@@ -137,6 +137,9 @@ export interface HudContext {
     recovery?: { text: string; handover: boolean } | null;
     /** True when padlock camera is slaved to designated target */
     isPadlocked?: boolean;
+    padlockActive?: boolean;
+    hudDensity?: 'ARCADE' | 'PRO';
+    pitchInverted?: boolean;
     /** Remaining arcade 5-second time rewinds */
     rewindsRemaining?: number;
 }
@@ -194,9 +197,10 @@ const ASSIST_BAND_HALF_W = 210;
  */
 const TOUCH_TOP_RIGHT_RESERVE = 104;
 
-/** Vertical anchors, so no two overlays can be given the same band. */
+/** Vertical instrument bands, in CSS px from top of screen. */
 const BAND = {
-    objective: 18,
+    top: 20,
+    objective: 54,
     compass: 96,
     warning: 132,
     coach: 168
@@ -205,6 +209,7 @@ const BAND = {
 export class HUD {
     public width: number;
     public height: number;
+    public hudDensity: 'ARCADE' | 'PRO' = 'ARCADE';
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
     /** Flash and motion limits for this frame. */
@@ -213,6 +218,11 @@ export class HUD {
     constructor(width: number, height: number) {
         this.width = width;
         this.height = height;
+    }
+
+    public toggleHudDensity(): 'ARCADE' | 'PRO' {
+        this.hudDensity = this.hudDensity === 'ARCADE' ? 'PRO' : 'ARCADE';
+        return this.hudDensity;
     }
 
     public resize(width: number, height: number) {
@@ -225,10 +235,12 @@ export class HUD {
         physics: AircraftPhysics,
         sensors: SensorTacticsManager,
         targets: AirborneTarget[],
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
         renderer: VectorRenderer,
         context: HudContext
     ) {
+        if (context.hudDensity) this.hudDensity = context.hudDensity;
+
         const layout = this.solveLayout(
             physics, context.checklist.length > 0, context.touchReserve, context.touchMode
         );
@@ -256,7 +268,7 @@ export class HUD {
         this.drawSpeedBlock(ctx, physics, layout);
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
         this.touchScore = layout.touchMode ? context.score : undefined;
-        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout);
+        this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
         if (layout.showRwr) this.drawRWR(ctx, sensors, layout);
         if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
         const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
@@ -277,7 +289,8 @@ export class HUD {
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
             context.terrainFollowing ?? false, context.recovery ?? null
         );
-        if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
+        if (!layout.touchMode) this.drawKeyBar(ctx, context.assistLabel);
+        this.drawTopRightControls(ctx, layout, context);
 
         ctx.restore();
     }
@@ -351,7 +364,7 @@ export class HUD {
     }
 
     /** Solve instrument placement for the current viewport. */
-    private solveLayout(
+    public solveLayout(
         physics: AircraftPhysics,
         hasChecklist: boolean,
         reserve?: HudReserve,
@@ -620,11 +633,17 @@ export class HUD {
     private drawSystemsBlock(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
-        layout: HudLayout
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
+        layout: HudLayout,
+        context: HudContext,
+        sensors: SensorTacticsManager
     ) {
         if (layout.touchMode) {
             this.drawTouchSystemsLine(ctx, physics, layout, this.touchScore);
+            return;
+        }
+        if (this.hudDensity === 'ARCADE') {
+            this.drawArcadeBottomBar(ctx, physics, selectedWeapon, context, sensors);
             return;
         }
         if (layout.compactSystems) {
@@ -682,10 +701,11 @@ export class HUD {
             physics.bayOpen ? THEME.caution : THEME.muted);
 
         // Weapon selector: three chips make it obvious that 1/2/3 switch stores.
-        const chips: [string, 'GUN' | 'AIM9' | 'BOMB', string][] = [
+        const chips: [string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM', string][] = [
             [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN', '1'],
             [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9', '2'],
-            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB', '3']
+            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB', '3'],
+            [`4 HARM ${physics.loadout.harms}`, 'HARM', '4']
         ];
         let chipX = x + 12;
         const chipY = y + h - 18;
@@ -751,7 +771,7 @@ export class HUD {
     private drawSystemsStrip(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB'
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM'
     ) {
         const h = 26;
         const y = this.height - 54;
@@ -763,7 +783,8 @@ export class HUD {
         const hull = Math.max(0, Math.round(100 - physics.damage));
         const wpn = selectedWeapon === 'GUN' ? `GUN ${physics.loadout.vulcanAmmo}`
             : selectedWeapon === 'AIM9' ? `AIM9 ${physics.loadout.sidewinders}`
-                : `MK82 ${physics.loadout.ironBombs}`;
+                : selectedWeapon === 'BOMB' ? `MK82 ${physics.loadout.ironBombs}`
+                    : `HARM ${physics.loadout.harms}`;
         const cells: [string, string, string][] = [
             ['THR', `${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}`, ab ? THEME.caution : THEME.ink],
             ['FUEL', `${Math.floor(physics.fuel)}L`, physics.fuel < 800 ? THEME.alert : THEME.ink],
@@ -792,14 +813,196 @@ export class HUD {
         ctx.restore();
     }
 
+    private drawArcadeBottomBar(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
+        context: HudContext,
+        sensors: SensorTacticsManager
+    ) {
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+
+        // The status pill's width depends on measured text, so it has to be
+        // known before the solver runs - it decides whether STATUS fits.
+        const ab = physics.throttle > 1.0;
+        const hull = Math.max(0, Math.round(100 - physics.damage));
+        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${Math.floor(physics.fuel)}L  ·  HULL ${hull}%`;
+        ctx.font = font(11, 600);
+        const statusTextWidth = ctx.measureText(statusText).width;
+
+        const bar = solveArcadeBar({
+            width: this.width,
+            height: this.height,
+            weaponCount: 4,
+            showCountermeasure: true,
+            showRewind: true,
+            showPadlock: true,
+            statusTextWidth
+        });
+        const slot = (id: ArcadeBarSlotId) => bar.find(s => s.id === id)?.rect;
+
+        // 1. Weapon Pills
+        const wpns: [ArcadeBarSlotId, string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM'][] = [
+            ['WEAPON_0', `1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
+            ['WEAPON_1', `2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
+            ['WEAPON_2', `3 MK82 ${physics.loadout.ironBombs}`, 'BOMB'],
+            ['WEAPON_3', `4 HARM ${physics.loadout.harms}`, 'HARM']
+        ];
+        for (const [slotId, text, weaponId] of wpns) {
+            const rect = slot(slotId);
+            if (!rect) continue;
+            const selected = selectedWeapon === weaponId;
+            plate(ctx, rect, {
+                fill: selected ? 'rgba(95,216,255,0.22)' : 'rgba(9,19,25,0.7)',
+                border: selected ? THEME.key : THEME.edgeSoft,
+                radius: 4
+            });
+            if (selected) glow(ctx, THEME.key, 6);
+            ctx.font = font(11, 700);
+            ctx.fillStyle = selected ? THEME.ink : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+            noGlow(ctx);
+        }
+
+        // 1b. Chaff. Not a weapon - it is the answer to one - so it sits
+        // apart from the weapon row and turns amber the moment a seeker is
+        // actually looking, which is the only moment it matters.
+        const cmRect = slot('COUNTERMEASURE');
+        if (cmRect) {
+            const chaff = physics.loadout.chaff;
+            const threatened = sensors.masterRwrState === 'LAUNCH';
+            const dry = chaff <= 0;
+            const accent = dry ? THEME.alert : threatened ? THEME.caution : THEME.muted;
+            plate(ctx, cmRect, {
+                fill: threatened && !dry ? 'rgba(255,176,32,0.18)' : 'rgba(9,19,25,0.7)',
+                border: threatened ? accent : THEME.edgeSoft,
+                radius: 4
+            });
+            if (threatened && !dry) glow(ctx, THEME.caution, 6);
+            ctx.font = font(11, 700);
+            ctx.fillStyle = accent;
+            ctx.textAlign = 'center';
+            ctx.fillText(`X CHAFF ${chaff}`, cmRect.x + cmRect.w / 2, cmRect.y + cmRect.h / 2);
+            noGlow(ctx);
+        }
+
+        // 2. Assist Mode Pill
+        const assistRect = slot('ASSIST');
+        if (assistRect) {
+            const assistText = `ASSIST: ${context.assistLabel ?? 'AUTO'}`.toUpperCase();
+            plate(ctx, assistRect, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = THEME.phosphor;
+            ctx.textAlign = 'center';
+            ctx.fillText(assistText, assistRect.x + assistRect.w / 2, assistRect.y + assistRect.h / 2);
+        }
+
+        // 3. Rewind Pill
+        const rewindRect = slot('REWIND');
+        if (rewindRect) {
+            plate(ctx, rewindRect, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = THEME.caution;
+            ctx.textAlign = 'center';
+            ctx.fillText('REWIND 5S', rewindRect.x + rewindRect.w / 2, rewindRect.y + rewindRect.h / 2);
+        }
+
+        // 4. Padlock Pill
+        const padlockRect = slot('PADLOCK');
+        if (padlockRect) {
+            const lockOn = context.padlockActive === true || context.isPadlocked === true;
+            plate(ctx, padlockRect, {
+                fill: lockOn ? 'rgba(255,180,50,0.2)' : 'rgba(9,19,25,0.7)',
+                border: lockOn ? THEME.caution : THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(10, 600);
+            ctx.fillStyle = lockOn ? THEME.caution : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(lockOn ? 'LOCK: ON' : 'PADLOCK', padlockRect.x + padlockRect.w / 2, padlockRect.y + padlockRect.h / 2);
+        }
+
+        // 5. Status Telemetry Pill (Throttle, Fuel, Hull) - omitted by the
+        // solver when it would overflow the right edge of the viewport.
+        const statusRect = slot('STATUS');
+        if (statusRect) {
+            plate(ctx, statusRect, {
+                fill: 'rgba(9,19,25,0.7)',
+                border: THEME.edgeSoft,
+                radius: 4
+            });
+            ctx.font = font(11, 600);
+            ctx.fillStyle = hull < 30 || physics.fuel < 800 ? THEME.caution : THEME.muted;
+            ctx.textAlign = 'center';
+            ctx.fillText(statusText, statusRect.x + statusRect.w / 2, statusRect.y + statusRect.h / 2);
+        }
+
+        ctx.restore();
+    }
+
+    private drawTopRightControls(ctx: CanvasRenderingContext2D, layout: HudLayout, context?: HudContext) {
+        if (layout.touchMode) return;
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        const btnW = 100;
+        const btnH = 28;
+        const y = 16;
+
+        // [DECK (TAB)]
+        const deckX = this.width - btnW - 20;
+        plate(ctx, { x: deckX, y, w: btnW, h: btnH }, {
+            fill: 'rgba(9,19,25,0.75)',
+            border: THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText('DECK (TAB)', deckX + btnW / 2, y + btnH / 2);
+
+        // [HUD: ARCADE / PRO]
+        const modeX = deckX - btnW - 8;
+        const isArcade = this.hudDensity === 'ARCADE';
+        plate(ctx, { x: modeX, y, w: btnW, h: btnH }, {
+            fill: isArcade ? 'rgba(95,216,255,0.18)' : 'rgba(255,180,50,0.18)',
+            border: isArcade ? THEME.key : THEME.caution,
+            radius: 4
+        });
+        ctx.font = font(10, 700);
+        ctx.fillStyle = isArcade ? THEME.key : THEME.caution;
+        ctx.fillText(isArcade ? 'HUD: ARCADE' : 'HUD: PRO', modeX + btnW / 2, y + btnH / 2);
+
+        // [STICK: REAL (I) / STICK: DIR (I)]
+        const stickBtnW = 104;
+        const stickX = modeX - stickBtnW - 8;
+        const isInverted = context?.pitchInverted ?? false;
+        plate(ctx, { x: stickX, y, w: stickBtnW, h: btnH }, {
+            fill: isInverted ? 'rgba(95,216,255,0.18)' : 'rgba(9,19,25,0.75)',
+            border: isInverted ? THEME.key : THEME.edgeSoft,
+            radius: 4
+        });
+        ctx.font = font(10, 600);
+        ctx.fillStyle = isInverted ? THEME.key : THEME.ink;
+        ctx.fillText(isInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)', stickX + stickBtnW / 2, y + btnH / 2);
+
+        ctx.restore();
+    }
+
     /** Bottom key bar so the flight controls are never more than a glance away. */
-    /**
-     * Bottom cheat strip. Ordered most-useful-first and truncated to what
-     * actually fits, because two more bindings (designation and the assist
-     * level) would otherwise run off the right-hand edge of a narrow window
-     * and the player would simply never learn about them.
-     */
-    private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string, assistLabel?: string) {
+    private drawKeyBar(ctx: CanvasRenderingContext2D, assistLabel?: string) {
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
@@ -812,9 +1015,10 @@ export class HUD {
             ['V', 'padlock'],
             ['SPACE', 'fire'],
             ['F', assistLabel ?? 'assist'],
+            ['U', 'hud density'],
+            ['I', 'invert pitch'],
             ['TAB', 'deck'],
-            ['H', 'controls'],
-            ['P', displayModeLabel]
+            ['H', 'controls']
         ];
 
         let x = 24;
@@ -1198,18 +1402,31 @@ export class HUD {
 
         const rwrBanner = sensors.masterRwrState === 'LAUNCH' || sensors.masterRwrState === 'TRACK';
         if (sensors.masterRwrState === 'LAUNCH') {
-            banner('MISSILE LAUNCH — GET LOW', THEME.alert, 520);
+            // Time to impact from the nearest missile actually in flight -
+            // not just "in LAUNCH state", which can mean the site is about to
+            // fire rather than already has. A player told "inbound" with
+            // nothing to time it against cannot decide whether to keep
+            // attacking for one more second or bail immediately.
+            let soonest: number | null = null;
+            for (const threat of sensors.activeThreats) {
+                if (!threat.missileActive || !threat.missilePos || !threat.missileVel) continue;
+                const tti = timeToImpact(threat.missilePos, threat.missileVel, physics.position);
+                if (tti !== null && (soonest === null || tti < soonest)) soonest = tti;
+            }
+            const suffix = soonest !== null ? ` — ${soonest.toFixed(1)}s — BREAK OR CHAFF [X]` : '';
+            banner(`▼ MISSILE INBOUND${suffix} — DIVE BELOW RIDGE ▼`, THEME.alert, 400);
         } else if (sensors.masterRwrState === 'TRACK') {
-            banner('RADAR LOCK — DESCEND TO MASK', THEME.caution, 0);
+            banner('▼ RADAR LOCK: DIVE INTO VALLEYS TO BREAK LOCK ▼', THEME.caution, 0);
         } else {
             const masked = sensors.activeThreats.some(t => t.isTerrainMasked);
             if (masked && physics.position.y < 350) {
                 ctx.save();
                 noGlow(ctx);
-                ctx.font = font(11, 600);
+                ctx.font = font(11, 700);
                 ctx.fillStyle = THEME.phosphor;
+                glow(ctx, THEME.phosphor, 4);
                 ctx.textAlign = 'center';
-                ctx.fillText('TERRAIN MASKED', cx, BAND.warning + 18);
+                ctx.fillText('✓ TERRAIN MASKED · RADAR LINE-OF-SIGHT BROKEN', cx, BAND.warning + 18);
                 ctx.restore();
             }
         }
@@ -1278,15 +1495,22 @@ export class HUD {
             const tx = rwrX + Math.sin(rad) * contactR;
             const ty = rwrY - Math.cos(rad) * contactR;
 
-            const color = threat.state === 'LAUNCH' ? THEME.alert
+            // A decoyed missile is still nominally "LAUNCH" for a few seconds -
+            // the seeker hasn't given up, it is just chasing the wrong thing.
+            // Showing that distinctly is the only confirmation the player gets
+            // that spending a cartridge actually worked.
+            const color = threat.isDecoyed ? THEME.muted
+                : threat.state === 'LAUNCH' ? THEME.alert
                 : threat.state === 'TRACK' ? THEME.caution
                     : THEME.phosphor;
-            const symbol = threat.state === 'LAUNCH' ? 'M' : threat.state === 'TRACK' ? 'T' : 'S';
+            const symbol = threat.isDecoyed ? 'X'
+                : threat.state === 'LAUNCH' ? 'M'
+                : threat.state === 'TRACK' ? 'T' : 'S';
 
             ctx.fillStyle = color;
             ctx.strokeStyle = color;
             ctx.font = font(11, 700);
-            if (threat.state === 'LAUNCH') glow(ctx, color, 8);
+            if (threat.state === 'LAUNCH' && !threat.isDecoyed) glow(ctx, color, 8);
             ctx.fillText(symbol, tx, ty);
             noGlow(ctx);
             if (threat.state !== 'SEARCH') {
@@ -1616,6 +1840,9 @@ export class HUD {
         renderer: VectorRenderer,
         layout: HudLayout
     ) {
+        // In Arcade mode, keep the center of the screen clean and uncluttered!
+        if (this.hudDensity === 'ARCADE') return;
+
         const { cx, cy, symScale } = layout;
 
         ctx.save();

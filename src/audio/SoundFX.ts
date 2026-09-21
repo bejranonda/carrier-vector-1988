@@ -565,6 +565,51 @@ export class SoundFX {
     }
 
     /**
+     * The chaff dispenser. A dry mechanical thump and a short hiss of foil
+     * blooming behind the aeroplane - deliberately mechanical rather than
+     * explosive, so a player never confuses spending a cartridge with being
+     * hit by something.
+     */
+    public playCountermeasure(place?: SoundPlacement) {
+        const out = this.route(this.busWeapons, place);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+
+        // The cartridge leaving the tube.
+        const thump = this.ctx.createOscillator();
+        thump.type = 'square';
+        thump.frequency.setValueAtTime(220, now);
+        thump.frequency.exponentialRampToValueAtTime(70, now + 0.05);
+        const thumpGain = this.ctx.createGain();
+        thumpGain.gain.setValueAtTime(0.18, now);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        thump.connect(thumpGain);
+        thumpGain.connect(out);
+        thump.start(now);
+        thump.stop(now + 0.07);
+
+        // The cloud blooming: filtered noise, tuned high so it reads as foil
+        // rather than as an explosion.
+        const noise = this.ctx.createOscillator();
+        noise.type = 'sawtooth';
+        noise.frequency.setValueAtTime(1400, now);
+        noise.frequency.exponentialRampToValueAtTime(320, now + 0.32);
+        const band = this.ctx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.frequency.setValueAtTime(2200, now);
+        band.Q.value = 0.7;
+        const hiss = this.ctx.createGain();
+        hiss.gain.setValueAtTime(0.0001, now);
+        hiss.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
+        hiss.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
+        noise.connect(band);
+        band.connect(hiss);
+        hiss.connect(out);
+        noise.start(now);
+        noise.stop(now + 0.36);
+    }
+
+    /**
      * A round connecting. Deliberately tiny and dry - it fires up to twenty
      * times a second, so anything with a tail turns a burst into mush.
      */
@@ -588,26 +633,49 @@ export class SoundFX {
         osc.stop(now + 0.04);
     }
 
-    /** Kill confirmation: a rising two-note figure, the reward sound. */
+    /** Mechanical relay click: crisp, tactile transient for desktop UI button clicks. */
+    public playRelayClick() {
+        const out = this.route(this.busUi);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1800, now);
+        osc.frequency.exponentialRampToValueAtTime(400, now + 0.025);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.003);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+
+        osc.connect(gain);
+        gain.connect(out);
+        osc.start(now);
+        osc.stop(now + 0.035);
+    }
+
+    /** Kill confirmation: a triumphant three-note arcade arpeggio, the dopamine reward sound. */
     public playKillConfirm(place?: SoundPlacement) {
         const out = this.route(this.busImpacts, place);
         if (!this.ctx || !out) return;
         const now = this.ctx.currentTime;
 
-        for (const [i, freq] of [660, 990].entries()) {
+        // D5 (587Hz) -> A5 (880Hz) -> D6 (1174Hz) triumphant major triad
+        for (const [i, freq] of [587, 880, 1174].entries()) {
             const osc = this.ctx!.createOscillator();
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(freq, now + i * 0.07);
+            osc.frequency.setValueAtTime(freq, now + i * 0.065);
 
             const gain = this.ctx!.createGain();
-            gain.gain.setValueAtTime(0.0001, now + i * 0.07);
-            gain.gain.exponentialRampToValueAtTime(0.17, now + i * 0.07 + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.07 + 0.16);
+            gain.gain.setValueAtTime(0.0001, now + i * 0.065);
+            gain.gain.exponentialRampToValueAtTime(0.18, now + i * 0.065 + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.065 + 0.18);
 
             osc.connect(gain);
             gain.connect(out);
-            osc.start(now + i * 0.07);
-            osc.stop(now + i * 0.07 + 0.18);
+            osc.start(now + i * 0.065);
+            osc.stop(now + i * 0.065 + 0.20);
         }
     }
 

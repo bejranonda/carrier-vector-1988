@@ -41,6 +41,8 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['1'], display: '1', label: 'Select 20mm Vulcan cannon', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['2'], display: '2', label: 'Select AIM-9 Sidewinder', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['3'], display: '3', label: 'Select Mk.82 iron bomb', context: 'FLIGHT', group: 'WEAPONS' },
+    { keys: ['4'], display: '4', label: 'Select AGM-88 HARM (locks a radiating SAM only)', context: 'FLIGHT', group: 'WEAPONS' },
+    { keys: ['x'], display: 'X', label: 'Release chaff - breaks a SAM lock', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['b'], display: 'B', label: 'Toggle weapons bay (open = RCS x4.0)', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['t'], display: 'T', label: 'Designate next target (SHIFT+T steps back)', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['y'], display: 'Y', label: 'Release the designation', context: 'FLIGHT', group: 'WEAPONS' },
@@ -64,7 +66,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['arrowup', 'arrowdown'], display: '↑ / ↓', label: 'Change map (endless carrier defence only)', context: 'BRIEFING', group: 'MISSION SELECT' },
-    { keys: ['1', '2', '3', '4', '5'], display: '1-5', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['1', '2', '3', '4', '5', '6'], display: '1-6', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['d'], display: 'D', label: "Fly today's daily sortie (same seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
@@ -75,11 +77,49 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['escape'], display: 'ESC', label: 'Close overlay', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['tab'], display: 'TAB', label: 'Toggle cockpit / flight deck view', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['m'], display: 'M', label: 'Mute / unmute audio', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['p'], display: 'P', label: 'Cycle display mode (CLEAN / MODERN / RETRO CRT)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['o'], display: 'O', label: 'Cycle ops tempo (ARCADE / SIM pacing)', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['k'], display: 'K', label: 'Cycle controls (AUTO / TOUCH / KEYBOARD)', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' }
+    { keys: ['c'], display: 'C', label: 'Cycle colour palette (classic / colour-blind)', context: 'GLOBAL', group: 'SYSTEM' },
+    { keys: ['u'], display: 'U', label: 'Toggle HUD density (ARCADE vs. PRO)', context: 'FLIGHT', group: 'SYSTEM' },
+    { keys: ['i'], display: 'I', label: 'Toggle pitch inversion (Aviation stick vs. Direct)', context: 'FLIGHT', group: 'FLIGHT' }
 ];
+
+const PITCH_INVERT_KEY = 'carrier_vector_pitch_invert';
+
+export function loadPitchInversion(): boolean {
+    try {
+        const stored = globalThis.localStorage?.getItem(PITCH_INVERT_KEY);
+        if (stored !== null) return stored === 'true';
+    } catch {
+        // Storage unavailable
+    }
+    return false;
+}
+
+/**
+ * The stored stick setting, or null if the player has never touched it. Lets
+ * the briefing offer the flip once - arrow-up defaults to CLIMB, but a player
+ * with flight-sim habits expects it to push the nose DOWN - and stop offering
+ * it the moment it has been used, exactly as the colour-blind palette hint.
+ */
+export function storedPitchInversion(): boolean | null {
+    try {
+        const stored = globalThis.localStorage?.getItem(PITCH_INVERT_KEY);
+        if (stored === 'true') return true;
+        if (stored === 'false') return false;
+    } catch {
+        // Storage unavailable
+    }
+    return null;
+}
+
+export function savePitchInversion(inverted: boolean): void {
+    try {
+        globalThis.localStorage?.setItem(PITCH_INVERT_KEY, String(inverted));
+    } catch {
+        // Ignore storage error
+    }
+}
 
 /** All bindings valid in a given context, including GLOBAL ones. */
 export function bindingsFor(context: ControlContext): Binding[] {
@@ -93,3 +133,4 @@ export function markdownControlTable(context: ControlContext): string {
         .join('\n');
     return `| Key | Action |\n| --- | --- |\n${rows}`;
 }
+
