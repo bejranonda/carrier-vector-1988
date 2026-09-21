@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-874%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-917%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -98,7 +98,7 @@ the iron bombs were all already in the simulation; this mission is what finally
 asks you to use all three in one run:
 
 - **Ingress low.** Above the ridge line the SAM belt has line of sight and will
-  kill you in the transit. Keep the RWR quiet.
+  kill you in the transit. Watch the SAM arc on the radar rim.
 - **Aim it in.** The pen is hardened — a near miss does nothing. Only a bomb
   inside 55 m counts, so the HUD draws a **CCIP** impact cross that turns amber
   and reads `RELEASE` the moment the predicted impact point is on the target.
@@ -124,9 +124,9 @@ The briefing screen lays this out in three cards; here it is in full.
    objective strip across the top of the HUD counts the live contacts and the
    time you have left. Bombers (Tu-22M) cost 35% hull integrity if they get
    through; fighters cost 15%.
-5. **Survive the SAMs** — When your RWR screams `LAUNCH`, **descend below the
-   ridge line**. Breaking line of sight breaks the lock and kills the missile
-   in flight.
+5. **Survive the SAMs** — When the radar rim shows a red `LAUNCH` arc, press `X` for
+   chaff, then **descend below the ridge line**. Breaking line of sight breaks the
+   lock and kills the missile in flight.
 6. **Trap aboard** — Come home under 90 m/s, between 18–30 m altitude, within
    190 m of the boat. The approach panel (meatball, AoA indexer, range and
    speed) appears automatically once you are inside 3 km and closing.
@@ -258,9 +258,9 @@ automatically from a rolling frame-time average.
 | --- | --- |
 | `W` / `UP` | Pitch nose **UP** |
 | `S` / `DOWN` | Pitch nose **DOWN** |
-| `A` / `LEFT` | Roll left |
-| `D` / `RIGHT` | Roll right |
-| `Q` / `E` | Rudder yaw left / right |
+| `A` / `LEFT` | Bank left — **the jet turns left** (add `W` to tighten) |
+| `D` / `RIGHT` | Bank right — **the jet turns right** (add `W` to tighten) |
+| `Q` / `E` | Rudder left / right (fine aim only — you do not need it to turn) |
 | `SHIFT` | Throttle up (past 100% engages afterburner) |
 | `CTRL` | Throttle down |
 | `SPACE` | Fire selected weapon |
@@ -381,6 +381,14 @@ automatically from a rolling frame-time average.
 - A lock drops itself the moment its target dies, so the HUD never brackets wreckage
 
 ### Flight & Combat
+- **Bank to turn.** Hold `A`/`D` and the jet turns; add `W` and it tightens. A turn assist holds the wing
+  at its limit without stalling it, an upright bank stops at 75°, and loops, Immelmanns and Split-S go
+  over the top (pitch folds through vertical instead of hitting a wall)
+- **A death you can read.** The cockpit holds for 2.6 s in slow motion with `MAYDAY - AIRFRAME LOST` and
+  the killer named, before the deck
+- **Fair guns.** A fighter needs 0.7 s of solution before it fires and you get a `GUNS TRACKING` warning;
+  60% of bursts hit
+- **First-time milestones** — `FIRST BLOOD!`, `FIRST TRAP`, `CHAFF SAVED YOU`, `OVER THE TOP`
 - **Fixed-timestep 6-DOF flight dynamics** at 120 Hz — lift, drag, thrust, gravity, and dynamic angle of attack
 - **Aerodynamic stall** past α ≈ 18°, collapsing control authority to 22%
 - **Induced drag scaling with G-load**, so hard turns genuinely bleed energy
@@ -393,7 +401,9 @@ automatically from a rolling frame-time average.
 - **Terrain masking, both ways** — drop below a ridge and the lock breaks, killing
   missiles mid-flight; the same ray march decides what your own scope is allowed to offer
 - **Radar cross-section modelling**: `RCS_eff = RCS_base × AspectFactor × (BayOpen ? 4.0 : 1.0)`
-- **RWR** with `SEARCH` → `TRACK` → `LAUNCH` escalation and azimuth display
+- **Tactical radar** (heading-up, 12 km): the carrier with its distance (`CV 8.4NM`), every live bandit as a
+  red triangle pointing the way it flies, hardened objectives as yellow diamonds, your designated target
+  ringed, and SAM warnings (`SEARCH` → `TRACK` → `LAUNCH`) as an arc on the rim toward the site
 - **Lethal SAMs** with swept-sphere proximity fuzing that cannot tunnel through you at Mach 1.5
 
 ### Carrier Operations
@@ -458,7 +468,7 @@ automatically from a rolling frame-time average.
   you live for free; break late against a close one and you still die — so chaff has a job
 - **Chaff (`X`)** always breaks the lock, 12 cartridges a sortie, with a recycle delay so it cannot be
   held down. A decoyed site cannot re-launch while the cloud is up
-- **Time-to-impact** on the warning banner, and a muted `X` on the RWR once a lock is broken
+- **Time-to-impact** on the warning banner, and a muted `X` on the radar once a lock is broken
 - **AGM-88 HARM (`4`)** locks the nearest *radiating* site with no boresight cone. If the site shuts
   down mid-flight the round goes ballistic and misses — bait it into emitting, then kill it
 - **A post-mortem** on the failed debrief: what killed you, and one line on what to do differently
@@ -511,9 +521,10 @@ src/
 │   ├── Platform.ts        # Control-scheme detection and override (pure)
 │   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
 │   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
+│   ├── Milestones.ts      # First blood / first trap / chaff save / first loop, persisted (pure)
 │   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
 ├── flight/
-│   ├── AircraftPhysics.ts # 6-DOF aerodynamics, stall, damage
+│   ├── AircraftPhysics.ts # 6-DOF aerodynamics, bank-to-turn, loops, stall, damage
 │   ├── FlightAssist.ts    # MANUAL / ASSIST / AUTOPILOT control laws (pure)
 │   ├── TerrainFollowing.ts # Look-ahead ground clearance for the autopilot (pure)
 │   ├── ApproachGuidance.ts # Glideslope, lineup and the handover point (pure)
@@ -537,7 +548,8 @@ src/
 │   ├── Theme.ts           # Colour tokens, typography, panel/keycap primitives
 │   ├── DisplayMode.ts     # the single screen style (canvas + CSS effects)
 │   ├── HudLayout.ts       # Pure cockpit instrument placement solver
-│   ├── HUD.ts             # Objective strip, pitch ladder, FPM, tapes, RWR, landing aids
+│   ├── HUD.ts             # Objective strip, pitch ladder, FPM, tapes, tactical radar, landing aids
+│   ├── RadarMath.ts       # Heading-up radar projection (pure)
 │   ├── DeckLayout.ts      # Pure responsive panel solver
 │   ├── DeckView.ts        # Flight deck instruments
 │   └── BriefingScreen.ts  # Boot sequence, briefing, help, debrief
@@ -596,7 +608,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**874 headless tests** across 48 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis), and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**917 headless tests** across 51 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -625,18 +637,19 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 
 ## Future Roadmap
 
-Shipped through v1.5.0: the guided training sortie, cockpit voice warnings, the padlock camera,
-vector debris, time rewind, chaff, a beatable SAM, the AGM-88 HARM and debrief post-mortem.
-Active development sprint (`v1.6.0-dev`), ranked by what it buys a new player
-([review](docs/reviews/v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md)):
+Shipped in v1.6.0 ("Turn and Burn"): banking turns the jet (and the orientation bug that pushed lift the
+wrong way is fixed), loops and Immelmanns work, a real tactical radar, a slow-motion death sequence that
+names the killer, fairer enemy guns with a warning, attack coaching, and first-time milestones. See the
+[changelog](CHANGELOG.md) and the [review corrections](docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md).
 
-1. **Coordinated Bank-to-Turn Aerodynamics (P0)** — couple roll angle $\phi$ into yaw rate $\dot{\psi}$ so rolling turns the jet across the landscape (Issue #49)
-2. **Loop & Vertical Flight Authority (P0)** — eliminate the $\pm 88^\circ$ pitch ceiling so pilots can loop over backward into Immelmanns (Issue #50)
-3. **Integrated Tactical Radar / Minimap (P0)** — replace the cryptic RWR letters with a clear situational display showing Carrier, Bandits, and Waypoints (Issue #51)
-4. **Dynamic Rookie Copilot HUD Guidance (P0)** — contextual bottom-center prompt (`[T] LOCK`, `[SPACE] FIRE`, `[X] CHAFF`, `[L] LAND`) (Issue #54)
-5. **Death Slow-Mo & Casualty Legibility (P1)** — in-flight death sequence with crash banner before transitioning to deck (Issue #52)
-6. **Novice Milestone & Victory Pacing (P1)** — clear micro-rewards and achievable first-flight qualification victory (Issue #55)
-7. **Branching Canyon Archipelago (P2)** — exciting multi-channel topography replacing the 1D straight slot (Issue #53)
+Next, ranked by what it buys a new player:
+
+1. **Tune the turn** — ~9°/s held-bank and a ~19 s sustained 180° are energy-limited; try a lower assist
+   alpha target with a stick in hand (Known Issues #56).
+2. **A "first sortie" qualification debrief** — `TRAINING_SORTIE` exists; give finishing it a fanfare and
+   a "WINGS" moment (#55).
+3. **Branching archipelago map** — a new map, with the scenarios re-balanced for it (#53).
+4. **Altitude on the radar**, a **guns-lock tone**, and a **setting to turn the turn assist off** (#51, #57, #59).
 
 ---
 

@@ -3,9 +3,9 @@
 > **Note:** This review evaluates the current state of *Carrier Vector: 1988*. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
 >
 > 📁 **Detailed Review Suite:** For the systematic review collection and version archive, see [`docs/reviews/`](reviews/README.md), containing:
-> - [`v1.6.0 Active Review Suite`](reviews/v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md) (25-dimensional review: Bank-to-Turn aerodynamics, Tactical Radar, In-flight guidance)
-> - [`v1.6.0 Player Questions Answered`](reviews/v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md) (Rigorous file:line evidence on why the jet only goes North)
-> - [`v1.6.0 Recommendations & Roadmap`](reviews/v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) (Tier 0-3 implementation blueprints)
+> - [`v1.6.0 Active Review Suite`](reviews/v1.6.0/COMPREHENSIVE_GAME_REVIEW.md) (25-dimensional review: Bank-to-Turn aerodynamics, Tactical Radar, In-flight guidance)
+> - [`v1.6.0 Player Questions Answered`](reviews/v1.6.0/PLAYER_QUESTIONS_ANSWERED.md) (Rigorous file:line evidence on why the jet only goes North)
+> - [`v1.6.0 Recommendations & Roadmap`](reviews/v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md) (Tier 0-3 implementation blueprints)
 > - [`v1.5.0 Archived Baseline`](reviews/v1.5.0/COMPREHENSIVE_GAME_REVIEW.md) (Countermeasures, HARM missile, death post-mortem)
 > - [`v1.4.0 Archived Review`](reviews/v1.4.0/COMPREHENSIVE_GAME_REVIEW.md) (Desktop mouse interactivity, Dual HUD)
 > - [`v1.3.0 Archived Review`](reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) (Multi-dimensional baseline critique)

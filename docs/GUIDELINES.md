@@ -390,20 +390,29 @@ When directing AI assistants on this repository, structure all prompts into 4 ex
 - **One look.** Do not add a second screen style; every style is another thing a beginner
   must understand before flying.
 
-## 12. Rules added in v1.6.0-dev (Flight Ergonomics & Player Entertainment)
+## 12. Rules added in v1.6.0 (each one encodes a bug that already shipped)
 
-- **Rolling must turn the aircraft.** Any fixed-wing flight simulation must implement
-  coordinated bank-to-turn ($\dot{\psi} \propto \frac{g \tan\phi}{V}$). Decoupling roll from yaw
-  forces players onto rudder pedals, breaking universal genre expectations and trapping pilots on
-  a straight heading.
-- **Never clamp pitch at vertical.** An artificial ceiling at $\pm 88^\circ$ prevents loops,
-  Immelmann turns, and Split-S manoeuvres. The physics engine must allow clean acrobatic passage
-  through the vertical.
-- **A minimap must show the world, not just threat letters.** Do not present an electronic
-  warfare RWR as the primary tactical sensor. A radar scope must clearly show the carrier,
-  hostile bandits, and mission waypoints.
-- **Never snap views on death.** The transition from cockpit flight to carrier deck must include
-  an in-flight casualty sequence (slow-motion, explosion view, and a prominent casualty banner) so
-  the player understands why they died.
-- **Dynamic guidance must lead the player.** Do not rely on static briefing cards. The HUD must
-  display contextual prompts (`[T] LOCK`, `[SPACE] FIRE`, `[X] CHAFF`) at the exact moment of combat.
+- **A duplicated formula needs a test that checks the *properties*, not the copies.** The orientation
+  basis exists in `AircraftPhysics` and `VectorRenderer`. Their tests compared the basis with itself, so
+  a sign error present in both copies passed. Assert what must be true of any correct basis: unit
+  length, mutually orthogonal, and "a right bank tilts lift right".
+- **Test a control through the input, in the running loop.** If the claim is "holding D turns the jet",
+  the test holds D in a `GameLoop` and reads the heading. Unit tests of `applyRollInput` proved nothing
+  about it. This caught a leaking bank cap that no function-level test could.
+- **Decide a limit by the state you were in, not the state you ended up in.** A cap tested on the
+  *result* of the step (`cos(roll) > 0.26` after adding the increment) lets the first step past the cap
+  through; the value it guards sits at 0.259.
+- **Verify a review's cause before building its fix.** Reviews are reliable about what a player felt and
+  unreliable about why. Read the code path, then measure it.
+- **Don't clamp an angle; fold it.** A clamp at +-88 degrees was a wall the player hit in the middle
+  of a loop. Reflecting the Euler triple through vertical keeps the attitude continuous.
+- **An arcade assist lives behind a switch and the raw model stays testable.** `turnAssist` defaults to
+  0 in the physics; the game loop opts in. Physics tests keep exercising the honest model.
+- **A death is a state with a duration.** Anything that ends the player's control needs a beat where
+  they can see it end and read why. Route every source through one trigger.
+- **A warning before a punishment.** A guns solution that fires on the frame it forms is an ambush, not
+  a fight. Give the player a callout and a beat, and let some bursts miss.
+- **Instructions that name a key must name the key that exists.** `[T]` designates, `[SPACE]` fires, `[X]`
+  chaffs. Two hints that told the player different things at the same moment (banner vs. ticker) is a bug.
+- **Give a first time its own moment.** A one-shot latch, persisted, on the channel the player is already
+  watching. Do not build a menu for it.

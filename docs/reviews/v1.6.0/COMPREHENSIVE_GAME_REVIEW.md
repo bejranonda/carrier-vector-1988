@@ -1,6 +1,10 @@
 # Comprehensive Game Review & UX Evaluation (25-Dimension Framework)
 
-> **Evaluated Version:** `v1.6.0-dev` (Post-v1.5.0 Master Baseline)  
+> **Read [IMPLEMENTATION_AND_CORRECTIONS.md](IMPLEMENTATION_AND_CORRECTIONS.md) first.** This document was written before
+> the code was changed; several of its causes were checked afterwards and found stale or wrong, and its
+> proposed turn formula was not used. It is kept as the record of the playtest evidence.
+
+> **Evaluated Version:** `v1.6.0` (Post-v1.5.0 Master Baseline)  
 > **Evaluation Date:** 2026-09-21  
 > **Reviewer:** Lead Game Reviewer, Systems Architect & Entertainment UX Specialist  
 > **Git Baseline Commit:** `a94447c` (v1.5.0 merge)  
@@ -55,7 +59,7 @@
 
 ## 2. The 25-Dimensional Evaluation Rubric
 
-| Pillar | v1.5.0 Score | v1.6.0-dev Score | Δ | Status | Analysis & Evaluation Rationale |
+| Pillar | v1.5.0 Score | v1.6.0 Score | Δ | Status | Analysis & Evaluation Rationale |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **1. Flight Dynamics & Aerodynamics** | 7.0 | **4.0** | -3.0 | **BROKEN** | Severe regression in player assessment: decoupled Euler roll/yaw prevents bank-to-turn; pitch clamped at $88^\circ$ prevents looping. |
 | **2. Loop Cadence & Dopamine Architecture** | 6.0 | **4.5** | -1.5 | **NEEDS WORK** | Micro-loop is frustrating due to inability to aim; macro-loop resets abruptly on death without celebration of small wins. |

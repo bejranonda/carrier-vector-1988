@@ -276,31 +276,41 @@ wearing a feature's clothes, and it should be scheduled as one.
 
 ---
 
-## 7. The Turn & Burn Pass: Where the Fun Broke (v1.6.0-dev)
+## 7. The Turn & Burn Pass: Where the Fun Broke (v1.6.0)
 
 ### The Lesson: A Flight Game Where You Cannot Turn Is Not a Game
 A human playtester gave the project its most important design revelation:
 *"I cannot turn left or right, or even turn around by climbing top backward. The jet can only go north."*
 
-The codebase had spent months perfecting linear algebra, swept-sphere proximity fuzes,
-and acoustic formants, while the fundamental physical act of **banking the stick to carve
-a turn** was completely absent. Rolling tilted the wireframe wings, but the aircraft's
-velocity vector remained bolted to a North-bound track because yaw was only wired to
-rudder pedals (`Q`/`E`).
+The codebase had spent months on linear algebra, swept-sphere proximity fuzes and acoustic formants,
+while the fundamental act of **banking the stick to carve a turn** did not work. It was worse than
+"missing": a mirrored sign in the orientation basis pushed lift the *wrong way* in a bank, and the
+cockpit camera was sheared by the same error. 874 tests passed the whole time, because they checked the
+maths against itself, not the verb the player performs.
 
-**The Fun Rule:** In any flight game, **banking IS turning**. When a player presses Left Arrow,
-they want to carve through the sky, pull high Gs, and swing their crosshairs onto a target.
-Aerodynamic bank-to-turn coupling ($\dot{\psi} \propto \tan\phi$) is not a luxury; it is the
-very source of joy in 3D flight.
+**The Fun Rule:** In any flight game, **banking IS turning**. When a player presses Left, they want to
+carve through the sky and swing the crosshairs onto a target. The fix has three layers - correct lift, a
+body-rate pitch so "bank and pull" means what it says, and an arcade assist so the arrow keys alone turn -
+and the assist is what the player feels.
+
+**The Test Rule:** a player-verb test (hold `D` in the running loop, assert the heading changed) is worth
+more than a hundred function tests. This release's bank cap leaked at exactly 75 degrees and only that
+kind of test saw it.
 
 ### The Radar Lesson: Give the Player Eyes
-A scope that only shows military threat letters (`S`, `T`, `M`) while hiding home base,
-enemy aircraft, and waypoints makes the player feel blind. Transforming the scope into an
-**Integrated Tactical Radar / Minimap** gives the player agency: they can see where the
-carrier is, hunt bandits, and plan attack runs.
+A scope that only shows threat letters while hiding home base, enemy aircraft and objectives makes the
+player feel blind. The scope now answers three questions - where is home, where is the enemy, where do I
+go - and keeps the SAM warning on the rim of the same glass.
 
-### The Rookie Guidance Lesson: Dynamic Prompts Over Static Manuals
-A beginner in combat cannot remember 40 keys from a briefing screen. A single dynamic
-prompt on the bottom of the HUD (`[T] LOCK BANDIT`, `[SPACE] FIRE`, `[X] DEPLOY CHAFF`)
-transforms cognitive paralysis into immediate, thrilling action.
+### The Death Lesson: Lose Beautifully
+A player who is flying and then suddenly is not, reads it as a crash of the software. Two and a half
+seconds of slow motion with the killer named turn "what happened?" into "I should have broken earlier" -
+which is the difference between quitting and one more go.
 
+### The Fairness Lesson
+Hit-scan that fires the frame a solution forms is an ambush. A 0.7 s aim time, a `GUNS TRACKING` callout
+and a 60% hit chance make the same enemy a fight.
+
+### Still open
+Turns are energy-limited (~9 deg/s held, ~19 s for a sustained 180); the guns warning has no sound;
+there is no first-sortie "wings" debrief. See Known Issues #56, #59 and #55.

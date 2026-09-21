@@ -1155,37 +1155,90 @@ line of sight; `null` when it is not closing (a countdown must not show).
 ### Chaff coasting
 A decoyed missile at 480 m/s covers ~1.7 km in the 3.5 s window - enough to overshoot.
 
-## 19. Coordinated Flight Dynamics & Radar Math (v1.6.0-dev)
+## 19. Bank-to-Turn, Loops, Radar & Guns (v1.6.0)
 
-### Coordinated Turn Integration
-$$\dot{\psi} = \frac{g \cdot \tan(\phi)}{V} \cdot \cos(\theta)$$
+### The orientation basis (the one thing everything shares)
 
-- $\phi$: Bank roll angle (`AircraftPhysics.roll`, radians)
-- $\theta$: Pitch elevation angle (`AircraftPhysics.pitch`, radians)
-- $V$: True airspeed (`AircraftPhysics.airSpeed`, m/s)
-- $g$: Gravitational acceleration ($9.80665\text{ m/s}^2$)
+Axes: +X east, +Y up, +Z north. Heading `yaw` is clockwise from +Z; `pitch` is nose-up; `roll` is
+positive to the right (right wing down). Build the frame by yaw about Y, pitch about the wing, roll about
+the nose:
 
-In simulation integration step $\Delta t$:
-$$\Delta \psi = \dot{\psi} \cdot \Delta t \cdot \text{controlAuthority}$$
-$$\text{yaw} = (\text{yaw} + \Delta \psi) \pmod{2\pi}$$
+```
+forward = ( cosP sinY,             sinP,        cosP cosY )
+right   = ( cosR cosY + sinP sinY sinR,  -cosP sinR,  -cosR sinY + sinP cosY sinR )
+up      = ( sinR cosY - sinP sinY cosR,   cosP cosR,  -sinR sinY - sinP cosY cosR )
+```
 
-### Tactical Radar 2D Screen Projection
-For target world position $\mathbf{P}_{\text{tgt}} = (x_t, y_t, z_t)$, aircraft position $\mathbf{P}_{\text{ac}} = (x_a, y_a, z_a)$, and aircraft heading yaw $\psi$:
+`AircraftPhysics.forwardVector/rightVector/upVector` and `VectorRenderer.basisVectors` are the same
+formula (the renderer is kept independent of any aircraft instance, so it is duplicated) and are asserted
+orthonormal and equal in tests. Lift acts along `up`, so a right bank tilts lift to +X and the path
+curves right. Until 1.6.0 `up` and two components of `right` carried the *left*-roll sign.
 
-Relative horizontal vector:
-$$\Delta x = x_t - x_a, \quad \Delta z = z_t - z_a$$
+### Body-rate pitch (bank and pull)
 
-Body-relative coordinates (aircraft nose along $+Z$ axis):
-$$x_{\text{rel}} = \Delta x \cos(\psi) - \Delta z \sin(\psi)$$
-$$z_{\text{rel}} = \Delta x \sin(\psi) + \Delta z \cos(\psi)$$
+The stick commands a pitch rate `q` about the aircraft's own wing. Advancing the stored Euler angles:
 
-Polar range and normalized display radius:
-$$\rho = \sqrt{x_{\text{rel}}^2 + z_{\text{rel}}^2}$$
-$$r_{\text{norm}} = \min\left(1.0, \frac{\rho}{R_{\text{radar\_max}}}\right)$$
+```
+dPitch = q cos(roll)
+dYaw   = q sin(roll) / max(0.2, cos(pitch))
+```
 
-Scope coordinates (screen center $(x_0, y_0)$, scope radius $R_{\text{px}}$):
-$$x_{\text{radar}} = x_0 + \left(\frac{x_{\text{rel}}}{\max(\rho, 1)}\right) \cdot r_{\text{norm}} \cdot R_{\text{px}}$$
-$$y_{\text{radar}} = y_0 - \left(\frac{z_{\text{rel}}}{\max(\rho, 1)}\right) \cdot r_{\text{norm}} \cdot R_{\text{px}}$$
+At 90 degrees of bank the whole pull goes into heading; wings-level it is all pitch (tested).
 
-Carrier is clamped to homeplate icon, bandits to directional chevrons, and active SAM locks to flashing outer perimeter strobes.
+### Folding through vertical
 
+If `|pitch| > pi/2`: `pitch = sign * pi - pitch; yaw += pi; roll += pi`. Same attitude, so
+`forwardVector` is continuous across the fold (tested: a step over 90 degrees moves the nose < 0.05
+unit). Roll is then wrapped to [-pi, pi] and yaw to [0, 2 pi).
+
+### Directional stability (weathervane)
+
+```
+yaw += wrap(atan2(vx, vz) - yaw) * 0.8 * (horizSpeed/speed)^2 * min(1, speed/150) * dt
+```
+Only when horizontal speed > 30 m/s and not stalled. The `(horiz/speed)^2` weight fades it out on a
+vertical flight path so it never fights a loop. It is deliberately weak (0.8/s): the rudder still holds
+the nose off-axis for gunnery (equilibrium offset ~ rudder rate / gain).
+
+### Turn assist and the alpha limiter (`turnAssist = 1`, game loop only)
+
+- Auto back-pressure each tick: `pull = 0.8 * |sin(roll)| * margin`, `margin = max(0, 1 - |alpha| / (0.8 * 18 deg))`,
+  applied when upright (`cos(roll) > -0.2`) and airspeed > 60 m/s.
+- Pilot pull is limited too: `rate *= max(0.1, 1 - alpha / (0.92 * 18 deg))` when pulling with alpha > 0.
+  Without it the nose outruns the wing (a 1.35 rad/s pitch rate against ~0.45 rad/s of available path
+  turn), alpha passes 18 degrees within a second, authority drops to 0.22 and the loop dies at the top.
+- Upright bank cap 75 degrees, decided by which side of wings-level the step *started* on. (The cap sits
+  at cos 0.259; a threshold on the *result* lets the first step past it through. This shipped once.)
+
+Measured through the game loop, 240 m/s at 3000 m: held bank alone ~9 deg/s, 90 degrees in ~10 s;
+sustained 180 in ~19 s at full afterburner, ending ~96 m/s. Thrust-to-weight is 0.91 at full AB
+(145 kN over 16.2 t).
+
+### Radar projection (heading-up, `RadarMath.ts`)
+
+```
+ahead = dx sin(yaw) + dz cos(yaw)         right = dx cos(yaw) - dz sin(yaw)
+scale = radiusPx / max(distance, range)   x = right * scale,  y = -ahead * scale
+```
+Range 12 km maps to the rim; beyond it the contact keeps its bearing and sits on the rim (`clamped`).
+A contact's triangle points along `atan2(vRight, vAhead)` of its velocity. North sits on the rim at
+angle `-yaw`. SAM bearings are already nose-relative (`azimuthDeg`).
+
+### Enemy guns
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `FIRE_RANGE` | 1600 m | solution needs range under this |
+| `FIRE_CONE_DEG` | 12 | and the nose within this of the player |
+| `AIM_TIME` | 0.7 s | solution must be held this long before the first burst |
+| `HIT_CHANCE` | 0.6 | fraction of bursts that connect |
+| `FIRE_COOLDOWN` | 1.4 s | between bursts |
+
+`onAim` fires once when the solution is first held (the `GUNS TRACKING` warning); losing the solution
+resets the timer.
+
+### Death sequence
+
+`DEATH_SEQUENCE_SECONDS = 2.6`, `DEATH_TIME_SCALE = 0.3`. The countdown is in real time; the world runs at
+0.3x. Controls, the coach and further damage are ignored while `dying`. The cause captured at the start
+is restored before the deck cut so a second hit cannot rewrite it.

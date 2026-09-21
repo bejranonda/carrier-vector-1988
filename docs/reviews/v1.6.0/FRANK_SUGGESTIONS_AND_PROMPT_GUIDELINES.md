@@ -1,4 +1,8 @@
-# Frank Suggestions, Opposite Thinking & AI Master Prompts (v1.6.0-dev)
+# Frank Suggestions, Opposite Thinking & AI Master Prompts (v1.6.0)
+
+> **Read [IMPLEMENTATION_AND_CORRECTIONS.md](IMPLEMENTATION_AND_CORRECTIONS.md) first.** This document was written before
+> the code was changed; several of its causes were checked afterwards and found stale or wrong, and its
+> proposed turn formula was not used. It is kept as the record of the playtest evidence.
 
 > **Philosophy:** A true pair programmer does not merely praise your code; they tell you when your design is hurting your players.
 > This document contains candid critiques, opposite-thinking analyses, prompt improvements, and copy-paste AI master prompts.

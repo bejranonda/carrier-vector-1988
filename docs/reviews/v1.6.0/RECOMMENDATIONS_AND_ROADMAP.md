@@ -1,4 +1,8 @@
-# Recommendations & Engineering Roadmap (v1.6.0-dev)
+# Recommendations & Engineering Roadmap (v1.6.0)
+
+> **Read [IMPLEMENTATION_AND_CORRECTIONS.md](IMPLEMENTATION_AND_CORRECTIONS.md) first.** This document was written before
+> the code was changed; several of its causes were checked afterwards and found stale or wrong, and its
+> proposed turn formula was not used. It is kept as the record of the playtest evidence.
 
 > **Guiding Principle:** Every recommendation is strictly sorted by **Player Impact ÷ Lines of Code**.
 > We prioritize fixing high-churn blockers that ruin the core flight experience before building complex new subsystems.

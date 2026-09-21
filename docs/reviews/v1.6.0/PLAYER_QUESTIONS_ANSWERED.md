@@ -1,4 +1,8 @@
-# Player Questions Answered With Code Evidence (v1.6.0-dev)
+# Player Questions Answered With Code Evidence (v1.6.0)
+
+> **Read [IMPLEMENTATION_AND_CORRECTIONS.md](IMPLEMENTATION_AND_CORRECTIONS.md) first.** This document was written before
+> the code was changed; several of its causes were checked afterwards and found stale or wrong, and its
+> proposed turn formula was not used. It is kept as the record of the playtest evidence.
 
 > **Context:** In-depth diagnosis of human playtest feedback on the post-v1.5.0 build (GitHub Pages & master branch).
 > Every question is answered strictly against the actual source code, mathematics, and UX implementation.

@@ -585,72 +585,87 @@ coordinated-turn rework (#19). Cut deliberately when the scope was simplified.
 
 ---
 
-# New findings from human playtest (v1.6.0-dev)
+# Resolution notes and new limitations (v1.6.0)
 
-## 49. Decoupled Euler Roll and Yaw: Bank-to-turn does not exist **[P0 — Critical]**
+Issues #49-#55 were raised by the second human playtest. Status after this release:
 
-In `src/flight/AircraftPhysics.ts:163-185`, roll input (`A`/`D` or `Left`/`Right`) only increments
-`this.roll`. Bank angle does not couple into `this.yaw` at all, so rolling the wings creates zero
-heading change. Yaw is only updated via `applyYawInput()`, which is bound exclusively to `Q` and `E`
-(rudder). Because `forwardVector` is derived from `yaw` and `pitch`, thrust acts purely down the initial
-heading vector.
+| # | Issue | Status |
+| --- | --- | --- |
+| 49 | Banking does not turn the jet | **Fixed** - and the root cause was a mirrored orientation basis, not just a missing coupling |
+| 50 | Pitch clamped at 88 degrees, no loops | **Fixed** - pitch folds through vertical |
+| 51 | RWR mistaken for a radar | **Fixed** - tactical radar with carrier, bandits, objectives, SAM arc |
+| 52 | Instant cut to the deck on death | **Fixed** - 2.6 s slow-motion sequence with the cause |
+| 53 | Fjord is a 1-D corridor | **Open, deliberately** - see below |
+| 54 | No contextual guidance | **Partly fixed** - the coach existed; it now coaches the attack and the tail |
+| 55 | No sense of winning | **Partly fixed** - first-time milestones; no new mission |
 
-**Consequence:** A player who flies using standard arrow keys or WASD rolls sideways but the jet
-continues flying North forever. This directly breaks the universal flight-genre convention of
-coordinated bank-to-turn.
+## 49. Banking did not turn the jet **[Fixed in 1.6.0]**
 
-## 50. Pitch clamped to ±88° prevents loops and Immelmann turns **[P0 — Critical]**
+Two defects stacked. (1) `AircraftPhysics.upVector`, and the renderer's `basisVectors` that duplicates
+it, used the roll-*left* sign for `up` and for two components of `right`, but the roll-*right* sign for
+`right.y`. The basis was not orthonormal (`right · up = -sin(2·roll)`), so at 46 degrees of right bank
+lift pointed up-and-left: the flight path curved the wrong way, and the camera, which projects onto the
+same vectors, was sheared. (2) Nothing coupled bank into heading, so even with the lift right the nose
+never followed. The fix is one consistent rotation, the body-rate pitch mapping, and directional
+stability. **Lesson:** the unit tests only checked the basis against *itself*, so a sign error that was
+consistent between two copies of the formula passed for months. It is now asserted orthonormal.
 
-In `src/flight/AircraftPhysics.ts:155`, pitch is clamped:
-```ts
-const maxPitch = 88 * (Math.PI / 180);
-if (this.pitch > maxPitch) this.pitch = maxPitch;
-if (this.pitch < -maxPitch) this.pitch = -maxPitch;
-```
-To avoid Euler gimbal singularities, pitch cannot exceed 88°.
+## 50. Pitch clamp **[Fixed in 1.6.0]**
 
-**Consequence:** When a player attempts to turn around by pulling back into an inside loop, Split-S,
-or Immelmann, the jet hits an invisible ceiling at 88° (near-vertical), bleeds all airspeed, stalls,
-and slides backward while still facing North.
+The clamp is replaced by a fold: past +-90 degrees the pitch is reflected and heading and roll turn half
+a circle, which is the same attitude. The jet is heavy (thrust-to-weight 0.91 at full afterburner), so a
+loop from 260 m/s crosses the top at ~90 m/s. It works; it is not graceful. See #56.
 
-## 51. RWR masquerading as a tactical radar **[P0 — Critical UX]**
+## 51. RWR as radar **[Fixed in 1.6.0]**
 
-The bottom-right scope (`src/renderer/HUD.ts:1454`) is an electronic warfare Radar Warning Receiver (RWR)
-displaying cryptic military letters (`S` for search, `T` for track, `M` for missile, `X` for decoyed).
-Players expect a **Tactical Radar / Minimap**.
+The scope is a heading-up tactical radar (`RadarMath.ts`, range 12 km). Contacts beyond range are
+pinned to the rim and drawn hollow. The scope shows the *nearest ground distance*, not altitude: a
+bandit 3 km above you looks the same as one at your level. Height is the next thing to add.
 
-**Consequence:** The scope does not display the aircraft carrier (home base), airborne enemy contacts
-(MiGs, bombers), mission waypoints, or terrain boundaries. Players feel completely blind and disoriented.
+## 52. Death cut **[Fixed in 1.6.0]**
 
-## 52. Instant snap to 2D deck on airframe destruction **[P1]**
+`replaceAirframe` now starts a `dying` state (2.6 s, world at 0.3x, controls dead, cause on screen)
+and `finishAirframeLoss` does what the old function did. The camera stays in the cockpit; there is no
+outside "kill cam". A terrain death zeroes the velocity so the wreck does not slide.
 
-When `this.physics.damage >= 100` (`src/core/GameLoop.ts:1967`), `replaceAirframe()` immediately sets
-`this.currentView = 'MACRO_DECK'`.
+## 53. 1-D fjord **[Open, deliberate]**
 
-**Consequence:** The 3D cockpit view vanishes instantly without an in-flight explosion camera, slow-motion
-failure cadence, or prominent HUD crash banner. The player is abruptly teleported to the carrier deck
-maintenance screen with no emotional closure on why they died.
+The FJORD is documented as "preserved exactly" and the strike mission's SAM masking is balanced on it.
+Now that the jet turns, the corridor plays as a slalom rather than a hallway, which was the actual
+complaint. `OPEN_SEA` and `SHATTERED_RIDGE` already give open air. A branching archipelago map is the
+right answer and is a v1.7 item, because a new map means re-balancing every scenario that names it.
 
-## 53. 1-Dimensional Fjord bowling alley **[P1]**
+## 54. Guidance **[Partly fixed]**
 
-In `src/tactics/TerrainProfiles.ts:60-79`, the signature map `FJORD` restricts navigable flight to a
-500-metre wide corridor ($|X| < 500$ m). Beyond 500 m, terrain rises precipitously to 1800 m vertical
-walls.
+The review said no hints existed; a priority-ranked coach ticker did (`Tutorial.ts`). What was missing
+was *offensive* coaching, which is now in. Still not done: nothing prompts the player to *land* except
+the final approach aids, and there is no first-flight guided "go here" arrow on the HUD.
 
-**Consequence:** Combined with the inability to steer via roll (#49), the player is funnelled down a
-narrow gutter directly into enemy missile envelopes.
+## 55. Winning **[Partly fixed]**
 
-## 54. Cognitive overload and absence of dynamic contextual HUD guidance **[P0]**
+`Milestones.ts` pays out four first-times once each. There is still no new "first sortie" mission with
+a fanfare debrief; `TRAINING_SORTIE` already exists and is shielded. A qualification debrief ("WINGS")
+is the obvious next reward.
 
-The HUD displays up to 22 instruments simultaneously, while zero contextual prompts exist in combat.
-Beginners do not know which key to press when a bandit merges or when an attack run starts.
+## 56. Turns are energy-limited, not snappy **[Open - tuning]**
 
-**Fix:** Default to a clean Arcade HUD and introduce a dynamic "Rookie Copilot" prompt at bottom-center
-(`[T] LOCK BANDIT`, `[SPACE] FIRE`, `[X] DEPLOY CHAFF`, `[L] APPROACH CARRIER`).
+Measured through the real game loop: about 9 degrees/s from a held bank, ~19 s for a sustained 180 at
+full afterburner, ending near 96 m/s. The assist holds the wing at its limit, and the airframe's induced
+drag multiplier above 1.5 g (kept because it makes hard turns cost energy) does the rest. This is the
+first thing to tune with a stick in hand: a lower assist alpha target trades turn rate for speed.
 
-## 55. Lack of beginner milestone progression and victory feedback **[P1]**
+## 57. Turn assist changes MANUAL **[By design]**
 
-The game does not provide intermediate micro-rewards (e.g. drone splash confirmation fanfare, waypoint
-milestone chimes, or a short novice qualification mission). Players experience repeated failure without
-feeling any sense of mastery.
+`turnAssist = 1` is set in the game loop, so a bank-and-pull is gentler and harder to stall than the raw
+model, and an upright bank stops at 75 degrees. The raw model (`turnAssist = 0`) is what the physics
+tests exercise and is unchanged. There is no setting to turn the assist off in the game yet.
 
+## 58. Milestones are per browser **[Known]**
+
+They live in `localStorage` (`carrier-vector-1988.milestones`). A cleared store or a new browser earns
+them again. Blocked storage means they repeat every session, which is the chosen failure mode.
+
+## 59. The guns warning is a callout, not a sound **[Open]**
+
+`GUNS TRACKING` is on the callout channel only. A dedicated lock-tone for "a fighter has a solution on
+you" would read faster than text at the moment the pilot is looking at the target.

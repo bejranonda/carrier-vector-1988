@@ -5,25 +5,70 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0-dev] — 2026-09-21
+## [1.6.0] — 2026-09-21
 
-**"Turn and Burn: Entertainment, Steering & Radar Redesign."** Following live playtesting on GitHub
-Pages, human telemetry identified six critical blockers: the jet physically cannot steer via banking
-(decoupled Euler roll/yaw), pitch is clamped at 88° preventing loops, the RWR is confused for a
-radar, enemies hit-scan from behind with instant cuts to the carrier deck on death, terrain is a 500m
-straight trench, and beginners face cognitive paralysis with zero in-flight guidance prompts.
+**"Turn and Burn."** A second human playtest of the live build said: *I cannot turn left or right, the
+jet can only go north; the radar is not clear; I died and do not know why; there is too much on the
+screen and I do not know what to do.* All four were true. Finding out *why* the jet would not turn
+turned up something worse than the review had guessed: the aircraft's orientation basis was not
+orthonormal, so lift pushed the jet the **wrong way** in a bank and the cockpit view was sheared.
 
-### Documented & Diagnosed
+### Fixed
 
-- **Mathematical Proof of Heading Lock (Issue #49):** Traced "jet can only go North" to
-  `AircraftPhysics.ts:89, 181`. Rolling wings produces 0 deg/s yaw; yaw only responds to `Q`/`E`.
-- **Pitch Loop Ceiling (Issue #50):** Traced vertical freeze to `maxPitch = 88 * Math.PI / 180` clamp.
-- **RWR vs Radar Conflation (Issue #51):** Traced player disorientation to `HUD.ts:1454` displaying
-  military EW characters (`S/T/M/X`) while concealing the carrier, bandits, and terrain.
-- **Death Disorientation (Issue #52):** Traced sudden failure confusion to `replaceAirframe()` instantly
-  switching view to `MACRO_DECK` upon 100 damage with no in-flight casualty sequence.
-- **25-Dimensional Review Suite:** Established `docs/reviews/v1.6.0-dev/` with complete playtest
-  evidence, categorical scoring, Good vs. Bad breakdown, and implementation blueprints for Tier 0-3.
+- **Banking now turns the jet, in the right direction.** `AircraftPhysics.upVector` and the renderer's
+  `basisVectors` used the roll-left sign for `up` and for two `right` components but the roll-right sign
+  for `right.y`. `right · up` was `-sin(2·roll)`, so at 46° of right bank the lift vector pointed
+  up-and-*left*. Both are now derived from one rotation and asserted orthonormal at arbitrary
+  attitudes. The cockpit horizon is asserted to tilt the right way in both banks.
+- **Pull-while-banked steers the nose.** The stick is now a body pitch rate mapped to the stored Euler
+  angles (`dPitch = q·cos φ`, `dYaw = q·sin φ / cos θ`). Before, back-stick only ever raised the nose
+  toward the sky whatever the bank.
+- **Loops, Immelmanns and Split-S work.** The ±88° pitch clamp is gone: past vertical the same
+  attitude is re-expressed (pitch folds back, heading and roll turn half a circle), so the nose flows
+  through the top with no NaN and no discontinuity.
+- **The training prompt no longer says to roll for the sake of it** ("THE JET TURNS WHERE YOU BANK"),
+  and the missile hint no longer contradicts the missile banner (both say chaff `[X]`).
+
+### Added
+
+- **Turn assist (on by default in the game loop, off in the raw physics).** A held bank pulls the nose
+  round by itself; an alpha limiter eases the pull before the stall angle so the assist can never be
+  what stalls the jet; an upright bank stops at 75° so a held key is a turn, not an accidental barrel
+  roll. Measured: about 9°/s from a held bank alone (90° in ~10 s); a sustained 180° is ~19 s because the
+  heavy jet bleeds speed in a hard turn (see Known Issues #56).
+- **Tactical radar.** The corner scope is now heading-up and shows the carrier (white square, with
+  `CV 8.4NM` under it), every live bandit as a red triangle pointing the way it flies, hardened
+  objectives as yellow diamonds, the designated target ringed, north on the rim, and SAM launches as a
+  red arc on the rim toward the site. Geometry lives in `RadarMath.ts` and is tested.
+- **A death you can read.** Losing the airframe now holds the cockpit for 2.6 s at 0.3× speed with the
+  controls dead, `MAYDAY - AIRFRAME LOST` and the cause (`KILLED BY MiG-23`) on the glass, then goes to
+  the deck. It works for cannon, SAM and terrain from the one place they all call.
+- **Fair guns.** A fighter must hold a guns solution for 0.7 s before its first burst, and you get a
+  `GUNS TRACKING` callout the moment it has one. Bursts hit 60% of the time; a miss is audible.
+- **Attack coaching.** The coach ticker now says `BANDIT AHEAD - PRESS [T] TO LOCK ON`, then
+  `LOCKED - TURN TOWARD THE BANDIT`, then `IN RANGE - FIRE [SPACE]`, and `BANDIT ON YOUR TAIL - BANK
+  HARD AND PULL` above all of them when something is lining you up. It read from the tracker's own
+  solutions, so "ahead" and "in range" mean what the HUD brackets mean.
+- **First-time milestones** (`Milestones.ts`, remembered across sessions): `FIRST BLOOD!`, `FIRST TRAP -
+  WELCOME ABOARD`, `CHAFF SAVED YOU`, `OVER THE TOP` (first loop). One louder line, once.
+
+### Changed
+
+- The scope is larger (104-156 px, was 92-132) so the carrier distance and contacts are legible.
+- `EnemyAI.updateEnemyAI` gained optional `onAim` and injectable `rng`; `onFire` now receives `hit`.
+- `FlightAssist` comments no longer claim the airframe cannot turn without rudder.
+
+### Corrected from the review
+
+The review that started this release was right about the symptoms and wrong about several causes; see
+[`docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md`](docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md).
+In short: the hint ticker already existed, the Arcade HUD was already the default, the training
+sortie already existed, two more maps already existed, and its proposed `g·tan(φ)/V` fix would have
+turned at ~4°/s, flipped sign when inverted, and doubled up with the autopilot's rudder.
+
+### Not done
+
+- The fjord layout is unchanged (deliberate: mission balance is built on it). See Known Issues #53.
 
 ---
 

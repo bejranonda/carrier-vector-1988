@@ -452,32 +452,45 @@ it every sortie so a stale cause can never be shown.
 sea (the wingman hauls the jet clear) and floors fuel, while leaving the glideslope near the
 boat alone, since that is the lesson.
 
-## 9. Flight Kinematics, Radar Minimap & Entertainment UX (v1.6.0-dev)
+## 9. Turning, Radar and Dying Well (v1.6.0)
 
-### Coordinated Bank-to-Turn Aerodynamics
-Fixed-wing aircraft turn because the tilted lift vector has a horizontal component
-$F_{\text{horizontal}} = L \sin(\phi)$. For a balanced turn with no sideslip, the yaw turn rate is:
+### How this release was worked
 
-$$\dot{\psi} = \frac{g \cdot \tan(\phi)}{V} \cdot \cos(\theta)$$
+1. **Take the human's words as data, the reviewer's causes as hypotheses.** Every claim in the review was
+   checked against the code before anything was built. Five were wrong or stale (the hint ticker
+   existed; the Arcade HUD was the default; the training sortie existed; two more maps existed; the
+   proposed turn formula would have turned at ~4 deg/s). The symptoms were all real.
+2. **Measure before designing.** A ten-line probe test of "bank right for five seconds" showed the path
+   curving the *wrong way* - a defect the review never mentioned and the design would have papered over.
+3. **Test through the input, not the function.** The physics-level tests passed while the game loop
+   did not turn: the roll cap tested `cos(roll)` *after* the step, so it leaked at exactly 75 degrees.
+   Only a test that held the `D` key in a running `GameLoop` and asked "did the heading change?" saw it.
 
-where $\phi$ is bank angle (`this.roll`), $\theta$ is pitch angle (`this.pitch`), $g = 9.80665\text{ m/s}^2$, and $V$ is true airspeed. In `AircraftPhysics.update(dt)`, this angular velocity is integrated directly into `this.yaw`:
+### Turning is three layers, each doing one job
 
-$$\Delta \psi = \dot{\psi} \cdot \Delta t \cdot \text{controlAuthority}$$
+- **Correct lift direction** (the orthonormal basis): the physically real, weak effect.
+- **Body-rate pitch mapping**: what "bank and pull" means. Strong, and it is the player's to control.
+- **Turn assist**: the arcade layer. A held bank asks for back-pressure so the arrow keys alone turn.
+  Kept out of the raw physics (`turnAssist = 0` by default) so the honest model is still testable and
+  the game loop is what opts in.
 
-This allows standard roll input (`A`/`D`, `ArrowLeft`/`ArrowRight`) to steer the aircraft without requiring manual rudder input.
+The alpha limiter is what makes the third layer safe: it spends the wing's lift at its limit and no
+further, so the assist cannot stall the jet.
 
-### Tactical Radar Coordinate Transformation
-The radar scope represents a top-down, aircraft-heading-up tactical display with range radius $R_{\text{scope}}$. For an entity at world position $(x_w, z_w)$ relative to aircraft $(x_{\text{ac}}, z_{\text{ac}})$ with aircraft yaw $\psi$:
+### The radar is a projection, so it is a pure function
 
-$$\Delta x = x_w - x_{\text{ac}}, \quad \Delta z = z_w - z_{\text{ac}}$$
+`RadarMath.radarProject` takes positions and a heading and returns pixels; the HUD only draws. That is
+why the geometry has tests (ahead is up, right is right, turning rotates the picture, out-of-range
+contacts pin to the rim) and the drawing has none.
 
-Rotated into aircraft body coordinates (where forward is along $+Z$ body axis):
-$$x_{\text{body}} = \Delta x \cos(\psi) - \Delta z \sin(\psi)$$
-$$z_{\text{body}} = \Delta x \sin(\psi) + \Delta z \cos(\psi)$$
+### Dying is a state, not an event
 
-Projected onto the 2D circular HUD radar scope of pixel radius $r_{\text{radar}}$ and world range limit $R_{\text{max}}$:
-$$x_{\text{screen}} = x_{\text{center}} + \left(\frac{x_{\text{body}}}{R_{\text{max}}}\right) r_{\text{radar}}$$
-$$y_{\text{screen}} = y_{\text{center}} - \left(\frac{z_{\text{body}}}{R_{\text{max}}}\right) r_{\text{radar}}$$
+`replaceAirframe` used to *be* the loss. It is now the trigger for a `dying` state that the sortie loop
+counts down, and `finishAirframeLoss` is the old body. Every death source (cannon, SAM, terrain) calls
+the same trigger, so none needed to change and none can skip the sequence. Existing tests that assumed
+an instant cut were changed to sit through the 2.6 s - and to assert the cockpit is still up during it.
 
-Contacts outside $R_{\text{max}}$ are clamped to the outer rim of the scope with a hollow chevron icon.
+### Fairness for the guns is two numbers
 
+An aim time (a warning) and a hit chance (a miss you can hear). Together they turn "I was dead" into
+"something lined me up, I could have broken" without touching the AI's steering.

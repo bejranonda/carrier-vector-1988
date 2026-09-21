@@ -13,7 +13,7 @@ Future AI development agents and human contributors must consult this repository
 | **`v1.3.0`** | 2026-09-20 | Archived Baseline | **5.71 / 10** | • **12-Dimensional Holistic Evaluation** (Loops, Voice, Padlock, Churn, Thermals)<br>• Live GitHub Pages playtest & onboarding failure analysis (Issue #32)<br>• Zero-dependency 6-DOF math engine review<br>• Blueprints for Bitchin' Betty Voice, Padlock Camera, Rogue-lite Campaign & Vector Juice | • [12-Dimension Review](v1.3.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap & Blueprints](v1.3.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [AI Master Prompts](v1.3.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.4.0`** | 2026-09-20 | Archived | **8.85 / 10** (Tech)<br>**6.32 / 10** (Player) | • **15-Dimensional Player Entertainment & Usability Review**<br>• Critique of Beginner Complexity & Screen Cognitive Overload (22 dials)<br>• Desktop Mode Mouse Interactivity Failure Analysis<br>• Rookie Onboarding Trap (`DEFAULT_SCENARIO` SAM ambush)<br>• Blueprints for Clean Arcade HUD, Mouse Hit-Areas & Dopamine Pacing | • [Release Verification](v1.4.0/RELEASE_NOTES_AND_VERIFICATION.md)<br>• [Player Experience Review](v1.4.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Recommendations & Roadmap](v1.4.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & AI Prompts](v1.4.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.5.0`** | 2026-09-21 | Archived Baseline | **9.00 / 10** (Engineering)<br>**5.20 / 10** (Player)<br>**5.76 / 10** (Composite) | • **First review driven by verbatim human playtest evidence**<br>• Framework extended 15 → 21 dimensions<br>• Addressed missing countermeasures (`X` chaff), HARM anti-radiation missile (`4`), debrief post-mortem, and stick inversion on briefing | • [21-Dimension Review](v1.5.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Player Questions Answered](v1.5.0/PLAYER_QUESTIONS_ANSWERED.md)<br>• [Recommendations & Roadmap](v1.5.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Guidelines](v1.5.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
-| **`v1.6.0-dev`** | 2026-09-21 | **Active Working-Tree Review** | **7.67 / 10** (Engineering)<br>**4.32 / 10** (Player)<br>**4.99 / 10** (Composite) | • **Second human playtest evaluation** (GitHub Pages post-v1.5.0)<br>• Framework extended 21 → **25 dimensions** (Bank-to-Turn Aerodynamics, Tactical Radar vs RWR, On-Screen Guidance, Victory Pacing)<br>• **CRITICAL:** Decoupled Euler angles prevent turning via roll; pitch clamped at 88° prevents looping (jet only goes North)<br>• **CRITICAL:** Cryptic RWR conflatable with radar; lacks carrier, bandits, and terrain<br>• **CRITICAL:** Silent hit-scan cannon attrition from astern; instant cut to deck on death | • [**25-Dimension Review**](v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md)<br>• [**Player Questions Answered**](v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md)<br>• [**Roadmap & Code Blueprints**](v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [**Frank Suggestions & AI Prompts**](v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.6.0`** | 2026-09-21 | **Implemented in v1.6.0** (review scores are the pre-fix baseline) | **7.67 / 10** (Engineering)<br>**4.32 / 10** (Player)<br>**4.99 / 10** (Composite) | • **Second human playtest evaluation** (GitHub Pages post-v1.5.0)<br>• Framework extended 21 → **25 dimensions** (Bank-to-Turn Aerodynamics, Tactical Radar vs RWR, On-Screen Guidance, Victory Pacing)<br>• **CRITICAL:** Decoupled Euler angles prevent turning via roll; pitch clamped at 88° prevents looping (jet only goes North)<br>• **CRITICAL:** Cryptic RWR conflatable with radar; lacks carrier, bandits, and terrain<br>• **CRITICAL:** Silent hit-scan cannon attrition from astern; instant cut to deck on death | • [**25-Dimension Review**](v1.6.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [**Player Questions Answered**](v1.6.0/PLAYER_QUESTIONS_ANSWERED.md)<br>• [**Roadmap & Code Blueprints**](v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [**Frank Suggestions & AI Prompts**](v1.6.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md)<br>• [**Implementation & Corrections (read first)**](v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md) |
 
 ### Score Trend
 
@@ -23,7 +23,7 @@ Player       5.20 ██████████▍          →  4.32 ███
 Composite    5.76 ███████████▌         →  4.99 █████████▊            -0.77
 ```
 
-> **Why the score fell:** While v1.5.0 delivered countermeasures and HARMs, human playtesting revealed a fundamental aerodynamic barrier: rolling does not steer the aircraft, and pitch is clamped at 88°. Players are physically trapped flying North into lethal fire, while an electronic warfare RWR is mistaken for a navigation radar.
+> **Why the score fell (a recalibration, not a regression — no code got worse; see the corrections doc):** While v1.5.0 delivered countermeasures and HARMs, human playtesting revealed a fundamental aerodynamic barrier: rolling does not steer the aircraft, and pitch is clamped at 88°. Players are physically trapped flying North into lethal fire, while an electronic warfare RWR is mistaken for a navigation radar.
 
 ---
 
@@ -51,7 +51,8 @@ docs/reviews/
 │   ├── RECOMMENDATIONS_AND_ROADMAP.md
 │   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md
 │
-└── v1.6.0-dev/                                # Working-tree review (post-v1.5.0 active evaluation)
+└── v1.6.0/                                    # Second human-playtest review, and what came of it
+    ├── IMPLEMENTATION_AND_CORRECTIONS.md      # READ FIRST: what the review got wrong, what shipped, frank feedback
     ├── COMPREHENSIVE_GAME_REVIEW.md           # 25-Dimensional review, good vs. bad, scores
     ├── PLAYER_QUESTIONS_ANSWERED.md           # 6 Playtest questions answered with exact code evidence
     ├── RECOMMENDATIONS_AND_ROADMAP.md         # Tiered fixes: Bank-to-Turn math, Radar, HUD Guidance
@@ -62,10 +63,11 @@ docs/reviews/
 
 | I am... | Read this |
 | :--- | :--- |
-| An AI agent about to implement fixes | [`v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md`](v1.6.0-dev/RECOMMENDATIONS_AND_ROADMAP.md) — Tier 0 first |
-| Wondering why the jet only goes North | [`v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md`](v1.6.0-dev/PLAYER_QUESTIONS_ANSWERED.md) Q1 |
-| Assessing project health & UX | [`v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md`](v1.6.0-dev/COMPREHENSIVE_GAME_REVIEW.md) §0–§3 |
-| Prompting an AI for the next sprint | [`v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`](v1.6.0-dev/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) §4 |
+| Anyone about to act on the v1.6.0 review | [`v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md`](v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md) — several of its claims were stale or wrong |
+| An AI agent about to implement fixes | [`v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md) — but read the corrections first |
+| Wondering why the jet only went North | [`v1.6.0/PLAYER_QUESTIONS_ANSWERED.md`](v1.6.0/PLAYER_QUESTIONS_ANSWERED.md) Q1 (and the deeper cause in the corrections §2) |
+| Assessing project health & UX | [`v1.6.0/COMPREHENSIVE_GAME_REVIEW.md`](v1.6.0/COMPREHENSIVE_GAME_REVIEW.md) §0–§3 |
+| Prompting an AI for the next sprint | [`v1.6.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md`](v1.6.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) §4 |
 
 ---
 
