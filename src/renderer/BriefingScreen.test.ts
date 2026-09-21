@@ -73,6 +73,15 @@ describe('briefingSecondaryOptions', () => {
         expect(opts.some(([k]) => k === 'P')).toBe(false);
     });
 
+    // Arrow-up defaults to CLIMB; a pilot with flight-sim habits expects the
+    // opposite and used to have to discover the flip among forty bindings.
+    it('offers the stick flip only until it has been touched', () => {
+        const shown = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false, showStickHint: true });
+        const hidden = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false, showStickHint: false });
+        expect(shown.some(([k]) => k === 'I')).toBe(true);
+        expect(hidden.some(([k]) => k === 'I')).toBe(false);
+    });
+
     it('only offers the map change on a scenario that allows it', () => {
         const without = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
         const withIt = briefingSecondaryOptions({ ...base, mapChangeable: true, showPaletteHint: false });

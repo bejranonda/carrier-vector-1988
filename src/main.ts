@@ -125,6 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'arrowleft' || key === 'arrowright') {
                 e.preventDefault();
                 game.selectScenario(key === 'arrowleft' ? -1 : 1);
+            } else if (key === 'i') {
+                // Flip the stick before the first flight, not after fighting it.
+                e.preventDefault();
+                game.togglePitchInversion();
             } else if (key >= '1' && key <= String(SCENARIOS.length)) {
                 // Direct scenario pick by the number shown on its pill. Bounded
                 // by the real scenario count - this accepted 1-9 while the

@@ -65,7 +65,7 @@ import {
     scenarioById
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
-import { loadPitchInversion, savePitchInversion } from './Controls';
+import { loadPitchInversion, storedPitchInversion, savePitchInversion } from './Controls';
 
 import { hitTestDeck, hitTestHud } from '../renderer/PointerInteractivity';
 import type { DeckStateSnapshot, HudStateSnapshot } from '../renderer/PointerInteractivity';
@@ -2227,7 +2227,8 @@ export class GameLoop {
                     id: this.selectedMap(),
                     changeable: this.scenario.setup.allowMapChoice === true
                 },
-                storedPalette() === null
+                storedPalette() === null,
+                storedPitchInversion() === null
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;

@@ -96,6 +96,23 @@ export function loadPitchInversion(): boolean {
     return false;
 }
 
+/**
+ * The stored stick setting, or null if the player has never touched it. Lets
+ * the briefing offer the flip once - arrow-up defaults to CLIMB, but a player
+ * with flight-sim habits expects it to push the nose DOWN - and stop offering
+ * it the moment it has been used, exactly as the colour-blind palette hint.
+ */
+export function storedPitchInversion(): boolean | null {
+    try {
+        const stored = globalThis.localStorage?.getItem(PITCH_INVERT_KEY);
+        if (stored === 'true') return true;
+        if (stored === 'false') return false;
+    } catch {
+        // Storage unavailable
+    }
+    return null;
+}
+
 export function savePitchInversion(inverted: boolean): void {
     try {
         globalThis.localStorage?.setItem(PITCH_INVERT_KEY, String(inverted));

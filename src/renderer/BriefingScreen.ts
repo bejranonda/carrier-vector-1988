@@ -91,6 +91,8 @@ export function briefingSecondaryOptions(opts: {
     threatLabel: string;
     mapChangeable: boolean;
     showPaletteHint: boolean;
+    /** True until the stick setting has been touched. */
+    showStickHint?: boolean;
 }): [string, string][] {
     return [
         ['←  →', 'change mission'],
@@ -103,6 +105,9 @@ export function briefingSecondaryOptions(opts: {
         ['V', opts.threatLabel],
         ...(opts.showPaletteHint
             ? [['C', 'try colour-blind palette'] as [string, string]]
+            : []),
+        ...(opts.showStickHint
+            ? [['I', 'flight-sim stick (UP = dive)'] as [string, string]]
             : [])
     ];
 }
@@ -247,7 +252,9 @@ export class BriefingScreen {
          */
         mapChoice: { id: MapId; changeable: boolean } | null = null,
         /** See `briefingSecondaryOptions` - true until the palette is touched. */
-        showPaletteHint = false
+        showPaletteHint = false,
+        /** See `briefingSecondaryOptions` - true until the stick is touched. */
+        showStickHint = false
     ) {
         ctx.save();
         noGlow(ctx);
@@ -405,7 +412,8 @@ export class BriefingScreen {
             pacingLabel,
             threatLabel,
             mapChangeable: mapChoice?.changeable === true,
-            showPaletteHint
+            showPaletteHint,
+            showStickHint
         });
 
         /**
