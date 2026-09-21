@@ -14,7 +14,15 @@
  * Pure data + a single DOM attribute write, so the table is unit-testable.
  */
 
-export type DisplayModeId = 'CLEAN' | 'MODERN' | 'RETRO';
+/**
+ * There is exactly one screen style. It used to be a three-step ladder
+ * (CLEAN / MODERN / RETRO CRT) behind the `P` key, and a beginner had to
+ * understand and choose between three looks before flying. MODERN - bloom,
+ * a light phosphor trail and a soft vignette - is the look the game is known
+ * for and it costs a fraction of RETRO's per-stroke shadow, so it is the one
+ * that stayed. A stored value from the old ladder falls back to it.
+ */
+export type DisplayModeId = 'MODERN';
 
 export interface DisplayModeSpec {
     id: DisplayModeId;
@@ -47,16 +55,6 @@ export interface DisplayModeSpec {
 
 export const DISPLAY_MODES: readonly DisplayModeSpec[] = [
     {
-        id: 'CLEAN',
-        label: 'CLEAN',
-        description: 'maximum legibility - no trails, bloom or scanlines',
-        bloom: 0,
-        vectorGlow: 0,
-        persistenceTau: 0,
-        scanlines: 0,
-        vignette: 0
-    },
-    {
         id: 'MODERN',
         label: 'MODERN',
         description: 'crisp symbology with a light vector glow',
@@ -65,23 +63,13 @@ export const DISPLAY_MODES: readonly DisplayModeSpec[] = [
         persistenceTau: 0.035,
         scanlines: 0,
         vignette: 0.28
-    },
-    {
-        id: 'RETRO',
-        label: 'RETRO CRT',
-        description: 'full 1988 phosphor tube - trails, scanlines, vignette',
-        bloom: 0.55,
-        vectorGlow: 4,
-        persistenceTau: 0.075,
-        scanlines: 0.5,
-        vignette: 0.7
     }
 ];
 
 export const DEFAULT_DISPLAY_MODE: DisplayModeId = 'MODERN';
 
 export function displayModeSpec(id: DisplayModeId): DisplayModeSpec {
-    return DISPLAY_MODES.find(m => m.id === id) ?? DISPLAY_MODES[1];
+    return DISPLAY_MODES.find(m => m.id === id) ?? DISPLAY_MODES[0];
 }
 
 /** Next mode in the CLEAN -> MODERN -> RETRO -> CLEAN ladder. */

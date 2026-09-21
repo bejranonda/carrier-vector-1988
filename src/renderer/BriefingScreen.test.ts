@@ -66,10 +66,11 @@ describe('briefingHitAreas', () => {
 describe('briefingSecondaryOptions', () => {
     const base = { pacingLabel: 'ARCADE pacing', threatLabel: 'REGULAR threat' };
 
-    it('always leads with changing the mission and ends with the screen style', () => {
+    it('always leads with changing the mission, and offers no screen-style choice', () => {
         const opts = briefingSecondaryOptions({ ...base, mapChangeable: false, showPaletteHint: false });
         expect(opts[0]).toEqual(['←  →', 'change mission']);
-        expect(opts[opts.length - 1]).toEqual(['P', 'screen style']);
+        // One screen style only - it is no longer something to pick.
+        expect(opts.some(([k]) => k === 'P')).toBe(false);
     });
 
     it('only offers the map change on a scenario that allows it', () => {

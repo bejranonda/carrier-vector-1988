@@ -45,7 +45,6 @@ import type { Segment } from './Theme';
 export interface DeckViewContext {
     objective: ObjectiveStep;
     hint: Hint | null;
-    displayModeLabel: string;
     /**
      * Touch mode sheds the keyboard cheat strip and the keycaps, and leaves a
      * band at the bottom for the launch button. On a 320 px phone the strip
@@ -705,8 +704,7 @@ export class DeckView {
                 { key: 'TAB' }, { text: 'cockpit' },
                 { key: 'ENTER' }, { text: 'cat shot' },
                 { key: '1-4' }, { text: 'payload' },
-                { key: 'H' }, { text: 'all controls' },
-                { key: 'P' }, { text: context.displayModeLabel }
+                { key: 'H' }, { text: 'all controls' }
             ];
             drawSegments(ctx, r.x, r.y + 32, segs, 11);
         }

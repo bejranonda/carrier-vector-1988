@@ -53,9 +53,6 @@ import {
     applyDisplayModeToDocument,
     displayModeSpec,
     loadDisplayMode,
-    nextDisplayMode,
-    saveDisplayMode,
-    storedDisplayMode
 } from '../renderer/DisplayMode';
 import type { DisplayModeId } from '../renderer/DisplayMode';
 import { deckObjective, flightObjective } from './Objectives';
@@ -715,10 +712,6 @@ export class GameLoop {
             : proposed;
     }
 
-    public get displayModeLabel(): string {
-        return displayModeSpec(this.displayMode).label;
-    }
-
     // -----------------------------------------------------------------
     // Sortie lifecycle
     // -----------------------------------------------------------------
@@ -907,10 +900,6 @@ export class GameLoop {
         // approach and still hands the landing back at short final, so a
         // handset player gets to finish a sortie rather than ditching.
         if (storedApproachAssist() === null) this.approachAssist = true;
-        if (storedDisplayMode() === null) {
-            this.displayMode = 'CLEAN';
-            this.applyDisplayMode();
-        }
     }
 
     /** Cycle AUTO -> TOUCH -> KEYBOARD, for players detection got wrong. */
@@ -1550,7 +1539,6 @@ export class GameLoop {
                     this.currentView = 'MICRO_FLIGHT';
                     break;
                 case 'HELP': this.helpVisible = !this.helpVisible; break;
-                case 'STYLE': this.cycleDisplayMode(); break;
             }
             return true;
         }
@@ -1985,6 +1973,30 @@ export class GameLoop {
 
         // Controlled Flight Into Terrain
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        if (this.scenario.setup.combatShielded) {
+            // The training sortie cannot kill you. Shielding used to cover
+            // missiles and cannon only, so a beginner who flew the nose into
+            // the fjord on their very first flight still lost the airframe -
+            // the one lesson the tutorial exists to make safe. The wingman
+            // hauls the jet clear instead, and it costs nothing but a callout.
+            const floor = groundElevation + 150;
+            // Away from the boat, catch a descent early. Near it, the low
+            // glideslope is the point of the lesson, so only the last few
+            // metres above the water count.
+            const nearBoat = Math.hypot(this.physics.position.x, this.physics.position.z) < 1500;
+            const danger = nearBoat ? groundElevation + 4 : groundElevation + 40;
+            if (this.physics.position.y < floor && this.physics.position.y <= danger
+                && this.deck.aircraftState === 'AIRBORNE') {
+                this.physics.position.y = floor;
+                this.physics.pitch = Math.max(this.physics.pitch, 0.15);
+                this.physics.velocity.y = Math.max(this.physics.velocity.y, 0);
+                this.physics.velocity.z = Math.max(this.physics.velocity.z, 0);
+                this.callouts.push('GHOST-LEAD: PULL UP!', 'MODE', 'training - no damage');
+                soundFX.playMasterCaution();
+            }
+            // Never strand a rookie on fumes either.
+            if (this.physics.fuel < 1500) this.physics.fuel = 1500;
+        }
         if (this.physics.position.y <= groundElevation + 2) {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
             this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
@@ -2254,7 +2266,6 @@ export class GameLoop {
                 {
                     objective: this.currentObjective(),
                     hint: this.currentHint,
-                    displayModeLabel: this.displayModeLabel,
                     touchMode: this.controlScheme === 'TOUCH',
                     touchReserveBottom: this.controlScheme === 'TOUCH'
                         ? Math.max(56, this.viewHeight - this.touchLayout.launch.y + 10)
@@ -2442,7 +2453,6 @@ export class GameLoop {
                 score: this.score,
                 objective: this.currentObjective(),
                 checklist: this.training.checklist(),
-                displayModeLabel: this.displayModeLabel,
                 strikeTargets: this.strikeTargets,
                 bombImpactPoint: this.selectedWeapon === 'BOMB' && this.physics.loadout.ironBombs > 0
                     ? WeaponsSystem.predictBombImpact(this.physics, this.terrain)
@@ -2533,19 +2543,4 @@ export class GameLoop {
         this.post.hardClear();
     }
 
-    /**
-     * Cycle CLEAN -> MODERN -> RETRO. One key now controls every screen
-     * effect (vector trails, bloom, scanlines, vignette) instead of only the
-     * bloom pass, so a player who finds the texture hard to read has a
-     * single, discoverable way to turn it off.
-     */
-    public cycleDisplayMode() {
-        soundFX.playUiMove();
-        this.displayMode = nextDisplayMode(this.displayMode);
-        this.applyDisplayMode();
-        this.post.hardClear();
-        const spec = displayModeSpec(this.displayMode);
-        saveDisplayMode(this.displayMode);
-        this.deck.log(`DISPLAY: ${spec.label} - ${spec.description}`);
-    }
 }

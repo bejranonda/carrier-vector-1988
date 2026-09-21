@@ -575,7 +575,7 @@ describe('GameLoop integration smoke test', () => {
         expect(game.controlScheme).toBe('TOUCH');
         // The jet flying itself is what makes one-thumb play possible.
         expect(game.assistLevel).toBe('AUTO');
-        expect(game.displayMode).toBe('CLEAN');
+        expect(game.displayMode).toBe('MODERN');
     });
 
     it('leaves a keyboard player untouched', () => {
@@ -1721,21 +1721,6 @@ describe('GameLoop integration smoke test', () => {
         });
     });
 
-    it('cycles the display mode without throwing', () => {
-        const game = new GameLoop(makeCanvasStub());
-        runFrames(game, 150);
-        game.confirmBriefing();
-        game.hotStartAirborne();
-
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        game.cycleDisplayMode();
-        runFrames(game, 10);
-        expect(game.phase).toBe('ACTIVE');
-    });
-
     it('toggles padlock camera and reports callouts', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
@@ -1803,6 +1788,24 @@ describe('GameLoop integration smoke test', () => {
             runFrames(game, 1);
         }
         expect(game.sensors.samSites.some(s => s.id === sam.id)).toBe(false);
+    });
+
+    it('cannot lose an airframe in the training sortie, even flown straight at the sea', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('TRAINING_SORTIE');
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+
+        game.physics.position = { x: 0, y: 5, z: 4000 };
+        game.physics.velocity = { x: 0, y: -60, z: 100 };
+        game.assistLevel = 'MANUAL';
+        runFrames(game, 30);
+
+        expect(game.score.breakdown.airframesLost).toBe(0);
+        expect(game.physics.position.y).toBeGreaterThan(20);
+        expect(game.callouts.active().some(c => c.text.includes('PULL UP'))).toBe(true);
     });
 
     it('records terrain impact as the loss cause, and clears it on the next sortie', () => {

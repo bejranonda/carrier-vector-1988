@@ -103,8 +103,7 @@ export function briefingSecondaryOptions(opts: {
         ['V', opts.threatLabel],
         ...(opts.showPaletteHint
             ? [['C', 'try colour-blind palette'] as [string, string]]
-            : []),
-        ['P', 'screen style']
+            : [])
     ];
 }
 

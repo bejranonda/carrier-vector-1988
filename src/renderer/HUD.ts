@@ -95,7 +95,6 @@ export interface HudContext {
     score: ScoreKeeper;
     objective: ObjectiveStep;
     checklist: ChecklistItem[];
-    displayModeLabel: string;
     /** Hardened ground targets the active scenario wants destroyed. */
     strikeTargets?: StrikeTarget[];
     /** Where the currently selected Mk.82 would land, if one is selected. */
@@ -290,7 +289,7 @@ export class HUD {
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
             context.terrainFollowing ?? false, context.recovery ?? null
         );
-        if (!layout.touchMode) this.drawKeyBar(ctx, context.displayModeLabel, context.assistLabel);
+        if (!layout.touchMode) this.drawKeyBar(ctx, context.assistLabel);
         this.drawTopRightControls(ctx, layout, context);
 
         ctx.restore();
@@ -1003,7 +1002,7 @@ export class HUD {
     }
 
     /** Bottom key bar so the flight controls are never more than a glance away. */
-    private drawKeyBar(ctx: CanvasRenderingContext2D, displayModeLabel: string, assistLabel?: string) {
+    private drawKeyBar(ctx: CanvasRenderingContext2D, assistLabel?: string) {
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
@@ -1019,8 +1018,7 @@ export class HUD {
             ['U', 'hud density'],
             ['I', 'invert pitch'],
             ['TAB', 'deck'],
-            ['H', 'controls'],
-            ['P', displayModeLabel]
+            ['H', 'controls']
         ];
 
         let x = 24;

@@ -89,10 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
             soundFX.toggleMute();
             return;
         }
-        if (key === 'p') {
-            game.cycleDisplayMode();
-            return;
-        }
         if (key === 'o') {
             game.cyclePacing();
             return;

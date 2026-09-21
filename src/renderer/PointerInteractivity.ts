@@ -18,8 +18,7 @@ export type DeckAction =
     | 'AIM9_CYCLE'
     | 'BOMB_CYCLE'
     | 'SWITCH_COCKPIT'
-    | 'HELP'
-    | 'STYLE';
+    | 'HELP';
 
 export type HudAction =
     | 'WEAPON_GUN'
@@ -153,11 +152,6 @@ export function solveDeckClickableAreas(
             id: 'HELP',
             rect: { x: footer.x + footer.w - 180, y: footer.y + 12, w: 80, h: 24 },
             label: 'HELP (H)'
-        });
-        areas.push({
-            id: 'STYLE',
-            rect: { x: footer.x + footer.w - 90, y: footer.y + 12, w: 80, h: 24 },
-            label: 'STYLE (P)'
         });
     }
 
