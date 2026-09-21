@@ -211,7 +211,7 @@ export class GameLoop {
 
     // View & phase state
     public currentView: 'MICRO_FLIGHT' | 'MACRO_DECK' = 'MACRO_DECK';
-    public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' = 'GUN';
+    public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM' = 'GUN';
     public phase: GamePhase = 'BOOT';
     public helpVisible = false;
 
@@ -1578,6 +1578,7 @@ export class GameLoop {
                 case 'WEAPON_GUN': this.selectedWeapon = 'GUN'; break;
                 case 'WEAPON_AIM9': this.selectedWeapon = 'AIM9'; break;
                 case 'WEAPON_BOMB': this.selectedWeapon = 'BOMB'; break;
+                case 'WEAPON_HARM': this.selectedWeapon = 'HARM'; break;
                 case 'ASSIST_CYCLE': this.cycleAssistLevel(); break;
                 case 'TIME_REWIND': this.triggerTimeRewind(); break;
                 case 'PADLOCK': this.togglePadlock(); break;
@@ -1766,6 +1767,17 @@ export class GameLoop {
                 (target) => this.visibility.isVisible(target.id)
             );
             if (this.weapons.missiles.length > before) this.shake(SHAKE_SOURCES.missileLaunch);
+        } else if (this.selectedWeapon === 'HARM') {
+            const launched = this.weapons.fireHarm(this.physics, this.sensors.samSites, this.sensors.activeThreats);
+            if (launched) {
+                this.shake(SHAKE_SOURCES.missileLaunch);
+            } else {
+                // Nothing radiating in range - the pilot pulled the trigger on
+                // an empty lock. Distinct from a dry weapon: the round is
+                // still in the rack, only the shot did not happen.
+                soundFX.playRelayClick();
+                this.callouts.push('NO RADAR CONTACT', 'MODE');
+            }
         } else if (this.selectedWeapon === 'BOMB') {
             const before = this.weapons.bombs.length;
             this.weapons.dropBomb(this.physics);
@@ -1935,6 +1947,7 @@ export class GameLoop {
             terrain: this.terrain,
             targets: this.airborneTargets,
             samSites: this.sensors.samSites,
+            threats: this.sensors.activeThreats,
             strikeTargets: this.strikeTargets,
             onTargetDestroyed: (destroyedTarget) => this.onTargetDestroyed(destroyedTarget),
             onTargetHit: () => {
@@ -2308,7 +2321,10 @@ export class GameLoop {
         const loadout = this.physics.loadout;
         drawTouchControls(this.ctx, this.touchLayout, {
             demand: this.touch.demand(this.touchLayout),
-            selectedWeapon: this.selectedWeapon,
+            // HARM has no touch control yet (KNOWN_ISSUES) - a touch pilot who
+            // somehow has it selected still sees a sensible weapon highlighted
+            // rather than the type system being fought with a cast.
+            selectedWeapon: this.selectedWeapon === 'HARM' ? 'GUN' : this.selectedWeapon,
             ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,

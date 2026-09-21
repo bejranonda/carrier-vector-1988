@@ -3,6 +3,7 @@ import { WeaponsSystem } from './Weapons';
 import type { WeaponsWorld } from './Weapons';
 import { AircraftPhysics } from './AircraftPhysics';
 import { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
+import type { ThreatContact } from '../tactics/RadarLOS';
 import type { AirborneTarget } from '../renderer/HUD';
 
 describe('WeaponsSystem ballistics', () => {
@@ -276,3 +277,162 @@ describe('WeaponsSystem.predictBombImpact (CCIP)', () => {
     });
 });
 
+describe('WeaponsSystem.fireHarm (AGM-88 anti-radiation missile)', () => {
+    let weapons: WeaponsSystem;
+    let physics: AircraftPhysics;
+    let terrain: TacticalTerrain;
+    let site: SAMSite;
+
+    /** Minimal but complete - the interface has no optional core fields. */
+    function threatFor(sam: SAMSite, state: ThreatContact['state']): ThreatContact {
+        return {
+            id: sam.id,
+            name: sam.name,
+            position: sam.position,
+            state,
+            azimuthDeg: 0,
+            distance: 0,
+            isTerrainMasked: false,
+            isDecoyed: false,
+            missileActive: false
+        };
+    }
+
+    beforeEach(() => {
+        weapons = new WeaponsSystem();
+        physics = new AircraftPhysics();
+        terrain = new TacticalTerrain();
+        site = new SAMSite('SAM-1', 'SA-6 Gainful', 0, 4000, terrain);
+        physics.position = { x: 0, y: site.position.y + 500, z: 0 };
+        physics.velocity = { x: 0, y: 0, z: 0 };
+        physics.pitch = 0;
+        physics.yaw = 0;
+        physics.roll = 0;
+        physics.loadout.harms = 2;
+    });
+
+    it('refuses to lock a site that is not radiating', () => {
+        const launched = weapons.fireHarm(physics, [site], [threatFor(site, 'SILENT')]);
+        expect(launched).toBe(false);
+        expect(weapons.harms.length).toBe(0);
+    });
+
+    it('spends no ammunition when there is nothing to shoot at', () => {
+        weapons.fireHarm(physics, [site], [threatFor(site, 'SILENT')]);
+        expect(physics.loadout.harms).toBe(2);
+    });
+
+    it('locks a radiating site and spends one round', () => {
+        const launched = weapons.fireHarm(physics, [site], [threatFor(site, 'TRACK')]);
+        expect(launched).toBe(true);
+        expect(physics.loadout.harms).toBe(1);
+        expect(weapons.harms[0].targetSamId).toBe('SAM-1');
+    });
+
+    it('refuses to fire with an empty rack', () => {
+        physics.loadout.harms = 0;
+        expect(weapons.fireHarm(physics, [site], [threatFor(site, 'LAUNCH')])).toBe(false);
+    });
+
+    /**
+     * No boresight cone: unlike the Sidewinder this must lock a radiating
+     * site regardless of where the nose is pointed - that is the entire
+     * point of it being a passive RF seeker rather than an infrared one.
+     */
+    it('locks a radiating site even when it is behind the aircraft', () => {
+        physics.yaw = Math.PI; // facing directly away from the site
+        const launched = weapons.fireHarm(physics, [site], [threatFor(site, 'SEARCH')]);
+        expect(launched).toBe(true);
+    });
+
+    it('destroys a radiating site it is guided all the way onto', () => {
+        weapons.fireHarm(physics, [site], [threatFor(site, 'LAUNCH')]);
+        const sites = [site];
+        const threats = [threatFor(site, 'LAUNCH')];
+
+        let destroyed: SAMSite | null = null;
+        for (let i = 0; i < 600 && sites.length > 0; i++) {
+            weapons.update(1 / 60, {
+                terrain, targets: [], samSites: sites, threats,
+                onSAMDestroyed: (s) => { destroyed = s; }
+            });
+        }
+
+        expect(sites.length).toBe(0);
+        expect(destroyed).toBe(site);
+    });
+
+    /**
+     * The entire design point of the weapon: bait the site into shutting
+     * down and the missile can no longer correct onto it. Modelled by
+     * removing all guidance the instant the site reports SILENT and letting
+     * the round coast on its last heading, which a site five kilometres away
+     * at launch will not recover from by the time the motor burns out.
+     */
+    it('goes ballistic and misses when the site stops radiating before impact', () => {
+        physics.position = { x: 0, y: site.position.y + 500, z: -5000 };
+        weapons.fireHarm(physics, [site], [threatFor(site, 'TRACK')]);
+
+        const sites = [site];
+        let destroyed: SAMSite | null = null;
+
+        // Radiating just long enough to commit the shot, then shut down for
+        // the rest of the flight.
+        for (let i = 0; i < 30; i++) {
+            weapons.update(1 / 60, {
+                terrain, targets: [], samSites: sites, threats: [threatFor(site, 'TRACK')],
+                onSAMDestroyed: (s) => { destroyed = s; }
+            });
+        }
+        for (let i = 0; i < 600 && sites.length > 0; i++) {
+            weapons.update(1 / 60, {
+                terrain, targets: [], samSites: sites, threats: [threatFor(site, 'SILENT')],
+                onSAMDestroyed: (s) => { destroyed = s; }
+            });
+        }
+
+        expect(destroyed).toBeNull();
+        expect(sites.length).toBe(1);
+    });
+
+    /**
+     * REGRESSION. The first implementation launched the HARM along the
+     * aircraft's nose, mirroring the Sidewinder's convention - and diverged
+     * completely whenever the target was not roughly ahead. A Sidewinder can
+     * get away with that because it only ever locks something already inside
+     * a 30-degree boresight cone; a HARM was deliberately given no such cone
+     * (it is passive RF homing, not infrared), so a site directly below the
+     * aircraft is a legal target, and launching level with only a slow
+     * bounded turn to correct meant the round flew straight past it and
+     * never curled back within its fuel or hit radius. Fixed by launching
+     * the round pointed at the target's bearing directly - the tuning
+     * comment in Weapons.ts has the numbers.
+     */
+    it('still hits a site directly below the aircraft, not just one roughly ahead', () => {
+        physics.position = { x: 0, y: site.position.y + 900, z: 0 };
+        // Level flight, nose pointed a full 90 degrees away from the target -
+        // the worst-case geometry for a missile that launches along the nose.
+        physics.yaw = Math.PI / 2;
+
+        weapons.fireHarm(physics, [site], [threatFor(site, 'LAUNCH')]);
+        const sites = [site];
+        let destroyed: SAMSite | null = null;
+        for (let i = 0; i < 1000 && sites.length > 0; i++) {
+            weapons.update(1 / 120, {
+                terrain, targets: [], samSites: sites, threats: [threatFor(site, 'LAUNCH')],
+                onSAMDestroyed: (s) => { destroyed = s; }
+            });
+        }
+        expect(destroyed).toBe(site);
+    });
+
+    it('still tracks correctly with no threats array supplied at all', () => {
+        // WeaponsWorld.threats is optional so every pre-HARM caller (and
+        // every existing test) still compiles. A HARM in flight with no
+        // threats data must treat the site as not radiating rather than throw.
+        weapons.fireHarm(physics, [site], [threatFor(site, 'LAUNCH')]);
+        expect(() => {
+            weapons.update(1 / 60, { terrain, targets: [], samSites: [site] });
+        }).not.toThrow();
+    });
+});

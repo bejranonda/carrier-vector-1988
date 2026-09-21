@@ -193,7 +193,8 @@ export class DeckManager {
         vulcanAmmo: 500,
         sidewinders: 4,
         ironBombs: 2,
-        chaff: 12
+        chaff: 12,
+        harms: 2
     };
     public plannedFuel: number = 4800; // Liters
 

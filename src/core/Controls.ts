@@ -41,6 +41,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['1'], display: '1', label: 'Select 20mm Vulcan cannon', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['2'], display: '2', label: 'Select AIM-9 Sidewinder', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['3'], display: '3', label: 'Select Mk.82 iron bomb', context: 'FLIGHT', group: 'WEAPONS' },
+    { keys: ['4'], display: '4', label: 'Select AGM-88 HARM (locks a radiating SAM only)', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['x'], display: 'X', label: 'Release chaff - breaks a SAM lock', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['b'], display: 'B', label: 'Toggle weapons bay (open = RCS x4.0)', context: 'FLIGHT', group: 'WEAPONS' },
     { keys: ['t'], display: 'T', label: 'Designate next target (SHIFT+T steps back)', context: 'FLIGHT', group: 'WEAPONS' },

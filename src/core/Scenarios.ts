@@ -338,7 +338,7 @@ const CANYON_STRIKE: ScenarioDef = {
         // The window is the raid window. Once the pen is down the clock has
         // done its job and the egress is not a race.
         timeLimitActive: (s) => !s.strikeTargetDestroyed,
-        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 2, chaff: 12 }
+        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 2, chaff: 12, harms: 1 }
     },
     cards: [
         {
@@ -431,26 +431,26 @@ const IRON_HAND: ScenarioDef = {
         // Four launchers behind offset ridge gaps: each kill needs its own
         // route in, which is the whole point of a SEAD mission.
         map: 'SHATTERED_RIDGE',
-        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4, chaff: 12 }
+        loadout: { vulcanAmmo: 500, sidewinders: 2, ironBombs: 4, chaff: 12, harms: 4 }
     },
     cards: [
         {
             n: '1',
             title: 'ARM FOR SEAD',
-            body: 'Load Mk.82s - bombs are what kill a launcher. Sidewinders are for the CAP that turns up later.',
+            body: 'AGM-88 HARM is the real weapon here - it locks any launcher that is radiating and does not need you inside its envelope. Bombs are the backup for a site that shuts down.',
             keys: [['4', 'more bombs'], ['ENTER', 'launch']]
         },
         {
             n: '2',
             title: 'WORK THE BELT',
-            body: 'Four launchers, each behind its own ridge with the gap offset from the last. Break the lock, pop over, bomb it.',
-            keys: [['3', 'select bomb'], ['SPACE', 'release']]
+            body: 'Four launchers, each behind its own ridge. When the RWR reads a site, select the HARM with [4] and fire - it flies itself onto the emission.',
+            keys: [['4', 'select HARM'], ['SPACE', 'fire']]
         },
         {
             n: '3',
-            title: 'RELOAD AND REPEAT',
-            body: 'Four bombs a sortie, four launchers. Trap aboard, rearm and go back for the rest - the boat is your magazine.',
-            keys: [['TAB', 'deck'], ['ENTER', 'relaunch']]
+            title: 'IF IT GOES QUIET',
+            body: 'A site that stops radiating breaks a HARM already in flight - bomb it instead. Trap aboard, rearm and go back for the rest.',
+            keys: [['3', 'select bomb'], ['TAB', 'deck']]
         }
     ],
     lossCondition: 'Lose the carrier and the campaign ends. Losing airframes just costs you time.',
@@ -488,7 +488,7 @@ const LAST_STAND: ScenarioDef = {
             plannedFuel: 4200
         },
         map: 'OPEN_SEA',
-        loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0, chaff: 12 }
+        loadout: { vulcanAmmo: 600, sidewinders: 6, ironBombs: 0, chaff: 12, harms: 2 }
     },
     cards: [
         {
@@ -543,7 +543,7 @@ const CARRIER_QUALS: ScenarioDef = {
         map: 'OPEN_SEA',
         noSamSites: true,
         startAirborne: true,
-        loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0, chaff: 12 }
+        loadout: { vulcanAmmo: 0, sidewinders: 0, ironBombs: 0, chaff: 12, harms: 0 }
     },
     cards: [
         {

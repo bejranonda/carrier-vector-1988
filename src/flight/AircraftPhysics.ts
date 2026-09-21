@@ -17,6 +17,7 @@ export interface AircraftLoadout {
     sidewinders: number; // count (e.g. 4)
     ironBombs: number; // count (e.g. 2)
     chaff: number; // countermeasure cartridges (e.g. 12)
+    harms: number; // AGM-88 anti-radiation missiles (e.g. 2)
 }
 
 export class AircraftPhysics {
@@ -39,7 +40,8 @@ export class AircraftPhysics {
         vulcanAmmo: 500,
         sidewinders: 4,
         ironBombs: 2,
-        chaff: CM_TUNING.capacity
+        chaff: CM_TUNING.capacity,
+        harms: 2
     };
 
     // Aerodynamic states
@@ -73,7 +75,8 @@ export class AircraftPhysics {
         const fuelMass = this.fuel * 0.8; // ~0.8 kg/L for JP-5
         const ordnanceMass = (this.loadout.vulcanAmmo * 0.25) + 
                              (this.loadout.sidewinders * 86) + 
-                             (this.loadout.ironBombs * 227);
+                             (this.loadout.ironBombs * 227) +
+                             (this.loadout.harms * 361);
         return this.emptyMass + fuelMass + ordnanceMass;
     }
 

@@ -236,7 +236,7 @@ export class HUD {
         physics: AircraftPhysics,
         sensors: SensorTacticsManager,
         targets: AirborneTarget[],
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
         renderer: VectorRenderer,
         context: HudContext
     ) {
@@ -634,7 +634,7 @@ export class HUD {
     private drawSystemsBlock(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
         layout: HudLayout,
         context: HudContext,
         sensors: SensorTacticsManager
@@ -702,10 +702,11 @@ export class HUD {
             physics.bayOpen ? THEME.caution : THEME.muted);
 
         // Weapon selector: three chips make it obvious that 1/2/3 switch stores.
-        const chips: [string, 'GUN' | 'AIM9' | 'BOMB', string][] = [
+        const chips: [string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM', string][] = [
             [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN', '1'],
             [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9', '2'],
-            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB', '3']
+            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB', '3'],
+            [`4 HARM ${physics.loadout.harms}`, 'HARM', '4']
         ];
         let chipX = x + 12;
         const chipY = y + h - 18;
@@ -771,7 +772,7 @@ export class HUD {
     private drawSystemsStrip(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB'
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM'
     ) {
         const h = 26;
         const y = this.height - 54;
@@ -783,7 +784,8 @@ export class HUD {
         const hull = Math.max(0, Math.round(100 - physics.damage));
         const wpn = selectedWeapon === 'GUN' ? `GUN ${physics.loadout.vulcanAmmo}`
             : selectedWeapon === 'AIM9' ? `AIM9 ${physics.loadout.sidewinders}`
-                : `MK82 ${physics.loadout.ironBombs}`;
+                : selectedWeapon === 'BOMB' ? `MK82 ${physics.loadout.ironBombs}`
+                    : `HARM ${physics.loadout.harms}`;
         const cells: [string, string, string][] = [
             ['THR', `${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}`, ab ? THEME.caution : THEME.ink],
             ['FUEL', `${Math.floor(physics.fuel)}L`, physics.fuel < 800 ? THEME.alert : THEME.ink],
@@ -815,7 +817,7 @@ export class HUD {
     private drawArcadeBottomBar(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
-        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB',
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
         context: HudContext,
         sensors: SensorTacticsManager
     ) {
@@ -834,7 +836,7 @@ export class HUD {
         const bar = solveArcadeBar({
             width: this.width,
             height: this.height,
-            weaponCount: 3,
+            weaponCount: 4,
             showCountermeasure: true,
             showRewind: true,
             showPadlock: true,
@@ -843,10 +845,11 @@ export class HUD {
         const slot = (id: ArcadeBarSlotId) => bar.find(s => s.id === id)?.rect;
 
         // 1. Weapon Pills
-        const wpns: [ArcadeBarSlotId, string, 'GUN' | 'AIM9' | 'BOMB'][] = [
+        const wpns: [ArcadeBarSlotId, string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM'][] = [
             ['WEAPON_0', `1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
             ['WEAPON_1', `2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
-            ['WEAPON_2', `3 MK82 ${physics.loadout.ironBombs}`, 'BOMB']
+            ['WEAPON_2', `3 MK82 ${physics.loadout.ironBombs}`, 'BOMB'],
+            ['WEAPON_3', `4 HARM ${physics.loadout.harms}`, 'HARM']
         ];
         for (const [slotId, text, weaponId] of wpns) {
             const rect = slot(slotId);

@@ -25,6 +25,7 @@ export type HudAction =
     | 'WEAPON_GUN'
     | 'WEAPON_AIM9'
     | 'WEAPON_BOMB'
+    | 'WEAPON_HARM'
     | 'ASSIST_CYCLE'
     | 'TIME_REWIND'
     | 'PADLOCK'
@@ -182,7 +183,7 @@ export function hitTestDeck(
 }
 
 export interface HudStateSnapshot {
-    selectedWeapon: 'GUN' | 'AIM9' | 'BOMB';
+    selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM';
     assistLabel: string;
     hudDensity: 'ARCADE' | 'PRO';
     padlockActive: boolean;
@@ -214,7 +215,7 @@ export function solveHudClickableAreas(
         const bar = solveArcadeBar({
             width,
             height,
-            weaponCount: 3,
+            weaponCount: 4,
             showCountermeasure: false,
             showRewind: true,
             showPadlock: true
@@ -223,6 +224,7 @@ export function solveHudClickableAreas(
             WEAPON_0: 'WEAPON_GUN',
             WEAPON_1: 'WEAPON_AIM9',
             WEAPON_2: 'WEAPON_BOMB',
+            WEAPON_3: 'WEAPON_HARM',
             ASSIST: 'ASSIST_CYCLE',
             REWIND: 'TIME_REWIND',
             PADLOCK: 'PADLOCK'
@@ -231,6 +233,7 @@ export function solveHudClickableAreas(
             WEAPON_0: '1 GUN',
             WEAPON_1: '2 AIM-9',
             WEAPON_2: '3 MK82',
+            WEAPON_3: '4 HARM',
             ASSIST: `ASSIST [${state.assistLabel.toUpperCase()}]`,
             REWIND: 'REWIND 5S',
             PADLOCK: state.padlockActive ? 'LOCK: ON' : 'PADLOCK'
@@ -284,6 +287,11 @@ export function solveHudClickableAreas(
             id: 'WEAPON_BOMB',
             rect: { x: sysX + 12 + (chipW + 6) * 2, y: chipY, w: chipW, h: chipH },
             label: '3 MK82'
+        });
+        areas.push({
+            id: 'WEAPON_HARM',
+            rect: { x: sysX + 12 + (chipW + 6) * 3, y: chipY, w: chipW, h: chipH },
+            label: '4 HARM'
         });
 
         // Bottom keybar clickable shortcuts

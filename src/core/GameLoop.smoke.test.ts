@@ -145,7 +145,7 @@ describe('GameLoop integration smoke test', () => {
 
         game.deck.aircraftState = 'CATAPULT_READY';
         game.deck.plannedFuel = 3200;               // deliberately NOT the old hardcoded 4500
-        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1, chaff: 12 };
+        game.deck.plannedLoadout = { vulcanAmmo: 400, sidewinders: 2, ironBombs: 1, chaff: 12, harms: 2 };
 
         expect(game.requestCatapultLaunch()).toBe(true);
         expect(game.deck.aircraftState).toBe('CATAPULT_LAUNCHING');
@@ -1768,6 +1768,41 @@ describe('GameLoop integration smoke test', () => {
         expect(rewindSuccess).toBe(true);
         expect(game.timeRewind.rewindsRemaining).toBe(initialUses - 1);
         expect(game.callouts.active().some(c => c.text.includes('REWIND'))).toBe(true);
+    });
+
+    it('selects and fires the AGM-88 HARM at a radiating SAM through the cockpit switch, weapon and all', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.physics.loadout.harms = 2;
+
+        const sam = game.sensors.samSites[0];
+        expect(sam).toBeDefined();
+        // Directly overhead with clear LOS - this test is about the cockpit
+        // wiring (key -> weapon -> array -> kill callback), not about
+        // threading a canyon, which IronHandScenarios.test.ts-style terrain
+        // work would be a different and much slower test to write.
+        game.physics.position = { x: sam.position.x, y: sam.position.y + 900, z: sam.position.z };
+        game.physics.velocity = { x: 0, y: 0, z: 0 };
+        runFrames(game, 5);
+
+        expect(game.sensors.activeThreats.some(t => t.id === sam.id && t.state !== 'SILENT')).toBe(true);
+
+        game.selectedWeapon = 'HARM';
+        const before = game.physics.loadout.harms;
+        game.fireSelectedWeapon();
+
+        expect(game.weapons.harms.length).toBe(1);
+        expect(game.physics.loadout.harms).toBe(before - 1);
+
+        // Run it home. Aircraft holds position so the site keeps radiating -
+        // this proves the missile can actually close and kill under the real
+        // fixed update loop, not just the hand-stepped guidance unit test.
+        for (let i = 0; i < 300 && game.weapons.harms.length > 0; i++) {
+            runFrames(game, 1);
+        }
+        expect(game.sensors.samSites.some(s => s.id === sam.id)).toBe(false);
     });
 
     it('records terrain impact as the loss cause, and clears it on the next sortie', () => {

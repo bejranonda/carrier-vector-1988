@@ -238,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (key === '1') game.selectedWeapon = 'GUN';
                 else if (key === '2') game.selectedWeapon = 'AIM9';
                 else if (key === '3') game.selectedWeapon = 'BOMB';
+                else if (key === '4') game.selectedWeapon = 'HARM';
             } else {
                 const deck = game.deck;
                 if (key === '1') deck.plannedFuel = Math.max(1000, deck.plannedFuel - 500);

@@ -4,16 +4,18 @@
  * - 20mm Vulcan tracer rounds
  * - AIM-9 Sidewinder heat-seeking missiles
  * - Mk.82 500lb Iron Bombs (ballistic freefall)
+ * - AGM-88 HARM anti-radiation missiles (locks a radiating SAM only)
  * - Vector wireframe explosion bursts
  * - Collision detection against aircraft & ground SAM nodes
  */
 
 import type { AircraftPhysics, Vector3 } from './AircraftPhysics';
 import type { VectorRenderer } from '../renderer/VectorRenderer';
-import type { TacticalTerrain, SAMSite } from '../tactics/RadarLOS';
+import type { TacticalTerrain, SAMSite, ThreatContact } from '../tactics/RadarLOS';
 import type { StrikeTarget } from '../tactics/StrikeTarget';
 import type { AirborneTarget } from '../renderer/HUD';
 import { soundFX } from '../audio/SoundFX';
+import { guideMissile } from '../tactics/MissileGuidance';
 
 export interface Bullet {
     pos: Vector3;
@@ -27,6 +29,42 @@ export interface PlayerMissile {
     targetId: string | null;
     life: number;
 }
+
+/**
+ * AGM-88 HARM. `targetSamId` is the site it launched against; the seeker has
+ * no boresight cone like the Sidewinder's - a HARM is passive RF homing, so
+ * "in range and radiating" is the whole acquisition rule, not "in front of
+ * the nose". `wentBallistic` latches once the site it is chasing stops
+ * radiating: from that point the missile flies its last commanded heading
+ * with no further correction, which is what "goes ballistic and misses"
+ * means in practice for a round already close to its target.
+ */
+export interface PlayerHarm {
+    pos: Vector3;
+    vel: Vector3;
+    targetSamId: string | null;
+    life: number;
+    wentBallistic: boolean;
+}
+
+export const HARM_TUNING = {
+    /** m/s. Faster than the Sidewinder (580) - this is a rocket-boosted
+     *  anti-radiation round with a top-attack profile, not a dogfight missile. */
+    speed: 600,
+    /**
+     * Radians/second. More generous than the SAM's own 0.25 (MissileGuidance)
+     * on purpose - decision D3: the player's ordnance stays forgiving even
+     * where the enemy's does not, because asymmetry in the player's favour is
+     * the point of the weapon existing at all.
+     */
+    maxTurnRateRadPerSec: 0.4,
+    /** Motor burn, seconds. 600 m/s * 15s ~= 9 km, covering a site's own
+     *  12 km search range from just inside its edge. */
+    fuelSeconds: 15,
+    /** Direct-hit radius, metres. Tighter than a bomb's 180 m splash - this
+     *  is an actively guided PGM, not an area weapon. */
+    hitRadius: 20
+} as const;
 
 export interface Bomb {
     pos: Vector3;
@@ -52,6 +90,13 @@ export interface WeaponsWorld {
     terrain: TacticalTerrain;
     targets: AirborneTarget[];
     samSites: SAMSite[];
+    /**
+     * This tick's radar picture. Only the HARM reads it - to know whether the
+     * site it launched against is still radiating - so it is optional rather
+     * than forcing every caller (including every test that built a minimal
+     * world before HARMs existed) to supply a full sensor snapshot.
+     */
+    threats?: ThreatContact[];
     /** Hardened structures a scenario wants destroyed. */
     strikeTargets?: StrikeTarget[];
     onTargetDestroyed?: (target: AirborneTarget) => void;
@@ -73,6 +118,7 @@ function toughnessFactor(target: AirborneTarget): number {
 export class WeaponsSystem {
     public bullets: Bullet[] = [];
     public missiles: PlayerMissile[] = [];
+    public harms: PlayerHarm[] = [];
     public bombs: Bomb[] = [];
     public explosions: ExplosionParticle[] = [];
 
@@ -186,6 +232,87 @@ export class WeaponsSystem {
     }
 
     /**
+     * Launch an AGM-88 HARM at the nearest currently-radiating SAM site.
+     *
+     * Deliberately no boresight cone, unlike the Sidewinder: a HARM is
+     * passive radio-frequency homing rather than infrared, so "in front of
+     * the nose" has no physical meaning for it. The seeker either hears a
+     * site's radar or it doesn't - the only gate is whether one is emitting
+     * within its own search-range envelope right now.
+     *
+     * Returns whether a round was actually launched, so the caller can play
+     * a "no target" cue rather than silently expending nothing. Nothing is
+     * spent when there is nothing to shoot at - a real HARM crew does not
+     * jettison a $300k missile at empty sky either.
+     */
+    public fireHarm(
+        physics: AircraftPhysics,
+        samSites: SAMSite[],
+        threats: ThreatContact[]
+    ): boolean {
+        if (physics.loadout.harms <= 0) return false;
+
+        let bestId: string | null = null;
+        let bestDist = Infinity;
+        for (const sam of samSites) {
+            const threat = threats.find(t => t.id === sam.id);
+            if (!threat || threat.state === 'SILENT') continue;
+            const dist = Math.hypot(
+                sam.position.x - physics.position.x,
+                sam.position.y - physics.position.y,
+                sam.position.z - physics.position.z
+            );
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestId = sam.id;
+            }
+        }
+        if (bestId === null) return false;
+
+        physics.loadout.harms--;
+
+        // Launched pointed AT the site, not along the aircraft's nose - this
+        // is the load-out computer committing the round to the target's
+        // bearing at the moment of release, not a boresight lock. The
+        // in-flight turn-rate limit (HARM_TUNING.maxTurnRateRadPerSec) then
+        // governs every correction after this.
+        //
+        // Launching along `fwd` instead - matching the Sidewinder's
+        // convention - was tried first and was wrong for this weapon
+        // specifically: a Sidewinder only ever locks something already
+        // inside a 30-degree cone, so starting along the nose is a fair
+        // approximation. A HARM was deliberately given no such cone, so a
+        // site anywhere - including behind or steeply below the aircraft -
+        // is a legal target, and a slow bounded turn from a 90-degree-plus
+        // initial heading error covers so much distance before it can
+        // correct that the round diverges past the target rather than
+        // curling onto it. The measured version of this failure is preserved
+        // as a regression test.
+        const target = samSites.find(s => s.id === bestId)!.position;
+        const toTarget: Vector3 = {
+            x: target.x - physics.position.x,
+            y: target.y - physics.position.y,
+            z: target.z - physics.position.z
+        };
+        const dist = Math.hypot(toTarget.x, toTarget.y, toTarget.z) || 1;
+
+        this.harms.push({
+            pos: { ...physics.position },
+            vel: {
+                x: (toTarget.x / dist) * HARM_TUNING.speed,
+                y: (toTarget.y / dist) * HARM_TUNING.speed,
+                z: (toTarget.z / dist) * HARM_TUNING.speed
+            },
+            targetSamId: bestId,
+            life: HARM_TUNING.fuelSeconds,
+            wentBallistic: false
+        });
+
+        soundFX.playMissileLaunch();
+        return true;
+    }
+
+    /**
      * Continuously computed impact point for the currently loaded Mk.82.
      *
      * The strike scenario asks for a bomb inside a 55 m radius, which is not
@@ -274,7 +401,7 @@ export class WeaponsSystem {
     }
 
     public update(dt: number, world: WeaponsWorld) {
-        const { terrain, targets, samSites, onTargetDestroyed, onSAMDestroyed, onTargetHit } = world;
+        const { terrain, targets, samSites, threats, onTargetDestroyed, onSAMDestroyed, onTargetHit } = world;
         if (this.gunFireTimer > 0) this.gunFireTimer -= dt;
 
         // 1. Bullets
@@ -401,7 +528,54 @@ export class WeaponsSystem {
             }
         }
 
-        // 3. Mk.82 Bombs
+        // 3. AGM-88 HARM anti-radiation missiles
+        for (let i = this.harms.length - 1; i >= 0; i--) {
+            const h = this.harms[i];
+            h.life -= dt;
+
+            const sam = h.targetSamId ? samSites.find(s => s.id === h.targetSamId) : undefined;
+            const threat = threats?.find(t => t.id === h.targetSamId);
+            const radiating = !!sam && !!threat && threat.state !== 'SILENT';
+
+            if (sam && radiating && !h.wentBallistic) {
+                // Ground target: zero velocity is the whole "lead" term.
+                h.vel = guideMissile(h.pos, h.vel, sam.position, { x: 0, y: 0, z: 0 }, dt,
+                    HARM_TUNING.speed, HARM_TUNING.maxTurnRateRadPerSec);
+            } else if (sam && !radiating) {
+                // The site shut down. No further correction from here - this
+                // IS "goes ballistic and misses": the round keeps its last
+                // commanded heading and speed, and only luck puts it within
+                // the hit radius from here on.
+                h.wentBallistic = true;
+            }
+
+            h.pos.x += h.vel.x * dt;
+            h.pos.y += h.vel.y * dt;
+            h.pos.z += h.vel.z * dt;
+
+            if (sam) {
+                const dist = Math.hypot(
+                    h.pos.x - sam.position.x,
+                    h.pos.y - sam.position.y,
+                    h.pos.z - sam.position.z
+                );
+                if (dist < HARM_TUNING.hitRadius) {
+                    this.spawnExplosion(sam.position, 30, '#cc88ff');
+                    if (onSAMDestroyed) onSAMDestroyed(sam);
+                    const idx = samSites.indexOf(sam);
+                    if (idx >= 0) samSites.splice(idx, 1);
+                    this.harms.splice(i, 1);
+                    continue;
+                }
+            }
+
+            if (h.pos.y <= terrain.getElevation(h.pos.x, h.pos.z) || h.life <= 0 || !sam) {
+                this.spawnExplosion(h.pos, 14, '#cc88ff');
+                this.harms.splice(i, 1);
+            }
+        }
+
+        // 4. Mk.82 Bombs
         for (let i = this.bombs.length - 1; i >= 0; i--) {
             const bomb = this.bombs[i];
             bomb.life -= dt;
@@ -452,7 +626,7 @@ export class WeaponsSystem {
             }
         }
 
-        // 4. Explosions
+        // 5. Explosions
         for (let i = this.explosions.length - 1; i >= 0; i--) {
             const exp = this.explosions[i];
             exp.life -= dt;
@@ -488,6 +662,18 @@ export class WeaponsSystem {
                 z: m.pos.z - (m.vel.z / 580) * 6
             };
             renderer.drawLine(tail, m.pos, camPos, camPitch, camYaw, camRoll, '#ffffff', 2.2);
+        }
+
+        // Render HARMs (magenta line - distinct from the white Sidewinder,
+        // since which weapon is in the air matters to a player reading the
+        // screen mid-engagement)
+        for (const h of this.harms) {
+            const tail: Vector3 = {
+                x: h.pos.x - (h.vel.x / HARM_TUNING.speed) * 7,
+                y: h.pos.y - (h.vel.y / HARM_TUNING.speed) * 7,
+                z: h.pos.z - (h.vel.z / HARM_TUNING.speed) * 7
+            };
+            renderer.drawLine(tail, h.pos, camPos, camPitch, camYaw, camRoll, '#cc88ff', 2.4);
         }
 
         // Render Bombs (short diamond or cross)
