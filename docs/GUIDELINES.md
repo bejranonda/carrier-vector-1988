@@ -359,3 +359,33 @@ When directing AI assistants on this repository, structure all prompts into 4 ex
 2. **The Exact Task:** *"Implement [Feature] in [Exact File Paths]."*
 3. **Game Feel & Behavior:** *"Focus on easing functions, visual feedback, and audio transients."*
 4. **Verification & Tests:** *"Write headless Vitest tests in `tests/...` and ensure 100% pass before touching Canvas2D."*
+
+## 11. Rules added in v1.5.0 (each one encodes a bug that already shipped)
+
+- **Never hardcode a key name in user-facing text.** Every key named in a scenario
+  card, phase, hint or banner must exist in `CONTROL_SCHEMA` and must be the key that
+  performs the action described. `Scenarios.test.ts` asserts both. The tutorial once
+  told beginners to press `[A]` for autopilot; `[A]` is roll left.
+- **A feature is not done until it is reachable.** The guided tutorial was built and
+  closed as resolved while `recommendScenario()` routed nobody to it. Verify the
+  outcome a player sees, not that the code exists.
+- **A test must not encode the bug.** Three tests asserted the broken behaviour (empty
+  drone timeline, wrong flag, `contactsAlive: 0`). When a test and a design intent
+  disagree, suspect the test.
+- **Run `npx tsc --noEmit` as well as vitest.** vitest does not typecheck; eight type
+  errors sat in an "all tests passing" tree.
+- **One geometry, one solver.** A hit-tester must consume the same solver as the
+  renderer (`solveArcadeBar`). Two copies had drifted 8 px apart.
+- **Tune from measurement, not intuition.** `SAM_MISSILE.maxTurnRateRadPerSec` was set by
+  flying the law against a jet and recording closest approach; the table is in the
+  source and the envelope is asserted. Change the constant, re-measure.
+- **No parallel difficulty numbers.** Counterplay depth belongs in visible physics
+  (the missile's turn limit), not a hidden per-difficulty probability.
+- **Player ordnance may be more forgiving than enemy ordnance**, on purpose, and the
+  asymmetry is documented where the constant lives.
+- **A weapon with no boresight cone must not launch along the nose.** The first HARM did
+  and diverged from any site not roughly ahead; it launches at the target now.
+- **Offer, don't ask.** First-run hints (colour-blind palette, stick flip) appear on the
+  briefing until the setting is touched, then retire. Prefer that to a modal question.
+- **One look.** Do not add a second screen style; every style is another thing a beginner
+  must understand before flying.

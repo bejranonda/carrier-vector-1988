@@ -53,10 +53,9 @@ impossible.
 
 The bloom pass runs at ¼ resolution over 2–3 composite passes. On weak
 integrated GPUs at large window sizes this can cost several milliseconds per
-frame. **Mitigation:** press `P` to cycle the display mode; `CLEAN` disables
-the bloom pass entirely. `PostProcess.nextQuality()` implements an adaptive
-ladder with hysteresis, but it is not yet wired to a live frame-time average —
-quality follows the chosen display mode.
+frame. **Mitigation:** `PostProcess.nextQuality()` is an adaptive ladder with
+hysteresis, wired to a rolling frame-time average, so bloom backs itself off on
+slow hardware. There is no longer a display-mode key (see #46).
 
 ## 7. Canvas2D `filter` support
 
@@ -73,8 +72,8 @@ display doesn't quadruple the bloom pass cost for no visible gain.
 
 This replaces the previous `image-rendering: pixelated` 1:1 backing store,
 which was deliberate retro chunkiness but made 10–12px HUD glyphs genuinely
-hard to read on every HiDPI screen. `RETRO CRT` display mode still provides
-the scanline/vignette/persistence look without sacrificing glyph sharpness.
+hard to read on every HiDPI screen. The single screen style still carries a
+light phosphor trail and vignette without sacrificing glyph sharpness.
 
 ## 9. Fixed timestep changes flight feel versus older builds
 
@@ -143,15 +142,11 @@ The deck state machine tracks exactly one aircraft. Spare airframes are a
 counter, not a fleet — you cannot have several jets at different readiness
 states simultaneously. This limits the depth of the logistics loop.
 
-## 14. Adaptive quality ceiling is the player's choice
+## 14. Adaptive quality can only back off **[Updated in v1.5.0]**
 
-A rolling frame-time average (EMA) now drives `PostProcess.nextQuality()` every
-0.5 s, but the result is clamped to the ceiling the chosen display mode allows.
-
-**Consequence:** the game will back the bloom pass off on slow hardware, but it
-will never raise quality above what `P` selected — so a player who picked `CLEAN`
-on a fast machine stays on `CLEAN`. That is deliberate: an effect the player
-turned off must stay off.
+A rolling frame-time average (EMA) drives `PostProcess.nextQuality()` every
+0.5 s, clamped to the ceiling of the one screen style (LOW bloom). The game
+lowers bloom on slow hardware and never raises it above that ceiling.
 
 ## 15. The deck screen sheds panels on short viewports
 
@@ -392,7 +387,7 @@ player therefore cannot rush a turnaround, and does not lose anything they
 had before - but closing this gap fully means giving the deck screen real
 touch controls, not only this one.
 
-## 32. Onboarding overlaps with live combat **[REOPENED — not actually resolved]**
+## 32. Onboarding overlaps with live combat **[Resolved in v1.5.0]**
 
 ~~Resolved via `TRAINING_SORTIE` in `src/core/Scenarios.ts`.~~
 
@@ -439,7 +434,7 @@ Resolved via `VectorDebrisSystem` in `src/renderer/VectorDebris.ts`. Exploding e
 
 Full analysis: [`docs/reviews/v1.5.0-dev/`](reviews/v1.5.0-dev/COMPREHENSIVE_GAME_REVIEW.md)
 
-## 36. Tutorial teaches the wrong autopilot key **[P0 BLOCKER]**
+## 36. Tutorial teaches the wrong autopilot key **[Resolved in v1.5.0]**
 
 `TRAINING_SORTIE` instructs the player to press `[A]` for autopilot in four
 places (`src/core/Scenarios.ts:599, 600, 633, 634`). `[A]` is bound to **roll
@@ -455,14 +450,14 @@ user-facing key name from `CONTROL_SCHEMA`, and add a test asserting that every
 key string in `Scenarios.ts`, `Tutorial.ts` and `HUD.ts` exists in the schema
 for that context.
 
-## 37. Autopilot tutorial step validates nothing **[P0]**
+## 37. Autopilot tutorial step validates nothing **[Resolved in v1.5.0]**
 
 `src/core/Scenarios.ts:635` — `isComplete: (s) => s.airSpeed > 90 && s.missionSeconds > 20`.
 The step passes on a timer and then announces `"AUTOPILOT VERIFIED"` to a player
 who never engaged the autopilot. A tutorial that validates nothing teaches
 nothing, and a tutorial that lies destroys trust in every later instruction.
 
-## 38. No defensive counterplay against SAM missiles **[P0]**
+## 38. No defensive counterplay against SAM missiles **[Resolved in v1.5.0]**
 
 There are **zero countermeasures in the codebase** — no chaff, flare, ECM or
 decoy. `grep -rn "chaff|flare|countermeasure" src/` returns nothing.
@@ -480,7 +475,7 @@ game resolves as a coin flip on terrain proximity.
 **Fix:** clamp the missile turn rate (~25 deg/s) and use lead pursuit (~30 lines);
 add chaff/flares on `[X]` with aspect-dependent break probability.
 
-## 39. The SEAD mission ships without SEAD weapons **[P1]**
+## 39. The SEAD mission ships without SEAD weapons **[Resolved in v1.5.0]**
 
 `IRON_HAND` (`src/core/Scenarios.ts:404`) asks the player to roll back a SAM
 belt. The entire anti-SAM arsenal is:
@@ -498,7 +493,7 @@ spike, and it is caused by missing equipment rather than intended challenge.
 state and goes ballistic if the site goes `SILENT`. The four-state radar machine
 this requires already exists in `RadarLOS.ts:307-325`.
 
-## 40. Pitch axis defaults against genre convention **[P1]**
+## 40. Pitch axis defaults against genre convention **[Partly resolved in v1.5.0]**
 
 `Controls.ts:31-32` binds `ArrowUp` to **pitch up**. The flight-sim convention
 (MSFS, X-Plane, DCS, IL-2, Ace Combat) is `ArrowUp` = stick forward = **nose
@@ -517,7 +512,7 @@ layer. **Consequence:** `WASD`+`QE` occupy different physical positions on
 AZERTY and QWERTZ keyboards, so the game is measurably harder outside
 QWERTY regions, and left-handed or limited-mobility players have no recourse.
 
-## 42. Incoming missiles are effectively invisible **[P1]**
+## 42. Incoming missiles are effectively invisible **[Partly resolved in v1.5.0]**
 
 The SAM missile is drawn as a single 8-metre line segment
 (`src/core/GameLoop.ts:2310-2316`). At its 5,000 m launch range that is
@@ -526,9 +521,64 @@ sub-pixel. There is no time-to-impact readout and no directional threat caret.
 **Consequence:** the player is told they are in danger without being shown the
 danger — anxiety without agency, which is the precise recipe for quitting.
 
-## 43. Death has no post-mortem **[P2]**
+## 43. Death has no post-mortem **[Resolved in v1.5.0]**
 
 On destruction the player is given no causal explanation: not the killer, the
 range, the mistake, nor what to do differently. Unexplained death is the leading
 rage-quit driver in combat games, and every number needed for the explanation is
 already present in the simulation state.
+
+
+---
+
+# Resolution notes and new limitations (v1.5.0)
+
+**#32 / #36 / #37** - `TRAINING_SORTIE` carries an explicit `isFirstFlight` flag and
+`recommendScenario()` matches it; the cards say `[F]`; a real MiG-23 drone spawns; the autopilot
+step checks `flightAssistMode === 'AUTO'`. Two guards in `Scenarios.test.ts` fail if a mission names
+a key the schema does not bind, or the wrong key for the action described. #32 had been closed in
+1.4.0 because the feature was *built*, not because it was *reachable* - verify the outcome, not the
+implementation.
+
+**#38** - `tactics/MissileGuidance.ts` (lead pursuit, 0.25 rad/s) and `flight/Countermeasures.ts`
+(chaff). Chaff **always** works, by design: `ThreatLevel.ts` forbids a second, hidden difficulty
+table, and the skill lives in the visible guidance law. The tuning is asserted in
+`MissileGuidance.test.ts`; retuning the constant without re-measuring the envelope fails.
+
+**#39** - The AGM-88 HARM. It is *not* a cure-all: it locks only a radiating site, and if that site
+goes SILENT mid-flight the round flies ballistic. The player's HARM turn limit (0.4 rad/s) is
+deliberately more forgiving than the SAM's - asymmetry in the player's favour is intended.
+
+**#40** - The briefing offers the stick flip once (`I`). The default is still `UP` = climb; an
+unprompted first-run *question* was judged one screen too many.
+
+**#42** - Time-to-impact and a decoy cue landed. The missile is still drawn as a short line
+(34 m) and there is no directional threat caret; at 5 km it remains small.
+
+## 44. Chaff and the HARM have no touch controls
+
+The touch layout has three weapon buttons and no room for a fourth or a chaff button without
+re-solving `TouchLayout` and its hit-test priority order. A touch pilot can neither press `X` nor
+select the HARM. Same shape as #31 (deck touch parity), recorded rather than rushed.
+
+## 45. PRO HUD weapon-chip click regions are fixed-width
+
+The ARCADE bar's geometry is now one solver shared by renderer and hit-tester. The PRO systems
+panel is not: its chips are drawn at measured text width but hit-tested at a fixed 68 px, so a long
+label can desynchronise them. Fix the same way (`solveArcadeBar`'s approach).
+
+## 46. `P` and the CLEAN / RETRO looks are gone **[By design]**
+
+One screen style, deliberately. A stored value from the old ladder is ignored and the game boots into
+MODERN. RETRO's per-stroke shadow cost ~7 ms/frame at 1600x900 and its 0.7 vignette hurt legibility.
+
+## 47. The HARM's kill radius and range are tuned by reasoning, not by playtest
+
+`HARM_TUNING` (600 m/s, 15 s burn, 20 m hit radius) has unit tests but has not been flown by a human
+against the SHATTERED_RIDGE belt. Expect a balance pass.
+
+## 48. Not shipped from the v1.5.0 plan
+
+Cruise-missile fire support (`Z`), progressive control disclosure by mission, struggle detection
+(auto-offering the stick flip after repeated pitch reversals), key remapping, and the autopilot
+coordinated-turn rework (#19). Cut deliberately when the scope was simplified.

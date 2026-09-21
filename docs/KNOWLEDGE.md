@@ -1119,3 +1119,38 @@ Synthesis parameters for 1980s military cockpit voice synthesis:
 - Volume: `0.95`
 - Voice filter: English (`en-US`), prioritizing female voices (`Samantha`, `Victoria`, `Zira`, or generic `female`).
 
+## 8. Missile Guidance Math (v1.5.0)
+
+### Lead intercept
+For a missile at `m` with speed `s` and a target at `p` moving at constant `v`, the flight
+time `t` satisfies `|p + v t - m| = s t`. With `r = p - m`:
+
+    (|v|^2 - s^2) t^2 + 2 (v . r) t + |r|^2 = 0
+
+Take the smallest strictly positive root; the aim point is `p + v t`. No positive real root
+(target outrunning the missile) falls back to pure pursuit. When `|v| = s` the quadratic
+degenerates to `2 (v . r) t + |r|^2 = 0`.
+
+### Bounded turn
+`rotateToward(a, b, max)`: `angle = acos(a . b)`; if `angle <= max` return `b`; else
+`tangent = normalise(b - a cos(angle))` and the result is `a cos(max) + tangent sin(max)`.
+Exactly antiparallel inputs have no unique tangent, so any perpendicular is built from the
+world axis least aligned with `a`.
+
+### Time to impact
+`range / closing speed`, where closing speed is the missile velocity projected on the
+line of sight; `null` when it is not closing (a countdown must not show).
+
+### Turn-rate to lateral acceleration
+`a = speed * omega`. 480 m/s at 0.25 rad/s = 120 m/s^2 (~12 g).
+
+### Tuning table (250 m/s jet, 40 m fuze, closest approach)
+
+| turn rate | straight | break at once, 3 km | break at once, 1.5 km |
+| --- | --- | --- | --- |
+| 0.20 rad/s | 2 m | 289 m | 123 m |
+| 0.25 rad/s | 2 m | 98 m | 29 m |
+| 0.30 rad/s | 2 m | 2 m | 2 m |
+
+### Chaff coasting
+A decoyed missile at 480 m/s covers ~1.7 km in the 3.5 s window - enough to overshoot.

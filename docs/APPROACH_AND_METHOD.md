@@ -416,3 +416,38 @@ whose cutoff tracks throttle; the afterburner adds a bandpassed white-noise
 loop. RWR states map to distinct pulse rates so threat escalation is audible
 without looking at the scope — which matters, because the correct response to a
 launch warning is to look *outside* at the terrain.
+
+## 8. Defence, Counterplay & the HARM (v1.5.0)
+
+**The missile is a guidance law, not a vector.** The SAM used to set
+`missileVel = normalise(aircraft - missile) * 480` every tick: an unbounded turn rate, so
+no manoeuvre could ever work. `tactics/MissileGuidance.ts` replaces it with lead pursuit
+(`leadInterceptPoint`, the quadratic for the flight time at which missile and target
+coincide) under a bounded turn (`rotateToward`, with an antiparallel guard against NaN).
+`guideMissile` returns a new heading so the law stays pure and testable.
+
+**Measure the envelope, then pin it.** The turn rate was chosen by simulation: fly the law
+against a 250 m/s jet, record closest approach across turn rates and reaction times. At
+0.30 rad/s even an instant break dies; at 0.20 a break wins at point-blank and chaff is
+pointless; 0.25 satisfies all three needed behaviours (straight = hit, early break vs a
+distant launch = live, close launch = still hit). The tests assert exactly that gradient.
+
+**Chaff is deterministic on purpose.** `flight/Countermeasures.ts` is a cartridge count, a
+recycle timer and a decoy expiry expressed as absolute mission time (so it survives being
+written by the weapons bridge and read by the sensor tick without a second clock). No
+probability: the rule is one sentence a beginner can learn in one sortie, the cost is
+scarcity, and the depth lives in the guidance law where the player can see it.
+
+**HARM = the radar state machine, reused.** The four-state RWR model (`SILENT / SEARCH /
+TRACK / LAUNCH`) already existed. The HARM needs one fact from it - *is this site radiating
+right now?* - so `WeaponsWorld` gained an optional `threats` snapshot. Acquisition has no
+cone (passive RF); the round is committed to the site's bearing at release, then corrects
+under `HARM_TUNING.maxTurnRateRadPerSec`; a site that goes SILENT latches `wentBallistic`.
+
+**Death teaches.** `core/PostMortem.ts` maps a `LossCause` (SAM / CANNON / TERRAIN + who) to
+one causal line and one tip. GameLoop records the source where damage is applied and clears
+it every sortie so a stale cause can never be shown.
+
+**A first flight that cannot fail.** `combatShielded` now also catches a descent into the
+sea (the wingman hauls the jet clear) and floors fuel, while leaving the glideslope near the
+boat alone, since that is the lesson.
