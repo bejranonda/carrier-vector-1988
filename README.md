@@ -9,7 +9,7 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-917%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-921%20passing-00ff66)](https://vitest.dev/)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +56,7 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 800 headless Vitest tests
+npm run test     # 921 headless Vitest tests
 npm run preview  # serve the production build
 ```
 
@@ -637,6 +637,14 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 
 ## Future Roadmap
 
+Shipped in v1.8.0 ("Visceral Feedback & Beginner Accessibility"):
+- Smart target auto-acquisition in `ASSIST` (initial threat lock on takeoff) and `AUTO` (continuous pursuit navigation) modes so beginners don't fly past enemies without locking on.
+- 3.8× increase in kill-confirmed screen shake and expanded 28-fragment 3D vector debris with 50 m/s explosive dispersal for visceral dogfight feedback.
+- Anti-stall cruise throttle protection in `ASSIST` mode preventing stalling when cruising if the pilot has not intentionally retarded throttle.
+- HUD decluttering in `ARCADE` mode (intuitive `FUEL %` instead of engineering liters).
+- Prioritized emergency warnings over tutorial instructions, while tutorial prompts take priority over routine tactical notices.
+- Default first-sortie routing to `TRAINING_SORTIE` on browser start for first-time pilots.
+
 Shipped in v1.7.0: Increased the size of the radar for readability, added a comprehensive review on balancing complexity with entertainment for beginners (`docs/reviews/review-v1.7.0.md`).
 
 Shipped in v1.6.0 ("Turn and Burn"): banking turns the jet (and the orientation bug that pushed lift the
@@ -646,12 +654,12 @@ names the killer, fairer enemy guns with a warning, attack coaching, and first-t
 
 Next, ranked by what it buys a new player:
 
-1. **Tune the turn** — ~9°/s held-bank and a ~19 s sustained 180° are energy-limited; try a lower assist
-   alpha target with a stick in hand (Known Issues #56).
-2. **A "first sortie" qualification debrief** — `TRAINING_SORTIE` exists; give finishing it a fanfare and
+1. **A "first sortie" qualification debrief** — `TRAINING_SORTIE` exists; give finishing it a fanfare and
    a "WINGS" moment (#55).
-3. **Branching archipelago map** — a new map, with the scenarios re-balanced for it (#53).
-4. **Altitude on the radar**, a **guns-lock tone**, and a **setting to turn the turn assist off** (#51, #57, #59).
+2. **Branching archipelago map** — a new map, with the scenarios re-balanced for it (#53).
+3. **Altitude on the radar**, a **guns-lock tone**, and a **setting to turn the turn assist off** (#51, #57, #59).
+4. **Tune the turn** — ~9°/s held-bank and a ~19 s sustained 180° are energy-limited; try a lower assist
+   alpha target with a stick in hand (Known Issues #56).
 
 ---
 

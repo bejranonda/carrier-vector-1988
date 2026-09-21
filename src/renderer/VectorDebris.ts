@@ -26,9 +26,9 @@ export interface DebrisFragment {
 export const DEBRIS_CONFIG = {
     DEFAULT_LIFESPAN: 1.2, // seconds
     MIN_FRAGMENTS: 10,
-    MAX_FRAGMENTS: 16,
-    MIN_BLAST_SPEED: 15.0, // m/s
-    MAX_BLAST_SPEED: 40.0, // m/s
+    MAX_FRAGMENTS: 28,
+    MIN_BLAST_SPEED: 18.0, // m/s
+    MAX_BLAST_SPEED: 50.0, // m/s
     GRAVITY: 9.81,          // m/s^2
     DRAG_COEFFICIENT: 0.35, // 1/s
     MAX_ACTIVE_FRAGMENTS: 128

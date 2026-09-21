@@ -32,7 +32,7 @@ describe('rotateAroundAxis', () => {
 });
 
 describe('VectorDebrisSystem', () => {
-    it('spawns 10 to 16 fragments upon target mesh destruction', () => {
+    it('spawns fragments within configured limits upon target mesh destruction', () => {
         const system = new VectorDebrisSystem();
         const dummyLines: WireframeLine[] = [
             { p1: { x: -2, y: 0, z: 0 }, p2: { x: 2, y: 0, z: 0 }, color: '#ff3333' },

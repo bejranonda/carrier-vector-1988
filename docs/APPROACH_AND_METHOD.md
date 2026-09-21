@@ -17,11 +17,11 @@ consequence rather than a post-effect bolted onto a modern engine.
 layer reports them. Nothing is faked for effect: when the RWR screams, a real
 line-of-sight ray actually connects a SAM to your aircraft.
 
-**Balancing Simulation with Entertainment.** (New in v1.7.0). While zero-dependency
-fidelity is the engineering goal, the user experience must account for cognitive
-load. A pure simulation is intimidating; therefore, presentation layers (like radar
-size and HUD clutter) must prioritize readability and beginner accessibility,
-bridging the gap between a hardcore flight model and arcade enjoyment.
+**Balancing Simulation with Entertainment & Visceral Rewards.** (Refined in v1.8.0). While zero-dependency
+fidelity is the engineering goal, player experience dictates whether a game is fun or punitive. A pure simulation
+can be intimidating; therefore, the presentation and assist layers (radar sizing, smart auto-targeting, anti-stall
+cruise floor, 3.8× camera trauma on splashes, and 28-piece vector debris explosions) bridge the gap between
+mathematical 6-DOF rigor and visceral arcade satisfaction without compromising aerodynamic truth.
 
 **Mechanics must have consequence.** The most important lesson from this
 codebase's history: a system that is beautifully implemented but wired to

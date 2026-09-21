@@ -22,7 +22,7 @@
  * than eyeballed on the debrief screen.
  */
 
-export type LossCauseKind = 'SAM' | 'CANNON' | 'TERRAIN';
+export type LossCauseKind = 'SAM' | 'CANNON' | 'TERRAIN' | 'STALL' | 'FUEL' | 'OCEAN';
 
 export interface LossCause {
     kind: LossCauseKind;
@@ -34,6 +34,9 @@ export interface LossCause {
 export function formatLossCause(cause: LossCause | null): string | null {
     if (!cause) return null;
     if (cause.kind === 'TERRAIN') return 'LOST TO TERRAIN IMPACT';
+    if (cause.kind === 'STALL') return 'LOST TO AERODYNAMIC STALL / SPIN';
+    if (cause.kind === 'FUEL') return 'LOST TO FUEL EXHAUSTION';
+    if (cause.kind === 'OCEAN') return 'DITCHED IN THE OCEAN';
     return `KILLED BY ${cause.detail}`;
 }
 
@@ -47,6 +50,12 @@ export function postMortemTip(cause: LossCause | null): string | null {
             return "Don't let a bandit close inside 1,600 m on your tail - break before it gets a guns solution.";
         case 'TERRAIN':
             return 'Watch altitude AGL below 300 m - pull up before the ridge fills the windscreen, not after.';
+        case 'STALL':
+            return 'Push nose DOWN [S] and advance throttle [SHIFT] to recover airflow before pulling up.';
+        case 'FUEL':
+            return 'Afterburner burns fuel 3.5× faster. Manage power and return to CV-68 before tanks run dry.';
+        case 'OCEAN':
+            return 'Maintain at least 150 m altitude over water until established on the carrier glideslope.';
         default:
             return null;
     }

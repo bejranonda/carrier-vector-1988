@@ -411,6 +411,17 @@ describe('resolveControls', () => {
         expect(d.roll).toBeCloseTo(0.5, 6);
     });
 
+    it('ASSIST protects a slow cruising aircraft with anti-stall throttle', () => {
+        const slowState = state({ airSpeed: 120, throttle: 0.2, onApproach: false });
+        const d = resolveControls('ASSIST', slowState, input(), null);
+        expect(d.throttle).toBeGreaterThan(0.5);
+
+        // Does not override intentional retard during landing approach
+        const approachState = state({ airSpeed: 120, throttle: 0.2, onApproach: true });
+        const dApp = resolveControls('ASSIST', approachState, input({ throttle: -1 }), null);
+        expect(dApp.throttle).toBe(-1);
+    });
+
     it('annunciates STALL when the limiter trims the pilot back', () => {
         const d = resolveControls('ASSIST', state({ alpha: 0.24 }), input({ pitch: 1, roll: 1 }), null);
         expect(d.pitch).toBeLessThan(1);

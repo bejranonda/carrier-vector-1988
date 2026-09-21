@@ -375,6 +375,18 @@ describe('GameLoop integration smoke test', () => {
         expect(game.training.checklist().length).toBe(6);
     });
 
+    it('selects the training sortie on first start for new pilots', () => {
+        const game = new GameLoop(makeCanvasStub());
+        const originalRaf = window.requestAnimationFrame;
+        try {
+            window.requestAnimationFrame = () => 0;
+            game.start();
+            expect(game.scenario.id).toBe('TRAINING_SORTIE');
+        } finally {
+            window.requestAnimationFrame = originalRaf;
+        }
+    });
+
     it('rebuilds the world when a scenario is selected', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);

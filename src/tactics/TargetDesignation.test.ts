@@ -268,6 +268,21 @@ describe('TargetTracker', () => {
         tracker.refresh(shooter(), []);
         expect(tracker.cycle()).toBeNull();
         expect(tracker.designatedId).toBeNull();
+        expect(tracker.autoAcquire()).toBeNull();
+    });
+
+    it('auto-acquires top candidate when unlocked, and preserves existing lock', () => {
+        const tracker = new TargetTracker();
+        tracker.refresh(shooter(), contacts);
+        expect(tracker.designatedId).toBeNull();
+        const acquired = tracker.autoAcquire();
+        expect(acquired?.target.id).toBe('one');
+        expect(tracker.designatedId).toBe('one');
+
+        // Second call preserves current lock
+        tracker.designateById('two');
+        expect(tracker.autoAcquire()?.target.id).toBe('two');
+        expect(tracker.designatedId).toBe('two');
     });
 });
 

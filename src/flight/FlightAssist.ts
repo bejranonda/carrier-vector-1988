@@ -384,11 +384,21 @@ export function resolveControls(
     } else {
         const held = attitudeHold(state, input);
         const levelling = Math.abs(input.pitch) <= 0.01 || Math.abs(input.roll) <= 0.01;
+        let throttleDemand = input.throttle;
+
+        // Anti-stall cruise protection in ASSIST mode:
+        // When not flying an approach, if the pilot is not actively retarding throttle (< 0)
+        // and airspeed decays toward danger (< 130 m/s), command positive throttle
+        // so beginners don't fall out of the sky simply because they forgot to hold SHIFT.
+        if (level === 'ASSIST' && !state.onApproach && input.throttle >= 0 && state.airSpeed < 130 && state.throttle < 0.6) {
+            throttleDemand = Math.max(throttleDemand, 0.7);
+        }
+
         demand = {
             pitch: held.pitch,
             roll: held.roll,
             yaw: 0,
-            throttle: input.throttle,
+            throttle: throttleDemand,
             override: levelling ? 'LEVEL' : 'NONE'
         };
     }

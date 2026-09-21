@@ -52,8 +52,8 @@ export const SHAKE_SOURCES = {
     damageTaken: 0.55,
     catapultStroke: 0.45,
     wireCatch: 0.70,
-    /** A kill you caused, at any range - a small punctuation, not an event. */
-    killConfirmed: 0.10
+    /** A kill you caused, giving physical, visceral weight to aircraft destruction. */
+    killConfirmed: 0.38
 } as const;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));

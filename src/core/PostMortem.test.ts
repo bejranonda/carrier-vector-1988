@@ -16,13 +16,19 @@ describe('formatLossCause', () => {
         expect(formatLossCause({ kind: 'TERRAIN', detail: 'terrain' })).toBe('LOST TO TERRAIN IMPACT');
     });
 
+    it('formats stall, fuel, and ocean ditch causes correctly', () => {
+        expect(formatLossCause({ kind: 'STALL', detail: 'stall' })).toBe('LOST TO AERODYNAMIC STALL / SPIN');
+        expect(formatLossCause({ kind: 'FUEL', detail: 'fuel' })).toBe('LOST TO FUEL EXHAUSTION');
+        expect(formatLossCause({ kind: 'OCEAN', detail: 'water' })).toBe('DITCHED IN THE OCEAN');
+    });
+
     it('is null when there is nothing to report', () => {
         expect(formatLossCause(null)).toBeNull();
     });
 });
 
 describe('postMortemTip', () => {
-    const kinds: LossCause['kind'][] = ['SAM', 'CANNON', 'TERRAIN'];
+    const kinds: LossCause['kind'][] = ['SAM', 'CANNON', 'TERRAIN', 'STALL', 'FUEL', 'OCEAN'];
 
     it('gives a distinct, non-empty tip for every cause kind', () => {
         const tips = kinds.map(kind => postMortemTip({ kind, detail: 'x' }));

@@ -5,7 +5,39 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0] — 2026-09-21
+## [1.8.0] — 2026-09-21
+
+**"Entertainment, Visceral Impact & Beginner Accessibility."** Directly responds to comprehensive playtest reviews highlighting beginner cognitive overload, lack of kinetic reward on hits, and targeting friction. Bridges authentic 6-DOF physics with intuitive feedback:
+
+### Added & Enhanced
+- **Smart Target Auto-Acquisition (`TargetDesignation.ts`, `GameLoop.ts`)**:
+  - Eliminates "flying blind" friction for new pilots.
+  - In `AUTO` (autopilot) mode, continuously locks the top-priority threat so the autopilot can intercept.
+  - In `ASSIST` mode, automatically locks onto the lead threat upon takeoff so the pilot immediately receives HUD brackets, closure rate, and range without needing to know the `[T]` key.
+  - Respects manual cycle (`[T]`) and manual release (`[DEL]`).
+- **Visceral Kinetic Combat Payoff (`CameraShake.ts`, `VectorDebris.ts`, `HUD.ts`)**:
+  - Kill confirmed camera trauma increased by 3.8× (trauma-squared amplitude jumped from 0.01 to 0.144) for canopy-rattling feedback on splashes.
+  - Vector debris fragmentation increased from 16 to 28 fragments with 50 m/s explosive dispersal velocity.
+  - Kill callouts highlighted with high-visibility gold illumination (`THEME.caution`) and glowing halo.
+- **Anti-Stall Cruise Protection (`FlightAssist.ts`)**:
+  - In `ASSIST` mode, if airspeed drops below 130 m/s while cruising (and pilot is not intentionally holding throttle down), the flight computer maintains positive throttle floor so beginners don't stall out from neglecting throttle keys.
+- **HUD Readability & Decluttering (`HUD.ts`)**:
+  - In `ARCADE` mode, replaced raw engineering fuel volume (`4321 L`) with clean percentage (`FUEL 86%`).
+  - Prioritized emergency warnings (stall, terrain, SAM launch) over training steps, while keeping active training steps prioritized over routine informational hints.
+- **Enhanced Post-Mortem Diagnostics (`PostMortem.ts`)**:
+  - Added specific loss causes and actionable recovery tips for aerodynamic stalls, fuel exhaustion, ocean ditching, and terrain impact.
+- **Beginner Sortie Recommendation (`GameLoop.ts`)**:
+  - First-time players with no flight records default to `TRAINING_SORTIE` on browser start, preventing rookies from getting thrown into 5-wave combat strikes unexpectedly.
+
+---
+
+## [1.7.0] — 2026-09-21
+
+**"Radar Readability & Experience Audit."**
+- Increased tactical radar HUD size across all breakpoints (125–185 px, radius 58–86 px) for clear grid and contact interpretation.
+- Published 25-Pillar game review and entertainment audit (`docs/reviews/review-v1.7.0.md`).
+
+---
 
 **"Turn and Burn."** A second human playtest of the live build said: *I cannot turn left or right, the
 jet can only go north; the radar is not clear; I died and do not know why; there is too much on the

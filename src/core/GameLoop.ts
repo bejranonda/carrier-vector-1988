@@ -333,6 +333,8 @@ export class GameLoop {
      * on, and where the autopilot flies.
      */
     public tracker = new TargetTracker();
+    private manualTargetCleared = false;
+    private hasInitialTargetAcquired = false;
 
     /**
      * What the pilot can actually see. Designation used to rank every contact
@@ -476,6 +478,8 @@ export class GameLoop {
 
         applyPalette(this.palette);
         this.applyDisplayMode();
+        this.scenario = scenarioById(DEFAULT_SCENARIO);
+        this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === DEFAULT_SCENARIO);
         this.applyScenario(this.scenario);
     }
 
@@ -779,6 +783,8 @@ export class GameLoop {
         this.countermeasures = createCountermeasureState(loadout.chaff);
         this.lastLossCause = null;
         this.dying = null;
+        this.manualTargetCleared = false;
+        this.hasInitialTargetAcquired = false;
     }
 
     /** Seed the end-of-catapult-stroke flight state. */
@@ -803,6 +809,8 @@ export class GameLoop {
         this.physics.fuel = 4500;
         this.deck.aircraftState = 'AIRBORNE';
         this.currentView = 'MICRO_FLIGHT';
+        this.manualTargetCleared = false;
+        this.hasInitialTargetAcquired = false;
         this.training.skip();
     }
 
@@ -912,7 +920,11 @@ export class GameLoop {
         this.shake(SHAKE_SOURCES.damageTaken * 1.6);
         this.flash(THEME.alert, 0.9);
         this.physics.throttle = 0;
-        if (this.lastLossCause?.kind === 'TERRAIN') this.physics.velocity = { x: 0, y: 0, z: 0 };
+        const isGroundImpact = this.lastLossCause?.kind === 'TERRAIN'
+            || this.lastLossCause?.kind === 'STALL'
+            || this.lastLossCause?.kind === 'FUEL'
+            || this.lastLossCause?.kind === 'OCEAN';
+        if (isGroundImpact) this.physics.velocity = { x: 0, y: 0, z: 0 };
     }
 
     /** Issue a fresh airframe after a loss. */
@@ -1021,6 +1033,10 @@ export class GameLoop {
     }
 
     public start() {
+        const neverFlown = SCENARIOS.every(s => recordFor(this.missionRecords, s.id).attempts === 0);
+        if (neverFlown) {
+            this.selectScenarioById('TRAINING_SORTIE');
+        }
         requestAnimationFrame(this.step.bind(this));
     }
 
@@ -1702,6 +1718,16 @@ export class GameLoop {
             { position: this.physics.position, forward: this.physics.forwardVector },
             candidates.filter(c => this.visibility.isVisible(c.id))
         );
+
+        // Auto-acquisition for beginners:
+        // 1. In AUTO mode (autopilot), continuously maintain a target lock so the autopilot can prosecute.
+        // 2. In ASSIST mode, acquire the initial threat after takeoff so new pilots don't fly blind without HUD brackets.
+        if (this.deck.aircraftState === 'AIRBORNE' && !this.manualTargetCleared) {
+            if (this.assistLevel === 'AUTO' || !this.hasInitialTargetAcquired) {
+                const acquired = this.tracker.autoAcquire();
+                if (acquired) this.hasInitialTargetAcquired = true;
+            }
+        }
     }
 
     // -----------------------------------------------------------------
@@ -1802,6 +1828,8 @@ export class GameLoop {
     /** Step the designation through the priority-ordered scope. */
     public cycleDesignation(direction: number = 1): TargetSolution | null {
         if (this.deck.aircraftState !== 'AIRBORNE') return null;
+        this.manualTargetCleared = false;
+        this.hasInitialTargetAcquired = true;
         this.refreshDesignation();
         const chosen = this.tracker.cycle(direction);
         if (chosen) {
@@ -1817,6 +1845,8 @@ export class GameLoop {
     public releaseDesignation() {
         if (!this.tracker.designatedId) return;
         this.tracker.clear();
+        this.manualTargetCleared = true;
+        this.hasInitialTargetAcquired = true;
         this.deck.log('DESIGNATION RELEASED.');
     }
 
@@ -2105,7 +2135,7 @@ export class GameLoop {
         }
         if (this.physics.position.y <= groundElevation + 2) {
             this.weapons.spawnExplosion(this.physics.position, 40, '#ff3300');
-            this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 16);
+            this.debris.spawnFromMesh([], this.physics.position, this.physics.velocity, '#ff3300', 20);
             this.physics.position.y = groundElevation + 2;
             this.lastLossCause = { kind: 'TERRAIN', detail: 'terrain' };
             this.replaceAirframe('MAYDAY: AIRCRAFT LOST TO TERRAIN IMPACT IN CANYON!');
@@ -2154,9 +2184,9 @@ export class GameLoop {
         // A kill at knife-fighting range should rattle the canopy; one at
         // five kilometres is a flash on the horizon.
         this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedTarget.position), 900));
-        this.flash(THEME.phosphor, 0.12);
+        this.flash(THEME.phosphor, 0.22);
         const meshLines = isBomber(destroyedTarget) ? this.bomberMesh.lines : this.mig23Mesh.lines;
-        this.debris.spawnFromMesh(meshLines, destroyedTarget.position, destroyedTarget.velocity, '#ff4433');
+        this.debris.spawnFromMesh(meshLines, destroyedTarget.position, destroyedTarget.velocity, '#ff4433', 24);
         soundFX.playKillConfirm();
 
         // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
@@ -2307,14 +2337,17 @@ export class GameLoop {
             bandit: this.nearestBandit()
         });
 
-        // BUG THIS FIXES: the training prompt used to be returned FIRST and
-        // unconditionally, so a new pilot - exactly the player who needs them
-        // most - had stall, terrain and missile-launch warnings suppressed
-        // for the whole of their first sortie.
-        if (contextual) return contextual;
+        // Warnings and critical emergencies (stall, terrain, missile launch, etc.)
+        // always take top priority to save the aircraft.
+        if (contextual && contextual.severity !== 'INFO') return contextual;
 
+        // While a training checkout is active, training instructions take precedence
+        // over routine informational prompts (like "bandit ahead" or "radar searching").
         const trainingStep = this.training.currentStep;
         if (trainingStep) return { text: trainingStep.prompt, severity: 'INFO' };
+
+        // Otherwise return any routine informational hint.
+        if (contextual) return contextual;
         return null;
     }
 

@@ -59,7 +59,7 @@ function run(scenario: ScenarioDef, states: Partial<MissionSnapshot>[]) {
 }
 
 describe('scenario catalogue', () => {
-    it('defaults to the endless carrier defence mode', () => {
+    it('defaults to the carrier defence scenario', () => {
         expect(DEFAULT_SCENARIO).toBe('CARRIER_DEFENSE');
         expect(SCENARIOS[0].id).toBe('CARRIER_DEFENSE');
     });

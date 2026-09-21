@@ -3,10 +3,13 @@
 Honest accounting of current limitations. Items marked **[By design]** are
 conscious decisions, not defects — please don't "fix" them without discussion.
 
-## 1. High Cognitive Load for Beginners **[Active Issue]**
+## 1. High Cognitive Load for Beginners **[Mitigated in v1.8.0]**
 
-The game drops new players into a complex cockpit with minimal pacing, requiring them to learn aerodynamics, energy management, and radar mechanics simultaneously. While this honors the hardcore simulation roots, it sacrifices immediate entertainment value and can alienate casual players. 
-**Mitigation:** We are actively reviewing the onboarding experience (`docs/reviews/review-v1.7.0.md`) to balance simulation depth with arcade fun. Radar size has been increased in v1.7.0 for better readability.
+The game previously dropped new players into a complex cockpit with minimal pacing, requiring them to learn aerodynamics, energy management, and radar mechanics simultaneously.
+**Mitigations Shipped:**
+- **v1.7.0:** Increased radar size (125–185 px) with enhanced grid spacing.
+- **v1.8.0:** Default first-sortie routing to `TRAINING_SORTIE`; smart target auto-acquisition on takeoff (`ASSIST`) and during autopilot (`AUTO`); anti-stall cruise throttle protection; intuitive `FUEL %` readout; prioritized emergency warnings; 3.8× camera trauma and 28-piece debris explosion for satisfying feedback.
+See `docs/reviews/v1.7.0/RECONSIDERATION_AND_ENTERTAINMENT_AUDIT.md`.
 
 ---
 
@@ -674,3 +677,13 @@ them again. Blocked storage means they repeat every session, which is the chosen
 
 `GUNS TRACKING` is on the callout channel only. A dedicated lock-tone for "a fighter has a solution on
 you" would read faster than text at the moment the pilot is looking at the target.
+
+## 60. Beginner Assistance & Entertainment Balance **[Fixed in 1.8.0]**
+
+In response to playtesting feedback indicating high cognitive load, lack of kinetic reward, and targeting friction:
+- **Target Designation Friction:** Auto-acquisition implemented in `TargetTracker` for initial contacts upon takeoff in `ASSIST` and continuous pursuit in `AUTO`.
+- **Sensory & Visceral Feedback:** Camera trauma on kill confirmation increased by 3.8×, vector debris fragments boosted to 28 at 50 m/s dispersal, and gold halo glow applied to kill announcements.
+- **Flight Envelope Safety:** Anti-stall cruise throttle protection added in `ASSIST` mode when speed decays below 130 m/s without pilot braking.
+- **HUD Decluttering:** Percentage fuel readout (`FUEL 86%`) in `ARCADE` mode.
+- **First Flight Guidance:** `TRAINING_SORTIE` automatically recommended on launch for first-time pilots.
+

@@ -836,7 +836,8 @@ export class HUD {
         // known before the solver runs - it decides whether STATUS fits.
         const ab = physics.throttle > 1.0;
         const hull = Math.max(0, Math.round(100 - physics.damage));
-        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${Math.floor(physics.fuel)}L  ·  HULL ${hull}%`;
+        const fuelPct = Math.max(0, Math.min(100, Math.round((physics.fuel / physics.maxFuel) * 100)));
+        const statusText = `THR ${Math.floor(physics.throttle * 100)}%${ab ? ' AB' : ''}  ·  FUEL ${fuelPct}%  ·  HULL ${hull}%`;
         ctx.font = font(11, 600);
         const statusTextWidth = ctx.measureText(statusText).width;
 
@@ -1089,13 +1090,15 @@ export class HUD {
             const progress = 1 - c.life / c.span;
             // Hold, then fade in the last third.
             const alpha = progress < 0.66 ? 1 : Math.max(0, 1 - (progress - 0.66) / 0.34);
+            const isKill = c.tone === 'KILL';
             const color = c.tone === 'LOSS' ? THEME.alert
-                : c.tone === 'PRAISE' ? THEME.caution
+                : c.tone === 'PRAISE' || isKill ? THEME.caution
                     : c.tone === 'MODE' ? THEME.muted
                         : THEME.phosphor;
 
             ctx.globalAlpha = alpha;
-            ctx.font = font(c.tone === 'PRAISE' ? 22 : 18, 700);
+            if (isKill) glow(ctx, THEME.caution, 10);
+            ctx.font = font(c.tone === 'PRAISE' || isKill ? 22 : 18, 700);
             const w = Math.max(ctx.measureText(c.text).width, c.detail ? ctx.measureText(c.detail).width : 0) + 34;
             const h = c.detail ? 44 : 30;
             plate(ctx, { x: layout.cx - w / 2, y, w, h },
@@ -1103,6 +1106,7 @@ export class HUD {
 
             ctx.fillStyle = color;
             ctx.fillText(c.text, layout.cx, y + (c.detail ? 17 : 15));
+            if (isKill) noGlow(ctx);
             if (c.detail) {
                 ctx.font = font(10, 600);
                 ctx.fillStyle = THEME.muted;

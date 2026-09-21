@@ -272,4 +272,16 @@ export class TargetTracker {
         this.lockedId = chosen.target.id;
         return chosen;
     }
+
+    /**
+     * Automatically acquire the highest-priority target on the scope if none is locked.
+     * Prevents new pilots from flying blind in wireframe space without an off-screen chevron
+     * or radar solution.
+     */
+    public autoAcquire(): TargetSolution | null {
+        if (this.lockedId) return this.designated();
+        if (this.solutions.length === 0) return null;
+        this.lockedId = this.solutions[0].target.id;
+        return this.solutions[0];
+    }
 }
