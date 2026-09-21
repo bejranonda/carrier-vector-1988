@@ -367,14 +367,14 @@ export class VectorRenderer {
 
         const forward: Vector3 = { x: cp * sy, y: sp, z: cp * cy };
         const up: Vector3 = {
-            x: -sr * cy - sp * sy * cr,
+            x: sr * cy - sp * sy * cr,
             y: cp * cr,
-            z: sr * sy - sp * cy * cr
+            z: -sr * sy - sp * cy * cr
         };
         const right: Vector3 = {
-            x: cr * cy - sp * sy * sr,
+            x: cr * cy + sp * sy * sr,
             y: -cp * sr,
-            z: -cr * sy - sp * cy * sr
+            z: -cr * sy + sp * cy * sr
         };
         return { forward, up, right };
     }

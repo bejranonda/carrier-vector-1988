@@ -32,6 +32,8 @@ import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
 import { getContextualHint, TrainingSequence } from './Tutorial';
 import type { LossCause } from './PostMortem';
+import { formatLossCause } from './PostMortem';
+import { Milestones } from './Milestones';
 import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
@@ -443,6 +445,8 @@ export class GameLoop {
     private lastSpawnedWave = 0;
     /** Latest coach line. Public so the wiring can be asserted headlessly. */
     public currentHint: Hint | null = null;
+    /** Seconds left on the "a fighter is lining me up" warning. */
+    private gunsWarningTimer = 0;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -464,6 +468,7 @@ export class GameLoop {
         this.deck = new DeckManager();
         this.weapons = new WeaponsSystem();
         this.physics = new AircraftPhysics();
+        this.physics.turnAssist = 1;
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         this.deckView = new DeckView();
@@ -545,6 +550,7 @@ export class GameLoop {
         if (setup.noSamSites) this.sensors.samSites.length = 0;
         this.weapons = new WeaponsSystem();
         this.physics = new AircraftPhysics();
+        this.physics.turnAssist = 1;
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         // The flight checkout is the intro mode's teaching tool; on a scripted
@@ -772,6 +778,7 @@ export class GameLoop {
         this.selectedWeapon = 'GUN';
         this.countermeasures = createCountermeasureState(loadout.chaff);
         this.lastLossCause = null;
+        this.dying = null;
     }
 
     /** Seed the end-of-catapult-stroke flight state. */
@@ -835,8 +842,82 @@ export class GameLoop {
         return true;
     }
 
-    /** Issue a fresh airframe after a loss. */
+    /** localStorage, or null where it is missing or blocked (tests, private modes). */
+    private static safeStorage(): Storage | null {
+        try {
+            return globalThis.localStorage ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * A loop is: nose well past 60 degrees up, then inverted. Checked every
+     * tick but only one comparison each, and re-armed once the jet is back to
+     * level upright flight so a second sortie can earn it again.
+     */
+    private watchForLoop() {
+        if (this.deck.aircraftState !== 'AIRBORNE') return;
+        const fwdY = this.physics.forwardVector.y;
+        if (fwdY > 0.87) this.loopProgress.climbed = true;
+        if (this.loopProgress.climbed && Math.abs(this.physics.roll) > 2.2) {
+            this.loopProgress.climbed = false;
+            this.celebrate('FIRST_LOOP');
+        } else if (fwdY < 0.2 && Math.abs(this.physics.roll) < 1.0) {
+            this.loopProgress.climbed = false;
+        }
+    }
+
+    /** The louder line for a player's first time doing something. */
+    private celebrate(id: Parameters<Milestones['claim']>[0]) {
+        const m = this.milestones.claim(id);
+        if (!m) return;
+        this.callouts.push(m.title, 'PRAISE', m.detail);
+        this.flash(THEME.phosphor, 0.35);
+    }
+
+    /** Seconds the cockpit stays up, in slow motion, after the airframe is lost. */
+    public static readonly DEATH_SEQUENCE_SECONDS = 2.6;
+    /** Fraction of real time the world runs at while the pilot watches it end. */
+    public static readonly DEATH_TIME_SCALE = 0.3;
+    private milestones = new Milestones(GameLoop.safeStorage());
+    /** Sortie-long latch so the loop milestone is checked once per sortie, not per frame. */
+    private loopProgress = { climbed: false };
+    private dying: { remaining: number; reason: string; cause: LossCause | null } | null = null;
+
+    /** True while the loss sequence is playing (cockpit still up, controls dead). */
+    public get isDying(): boolean { return this.dying !== null; }
+
+    /**
+     * The airframe is gone. Do NOT cut to the deck: a pilot who is flying and
+     * then suddenly is not reads it as a crash of the software, not of the
+     * jet. Hold the cockpit for a couple of seconds in slow motion, throw the
+     * shake and the flash, and put the reason on the screen - then, and only
+     * then, the deck. Killing is the same call from every source (cannon, SAM,
+     * terrain), so the sequence lives here and none of them has to know.
+     */
     private replaceAirframe(reason: string) {
+        if (this.dying) return;
+        if (this.currentView !== 'MICRO_FLIGHT') {
+            this.finishAirframeLoss(reason);
+            return;
+        }
+        this.dying = {
+            remaining: GameLoop.DEATH_SEQUENCE_SECONDS,
+            reason,
+            cause: this.lastLossCause
+        };
+        const cause = formatLossCause(this.lastLossCause) ?? reason;
+        this.callouts.push('MAYDAY - AIRFRAME LOST', 'LOSS', cause);
+        this.shake(SHAKE_SOURCES.damageTaken * 1.6);
+        this.flash(THEME.alert, 0.9);
+        this.physics.throttle = 0;
+        if (this.lastLossCause?.kind === 'TERRAIN') this.physics.velocity = { x: 0, y: 0, z: 0 };
+    }
+
+    /** Issue a fresh airframe after a loss. */
+    private finishAirframeLoss(reason: string) {
+        this.dying = null;
         this.score.recordAirframeLost();
         this.callouts.push('AIRFRAME LOST', 'LOSS');
         this.shake(SHAKE_SOURCES.damageTaken);
@@ -1003,6 +1084,7 @@ export class GameLoop {
     private applyFlightInput(dt: number) {
         if (this.currentView !== 'MICRO_FLIGHT') return;
         if (this.deck.aircraftState !== 'AIRBORNE') return;
+        if (this.dying) return;
         const k = this.inputState;
 
         // A thumb gives an analog demand; a key gives ±1. Both arrive here as
@@ -1478,6 +1560,7 @@ export class GameLoop {
             decoyedAny ? 'PRAISE' : 'MODE',
             `${this.countermeasures.remaining} REMAINING`
         );
+        if (decoyedAny) this.celebrate('CHAFF_SAVE');
         this.deck.log(`CHAFF RELEASED. ${this.countermeasures.remaining} REMAINING.`);
         return true;
     }
@@ -1852,11 +1935,23 @@ export class GameLoop {
         if (this.phase === 'DEBRIEF') return;
 
         this.training.update();
+        this.gunsWarningTimer = Math.max(0, this.gunsWarningTimer - dt);
         this.currentHint = this.buildHint();
     }
 
     private updateSortie(dt: number) {
+        if (this.dying) {
+            this.dying.remaining -= dt;
+            if (this.dying.remaining <= 0) {
+                const { reason, cause } = this.dying;
+                this.lastLossCause = cause;
+                this.finishAirframeLoss(reason);
+                return;
+            }
+            dt *= GameLoop.DEATH_TIME_SCALE;
+        }
         this.physics.update(dt);
+        this.watchForLoop();
         this.debris.update(dt, (x, z) => this.terrain.getElevation(x, z));
         this.timeRewind.update(dt, this.physics);
         const groundAlt = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
@@ -1917,17 +2012,28 @@ export class GameLoop {
         }
 
         // Enemy aircraft behaviour (also integrates their positions)
-        updateEnemyAI(dt, this.airborneTargets, this.physics, (enemy) => {
+        updateEnemyAI(dt, this.airborneTargets, this.physics, (enemy, hit) => {
             // Simplified hit-scan cannon burst: the alignment/range gate in
-            // EnemyAI has already established a valid guns solution.
-            if (this.scenario.setup.combatShielded) return; // ghost in training
+            // EnemyAI has already established a valid guns solution, and
+            // `hit` says whether this burst actually connected.
+            if (this.scenario.setup.combatShielded || this.dying) return; // ghost in training
+            soundFX.playIncomingFire(this.placeAt(enemy.position));
+            if (!hit) {
+                this.deck.log(`TRACERS PAST YOU - ${enemy.name} IS FIRING`);
+                this.shake(SHAKE_SOURCES.damageTaken * 0.15);
+                return;
+            }
             const dmg = 4 + Math.random() * 6;
             this.physics.applyDamage(dmg);
             this.lastLossCause = { kind: 'CANNON', detail: enemy.name };
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
-            soundFX.playIncomingFire(this.placeAt(enemy.position));
             this.shake(SHAKE_SOURCES.damageTaken * 0.5);
             this.flash(THEME.alert, 0.28);
+        }, (enemy) => {
+            // The warning that makes cannon fire a fight instead of an ambush.
+            if (this.scenario.setup.combatShielded) return;
+            this.callouts.push('GUNS TRACKING', 'LOSS', `${enemy.name} - BREAK TURN`);
+            this.gunsWarningTimer = 4;
         });
 
         // Player weapons
@@ -2032,6 +2138,7 @@ export class GameLoop {
                         grade === 3 ? 'PERFECT TRAP' : 'TRAPPED ABOARD');
                     this.shake(SHAKE_SOURCES.wireCatch);
                     soundFX.playWireCatch();
+                    this.celebrate('FIRST_TRAP');
                 }
             }
         }
@@ -2042,6 +2149,7 @@ export class GameLoop {
         this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
 
         this.sortieKills++;
+        this.celebrate('FIRST_BLOOD');
         this.callouts.push(splashLine(this.sortieKills), 'KILL', destroyedTarget.name);
         // A kill at knife-fighting range should rattle the canopy; one at
         // five kilometres is a flash on the horizon.
@@ -2158,10 +2266,30 @@ export class GameLoop {
         }), countdownSeconds };
     }
 
+    /**
+     * The hostile aircraft the coach should be talking about, from the
+     * tracker's own solutions so "ahead" and "in range" mean exactly what the
+     * HUD brackets mean.
+     */
+    private nearestBandit(): { ahead: boolean; locked: boolean; inRange: boolean } | null {
+        let best: TargetSolution | null = null;
+        for (const sol of this.tracker.solutions) {
+            if (sol.target.kind !== 'AIR') continue;
+            if (!best || sol.range < best.range) best = sol;
+        }
+        if (!best) return null;
+        const locked = this.tracker.designated()?.target.id === best.target.id;
+        return {
+            ahead: best.aspect > 0.5 && best.range < 12000,
+            locked,
+            inRange: best.inMissileEnvelope || best.inGunEnvelope
+        };
+    }
+
     private buildHint(): Hint | null {
         // The deck's "press ENTER" prompt now lives in the orders panel, so
         // the ticker stays silent unless something actually needs attention.
-        if (this.deck.aircraftState !== 'AIRBORNE') return null;
+        if (this.deck.aircraftState !== 'AIRBORNE' || this.dying) return null;
 
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
         const contextual = getContextualHint({
@@ -2174,7 +2302,9 @@ export class GameLoop {
             damage: this.physics.damage,
             distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
             isAirborne: true,
-            bayOpen: this.physics.bayOpen
+            bayOpen: this.physics.bayOpen,
+            gunsTracking: this.gunsWarningTimer > 0,
+            bandit: this.nearestBandit()
         });
 
         // BUG THIS FIXES: the training prompt used to be returned FIRST and

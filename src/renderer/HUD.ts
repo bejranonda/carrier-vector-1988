@@ -40,6 +40,7 @@ import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
 import { timeToImpact } from '../tactics/MissileGuidance';
 import type { MotionSettings } from '../core/Accessibility';
+import { radarProject, relativeHeading, formatNm, RADAR_RANGE_M } from './RadarMath';
 import { placeLabels } from './LabelDeclutter';
 import type { LabelBox, LabelCandidate, PlacedLabel } from './LabelDeclutter';
 import {
@@ -87,6 +88,8 @@ export interface AirborneTarget {
     /** Enemy AI state, stored on the contact itself to avoid a parallel map. */
     aiBehavior?: 'INGRESS' | 'ENGAGE' | 'RTB';
     aiFireCooldown?: number;
+    /** Seconds this fighter has held a guns solution on the player. */
+    aiAimTimer?: number;
     aiTurnDemand?: number;
 }
 
@@ -269,7 +272,12 @@ export class HUD {
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
         this.touchScore = layout.touchMode ? context.score : undefined;
         this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
-        if (layout.showRwr) this.drawRWR(ctx, sensors, layout);
+        if (layout.showRwr) {
+            this.drawRWR(
+                ctx, physics, sensors, targets, context.strikeTargets ?? [],
+                context.designated?.target.id ?? null, layout
+            );
+        }
         if (layout.showApproach) this.drawLandingAids(ctx, physics, layout);
         const shown = this.drawWarnings(ctx, physics, sensors, layout.cx, layout.cy);
 
@@ -1451,7 +1459,26 @@ export class HUD {
         return { rwr: rwrBanner, stall: true };
     }
 
-    private drawRWR(ctx: CanvasRenderingContext2D, sensors: SensorTacticsManager, layout: HudLayout) {
+    /**
+     * The tactical radar. Heading-up: the top of the scope is where the nose
+     * points. It shows the things a player looks for on a round scope in the
+     * corner of a flight game - where home is, where the enemy is, where the
+     * objective is - and keeps the SAM warning on the same glass as a red arc
+     * on the rim pointing at the site, so the pilot reads one instrument.
+     *
+     * (It replaced a scope that was only a radar warning receiver: letters for
+     * radiating SAM sites and nothing else. Nobody could find the carrier on
+     * it, and nobody knew what an "S" was.)
+     */
+    private drawRWR(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        sensors: SensorTacticsManager,
+        targets: AirborneTarget[],
+        strikeTargets: StrikeTarget[],
+        designatedId: string | null,
+        layout: HudLayout
+    ) {
         const size = layout.rwrSize;
         const x = this.width - size - HUD_METRICS.edge;
         // In touch mode the bottom-right corner is the fire button, so the
@@ -1460,9 +1487,12 @@ export class HUD {
             ? Math.min(layout.cy + 40, this.height - layout.reserve.bottom - size - 4)
             : this.height - size - layout.reserve.bottom
                 - (layout.compactSystems ? 76 : 54);
-        const rwrX = x + size / 2;
-        const rwrY = y + size / 2 + 6;
-        const rwrRadius = size / 2 - 16;
+        const cx = x + size / 2;
+        const cy = y + size / 2 + 2;
+        const radius = size / 2 - 17;
+        const yaw = physics.yaw;
+        const me = { x: physics.position.x, z: physics.position.z };
+        const HOME = '#e8fff0';
 
         plate(ctx, { x, y, w: size, h: size }, { border: THEME.edgeSoft });
 
@@ -1471,54 +1501,127 @@ export class HUD {
         ctx.font = font(10, 600);
         ctx.fillStyle = THEME.muted;
         ctx.textAlign = 'center';
-        ctx.fillText('RWR', rwrX, y + 16);
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('RADAR', cx, y + 12);
 
+        // Rings, and the fan the nose is covering - point a contact into it
+        // and it is in front of you.
         ctx.strokeStyle = THEME.edgeSoft;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(rwrX, rwrY, rwrRadius, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(rwrX, rwrY, rwrRadius * 0.5, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
         ctx.stroke();
+        const fan = 25 * (Math.PI / 180);
         ctx.beginPath();
-        ctx.moveTo(rwrX, rwrY - rwrRadius); ctx.lineTo(rwrX, rwrY + rwrRadius);
-        ctx.moveTo(rwrX - rwrRadius, rwrY); ctx.lineTo(rwrX + rwrRadius, rwrY);
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.sin(-fan) * radius, cy - Math.cos(-fan) * radius);
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.sin(fan) * radius, cy - Math.cos(fan) * radius);
         ctx.stroke();
 
+        // North stays north: the letter rides the rim as the jet turns.
+        ctx.fillStyle = THEME.muted;
+        ctx.font = font(9, 700);
         ctx.textBaseline = 'middle';
+        ctx.fillText('N', cx + Math.sin(-yaw) * (radius - 7), cy - Math.cos(-yaw) * (radius - 7));
+
+        // SAM warnings: a red arc on the rim toward the site, thicker the
+        // closer it is to a shot. The bearing is already relative to the nose.
         for (const threat of sensors.activeThreats) {
             if (threat.state === 'SILENT') continue;
             const rad = threat.azimuthDeg * (Math.PI / 180);
-            const distRatio = Math.min(1.0, threat.distance / 12000);
-            const contactR = (0.3 + distRatio * 0.6) * rwrRadius;
-            const tx = rwrX + Math.sin(rad) * contactR;
-            const ty = rwrY - Math.cos(rad) * contactR;
-
-            // A decoyed missile is still nominally "LAUNCH" for a few seconds -
-            // the seeker hasn't given up, it is just chasing the wrong thing.
-            // Showing that distinctly is the only confirmation the player gets
-            // that spending a cartridge actually worked.
+            const live = !threat.isDecoyed;
             const color = threat.isDecoyed ? THEME.muted
                 : threat.state === 'LAUNCH' ? THEME.alert
                 : threat.state === 'TRACK' ? THEME.caution
                     : THEME.phosphor;
-            const symbol = threat.isDecoyed ? 'X'
-                : threat.state === 'LAUNCH' ? 'M'
-                : threat.state === 'TRACK' ? 'T' : 'S';
-
-            ctx.fillStyle = color;
             ctx.strokeStyle = color;
-            ctx.font = font(11, 700);
-            if (threat.state === 'LAUNCH' && !threat.isDecoyed) glow(ctx, color, 8);
-            ctx.fillText(symbol, tx, ty);
+            ctx.lineWidth = threat.state === 'LAUNCH' && live ? 4 : threat.state === 'TRACK' ? 3 : 2;
+            if (threat.state === 'LAUNCH' && live) glow(ctx, color, 8);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius + 1, rad - Math.PI / 2 - 0.35, rad - Math.PI / 2 + 0.35);
+            ctx.stroke();
             noGlow(ctx);
-            if (threat.state !== 'SEARCH') {
+
+            const distRatio = Math.min(1.0, threat.distance / 12000);
+            const contactR = (0.3 + distRatio * 0.6) * radius;
+            const tx = cx + Math.sin(rad) * contactR;
+            const ty = cy - Math.cos(rad) * contactR;
+            ctx.fillStyle = color;
+            ctx.font = font(9, 700);
+            ctx.fillText(threat.isDecoyed ? 'X' : 'SAM', tx, ty);
+        }
+        ctx.lineWidth = 1;
+
+        // Objective: a yellow diamond for each hardened target still standing.
+        ctx.strokeStyle = THEME.caution;
+        for (const st of strikeTargets) {
+            if (st.destroyed) continue;
+            const pt = radarProject(me, yaw, st.position, RADAR_RANGE_M, radius);
+            const px = cx + pt.x;
+            const py = cy + pt.y;
+            ctx.beginPath();
+            ctx.moveTo(px, py - 5); ctx.lineTo(px + 5, py); ctx.lineTo(px, py + 5); ctx.lineTo(px - 5, py);
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        // Bandits: red triangles that point the way each one is flying, so a
+        // triangle pointing at the middle of the scope is coming for you.
+        for (const t of targets) {
+            if (!t.isAlive) continue;
+            const pt = radarProject(me, yaw, t.position, RADAR_RANGE_M, radius);
+            const px = cx + pt.x;
+            const py = cy + pt.y;
+            const heading = relativeHeading(yaw, t.velocity);
+            const designated = designatedId !== null && t.id === designatedId;
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(heading);
+            ctx.fillStyle = THEME.alert;
+            ctx.strokeStyle = THEME.alert;
+            const r = pt.clamped ? 3.5 : 5;
+            ctx.beginPath();
+            ctx.moveTo(0, -r); ctx.lineTo(r * 0.8, r * 0.8); ctx.lineTo(-r * 0.8, r * 0.8);
+            ctx.closePath();
+            if (pt.clamped) ctx.stroke(); else ctx.fill();
+            ctx.restore();
+            if (designated) {
+                ctx.strokeStyle = THEME.caution;
                 ctx.beginPath();
-                ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+                ctx.arc(px, py, 8, 0, Math.PI * 2);
                 ctx.stroke();
             }
         }
+
+        // Home: the carrier, drawn last of the contacts so it is never hidden,
+        // with the distance below the scope so the pilot never has to guess
+        // how far the boat is.
+        const home = radarProject(me, yaw, { x: 0, z: 0 }, RADAR_RANGE_M, radius);
+        const hx = cx + home.x;
+        const hy = cy + home.y;
+        ctx.fillStyle = HOME;
+        ctx.strokeStyle = HOME;
+        if (home.clamped) {
+            ctx.strokeRect(hx - 3, hy - 3, 6, 6);
+        } else {
+            ctx.fillRect(hx - 4, hy - 4, 8, 8);
+        }
+
+        // You: a small arrow at the centre.
+        ctx.fillStyle = THEME.phosphor;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 5); ctx.lineTo(cx + 4, cy + 4); ctx.lineTo(cx - 4, cy + 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = HOME;
+        ctx.font = font(10, 700);
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('CV ' + formatNm(home.distance), cx, y + size - 4);
         ctx.restore();
     }
 

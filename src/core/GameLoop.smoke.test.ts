@@ -265,6 +265,8 @@ describe('GameLoop integration smoke test', () => {
         const airframesBefore = game.deck.inventory.spareAirframes;
         game.physics.applyDamage(5);
         runFrames(game, 10);
+        expect(game.isDying).toBe(true);
+        runFrames(game, 200);
         expect(game.deck.inventory.spareAirframes).toBeLessThan(airframesBefore);
     });
 
@@ -1152,6 +1154,10 @@ describe('GameLoop integration smoke test', () => {
         game.physics.velocity = { x: 0, y: -60, z: 100 };
         game.assistLevel = 'MANUAL';
         runFrames(game, 10);
+        // The loss plays out in the cockpit first (slow motion, controls dead).
+        expect(game.isDying).toBe(true);
+        expect(game.currentView).toBe('MICRO_FLIGHT');
+        runFrames(game, 200);
 
         expect(game.score.breakdown.airframesLost).toBe(1);
         expect(game.deck.inventory.spareAirframes).toBe(spares - 1);
@@ -1173,6 +1179,10 @@ describe('GameLoop integration smoke test', () => {
         game.physics.velocity = { x: 0, y: -60, z: 100 };
         game.assistLevel = 'MANUAL';
         runFrames(game, 10);
+        // The loss plays out in the cockpit first (slow motion, controls dead).
+        expect(game.isDying).toBe(true);
+        expect(game.currentView).toBe('MICRO_FLIGHT');
+        runFrames(game, 200);
 
         expect(game.score.breakdown.airframesLost).toBe(1);
         expect(game.deck.aircraftState).toBe('HANGAR_MAINTENANCE');
@@ -1255,8 +1265,55 @@ describe('GameLoop integration smoke test', () => {
         game.inputState['s'] = true;
         runFrames(game, 420);
         game.inputState['s'] = false;
+        if (game.isDying) runFrames(game, 200); // let the loss sequence finish
         return game;
     }
+
+    // The rookie's first complaint, as a test: "I cannot turn left or right,
+    // the jet can only go north." Holding a bank key - and nothing else, no
+    // rudder - has to carve a turn, in both directions, at the raw MANUAL
+    // setting where the pilot gets no help from the assist laws.
+    it.each([['d', 1], ['a', -1]] as const)('turns the jet when only the bank key %s is held', (key, sign) => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'MANUAL';
+        game.physics.position = { x: 0, y: 2500, z: 6000 };
+        game.physics.velocity = { x: 0, y: 0, z: 230 };
+        game.physics.yaw = 0;
+        game.physics.pitch = 0.03;
+        game.physics.throttle = 1.0;
+        game.inputState[key] = true;
+        runFrames(game, 60 * 8);
+        game.inputState[key] = false;
+
+        const turned = Math.atan2(Math.sin(game.physics.yaw), Math.cos(game.physics.yaw));
+        expect(turned * sign).toBeGreaterThan(0.5);
+        // ...and the jet is still flying, not tumbling or stalled.
+        expect(game.isDying).toBe(false);
+        expect(game.physics.position.y).toBeGreaterThan(500);
+    });
+
+    it('carries a bank-and-pull through a 180 in well under twenty seconds', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'MANUAL';
+        game.physics.position = { x: 0, y: 3000, z: 6000 };
+        game.physics.velocity = { x: 0, y: 0, z: 240 };
+        game.physics.yaw = 0;
+        game.physics.pitch = 0.03;
+        game.physics.throttle = 1.5;
+        game.inputState['d'] = true;
+        game.inputState['w'] = true;
+        let turnedAt = -1;
+        for (let f = 0; f < 60 * 20 && turnedAt < 0; f++) {
+            runFrames(game, 1);
+            if (Math.abs(game.physics.yaw - Math.PI) < 0.35) turnedAt = f / 60;
+        }
+        game.inputState['d'] = false;
+        game.inputState['w'] = false;
+        expect(turnedAt).toBeGreaterThan(0);
+        expect(turnedAt).toBeLessThan(20);
+    });
 
     it('loses the airframe when the pilot flies it into the ground at MANUAL', () => {
         const game = diveAtTheGround('MANUAL');
@@ -1819,6 +1876,10 @@ describe('GameLoop integration smoke test', () => {
         game.physics.velocity = { x: 0, y: -60, z: 100 };
         game.assistLevel = 'MANUAL';
         runFrames(game, 10);
+        // The loss plays out in the cockpit first (slow motion, controls dead).
+        expect(game.isDying).toBe(true);
+        expect(game.currentView).toBe('MICRO_FLIGHT');
+        runFrames(game, 200);
 
         expect(game.score.breakdown.airframesLost).toBe(1);
         expect(game['lastLossCause']).toEqual({ kind: 'TERRAIN', detail: 'terrain' });

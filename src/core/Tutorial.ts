@@ -32,6 +32,17 @@ export interface CoachSnapshot {
     distanceToCarrier: number;// metres
     isAirborne: boolean;
     bayOpen: boolean;
+    /** A fighter has held a guns solution on the player within the last few seconds. */
+    gunsTracking?: boolean;
+    /** The nearest live hostile aircraft, or null when the sky is empty. */
+    bandit?: {
+        /** In the forward hemisphere and close enough to be worth engaging. */
+        ahead: boolean;
+        /** Designated with [T]. */
+        locked: boolean;
+        /** Inside the envelope of a weapon the pilot carries. */
+        inRange: boolean;
+    } | null;
 }
 
 /**
@@ -49,7 +60,11 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
     },
     {
         match: (s) => s.rwrState === 'LAUNCH',
-        hint: { text: 'MISSILE INBOUND - DIVE BELOW THE RIDGE LINE TO BREAK LOCK', severity: 'CRITICAL' }
+        hint: { text: 'MISSILE INBOUND - CHAFF [X], THEN BREAK BEHIND A RIDGE', severity: 'CRITICAL' }
+    },
+    {
+        match: (s) => !!s.gunsTracking,
+        hint: { text: 'BANDIT ON YOUR TAIL - BANK HARD AND PULL, DO NOT FLY STRAIGHT', severity: 'CRITICAL' }
     },
     {
         match: (s) => s.damage >= 60,
@@ -76,6 +91,18 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
         // Otherwise this rule fires during every landing and drowns out the meatball cue.
         match: (s) => s.airSpeed < 120 && s.distanceToCarrier > 2500,
         hint: { text: 'LOW AIRSPEED - ADVANCE THROTTLE [SHIFT]', severity: 'WARNING' }
+    },
+    {
+        match: (s) => !!s.bandit?.locked && s.bandit.inRange,
+        hint: { text: 'IN RANGE - FIRE [SPACE]', severity: 'INFO' }
+    },
+    {
+        match: (s) => !!s.bandit?.locked,
+        hint: { text: 'LOCKED - TURN TOWARD THE BANDIT UNTIL IT IS IN RANGE', severity: 'INFO' }
+    },
+    {
+        match: (s) => !!s.bandit?.ahead,
+        hint: { text: 'BANDIT AHEAD - PRESS [T] TO LOCK ON', severity: 'INFO' }
     },
     {
         match: (s) => s.rwrState === 'SEARCH',
@@ -146,7 +173,7 @@ export const TRAINING_STEPS: TrainingStep[] = [
         id: 'ROLL',
         short: 'ROLL',
         keys: ['A', 'D'],
-        prompt: 'TRAINING 2/6 - ROLL: HOLD [A] LEFT / [D] RIGHT TO BANK',
+        prompt: 'TRAINING 2/6 - BANK: HOLD [A] LEFT / [D] RIGHT - THE JET TURNS WHERE YOU BANK',
         isSatisfied: (p) => p.rollInputSeconds >= 1.0
     },
     {

@@ -27,6 +27,12 @@ export class AircraftPhysics {
 
     public pitch: number = 0; // radians (positive = nose up)
     public roll: number = 0;  // radians (positive = roll right)
+    /**
+     * 0..1. Arcade turn assist: holding a bank pulls the nose round on its
+     * own, so the arrow keys alone carve a turn. 0 leaves the raw flight
+     * model untouched (the physics tests rely on that); the game loop sets 1.
+     */
+    public turnAssist: number = 0;
     public yaw: number = 0;   // radians (positive = nose right / heading clockwise)
 
     // Mass & Propulsion
@@ -70,6 +76,8 @@ export class AircraftPhysics {
     public static readonly SEA_LEVEL_DENSITY = 1.225; // kg/m^3
     public static readonly BASE_FUEL_BURN_RATE = 1.6; // L/s at 100% military power
     public static readonly AB_FUEL_BURN_MULT = 3.5;
+    /** 1/s: how firmly the nose is drawn onto the velocity heading. */
+    public static readonly WEATHERVANE_GAIN = 0.8;
 
     public get totalMass(): number {
         const fuelMass = this.fuel * 0.8; // ~0.8 kg/L for JP-5
@@ -102,9 +110,9 @@ export class AircraftPhysics {
         const sr = Math.sin(this.roll);
 
         return {
-            x: -sr * cy - sp * sy * cr,
+            x: sr * cy - sp * sy * cr,
             y: cp * cr,
-            z: sr * sy - sp * cy * cr
+            z: -sr * sy - sp * cy * cr
         };
     }
 
@@ -117,9 +125,9 @@ export class AircraftPhysics {
         const sr = Math.sin(this.roll);
 
         return {
-            x: cr * cy - sp * sy * sr,
+            x: cr * cy + sp * sy * sr,
             y: -cp * sr,
-            z: -cr * sy - sp * cy * sr
+            z: -cr * sy + sp * cy * sr
         };
     }
 
@@ -144,17 +152,70 @@ export class AircraftPhysics {
     /**
      * Apply pitch control command (-1 to +1).
      * Automatically scales by dynamic pressure and aerodynamic stall authority loss.
+     *
+     * The stick pitches the aircraft about ITS OWN lateral axis, not the
+     * world's. The Euler angles this model stores therefore have to be
+     * advanced by the standard body-rate mapping:
+     *
+     *   dPitch = q cos(roll)
+     *   dYaw   = q sin(roll) / cos(pitch)
+     *
+     * Banked 60 degrees and pulling back, half the pull goes into swinging the
+     * nose round the horizon - which is what "bank and pull" means, and what
+     * every flight game taught the player to expect. Without it, back-stick
+     * only ever raised the nose toward the sky whatever the bank angle.
+     *
+     * There is no pitch clamp. Past vertical the same attitude is re-expressed
+     * (pitch folds back, heading and roll turn half a circle), so a loop,
+     * Immelmann or Split-S flows through the top instead of hitting a wall.
      */
     public applyPitchInput(input: number, dt: number) {
         const speed = this.airSpeed;
         const qFactor = Math.min(1.2, Math.max(0.1, speed / 150));
-        const rate = 1.35 * qFactor * this.controlAuthority;
-        this.pitch += input * rate * dt;
+        let rate = 1.35 * qFactor * this.controlAuthority;
 
-        // Limit pitch to avoid gymbal singularities in this arcade 6-DOF
-        const maxPitch = 88 * (Math.PI / 180);
-        if (this.pitch > maxPitch) this.pitch = maxPitch;
-        if (this.pitch < -maxPitch) this.pitch = -maxPitch;
+        // Alpha limiter (turn assist only): the nose can swing faster than the
+        // wing can bend the flight path, and the gap is angle of attack. Left
+        // alone a hard pull stalls the jet in about a second and the loop dies
+        // at the vertical. Easing the pull as alpha nears the stall angle keeps
+        // the wing working at its limit - the tightest turn it can give -
+        // without ever tipping over it.
+        if (this.turnAssist > 0 && input > 0 && this.alpha > 0) {
+            rate *= Math.max(0.1, 1 - Math.abs(this.alpha) / (0.92 * AircraftPhysics.CRITICAL_ALPHA));
+        }
+        const q = input * rate * dt;
+
+        const cosPitch = Math.max(0.2, Math.cos(this.pitch));
+        this.pitch += q * Math.cos(this.roll);
+        this.yaw += (q * Math.sin(this.roll)) / cosPitch;
+
+        this.foldPastVertical();
+        this.normalizeAngles();
+    }
+
+    /**
+     * Keep the pitch in [-pi/2, pi/2] without changing the attitude it
+     * describes: over the top of a loop the nose is on the far side of
+     * vertical, which the Euler triple expresses as a reflected pitch with the
+     * heading and roll each turned half a circle.
+     */
+    private foldPastVertical() {
+        const half = Math.PI / 2;
+        if (this.pitch > half) {
+            this.pitch = Math.PI - this.pitch;
+            this.yaw += Math.PI;
+            this.roll += Math.PI;
+        } else if (this.pitch < -half) {
+            this.pitch = -Math.PI - this.pitch;
+            this.yaw += Math.PI;
+            this.roll += Math.PI;
+        }
+    }
+
+    private normalizeAngles() {
+        const twoPi = Math.PI * 2;
+        this.yaw = ((this.yaw % twoPi) + twoPi) % twoPi;
+        this.roll = ((this.roll + Math.PI) % twoPi + twoPi) % twoPi - Math.PI;
     }
 
     /**
@@ -164,7 +225,20 @@ export class AircraftPhysics {
         const speed = this.airSpeed;
         const qFactor = Math.min(1.3, Math.max(0.2, speed / 150));
         const rate = 2.4 * qFactor * this.controlAuthority;
+        const wasUpright = Math.abs(this.roll) < Math.PI / 2;
         this.roll += input * rate * dt;
+
+        // With the turn assist on, an upright jet banks to 75 degrees and
+        // stops: a held key is a turn, not an accidental barrel roll. Once
+        // inverted (over the top of a loop) the roll is free again so the
+        // pilot can roll out. Decided by which side of the wing-level the jet
+        // STARTED the step on, not by the cosine after it - the cap sits at
+        // cos 0.259, so a threshold on the result lets the very first step
+        // past the cap through and the roll carries on to inverted.
+        if (this.turnAssist > 0 && wasUpright) {
+            const limit = 75 * (Math.PI / 180);
+            this.roll = Math.max(-limit, Math.min(limit, this.roll));
+        }
 
         // Keep roll within [-pi, pi]
         if (this.roll > Math.PI) this.roll -= Math.PI * 2;
@@ -339,6 +413,34 @@ export class AircraftPhysics {
         this.position.x += this.velocity.x * dt;
         this.position.y += this.velocity.y * dt;
         this.position.z += this.velocity.z * dt;
+
+        // Turn assist: a held bank asks for back-pressure in proportion to its
+        // sine, so the pilot who only banks still turns. It fades out as the
+        // wing nears its stall angle, so the assist can never be what stalls
+        // the jet, and it is off when inverted or slow.
+        if (this.turnAssist > 0 && speed > 60 && Math.cos(this.roll) > -0.2) {
+            const margin = Math.max(0, 1 - Math.abs(this.alpha) / (0.8 * AircraftPhysics.CRITICAL_ALPHA));
+            const pull = this.turnAssist * 0.8 * Math.abs(Math.sin(this.roll)) * margin;
+            if (pull > 0) this.applyPitchInput(pull, dt);
+        }
+
+        // Directional stability: a real airframe weathervanes, so the nose is
+        // drawn round toward where the jet is actually going. This is what
+        // turns a held bank into a turn even with no back-stick - the tilted
+        // lift curves the velocity (above), and the nose follows it. Weighted
+        // by how horizontal the flight path is, so it never fights a loop, and
+        // weak enough that the rudder can still hold the nose off-axis for
+        // gunnery.
+        const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+        if (horizSpeed > 30 && !this.isStalled) {
+            const velHeading = Math.atan2(this.velocity.x, this.velocity.z);
+            let diff = velHeading - this.yaw;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+            const horizontality = (horizSpeed / Math.max(1, this.airSpeed)) ** 2;
+            const authority = Math.min(1, this.airSpeed / 150);
+            this.yaw += diff * AircraftPhysics.WEATHERVANE_GAIN * horizontality * authority * dt;
+            this.normalizeAngles();
+        }
 
         // Subtle self-leveling aerodynamic roll damping
         this.roll *= Math.max(0, 1.0 - 0.2 * dt);

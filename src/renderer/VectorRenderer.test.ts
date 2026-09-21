@@ -272,3 +272,42 @@ describe('field of view across screen sizes', () => {
         expect(oldOffset).toBeGreaterThan(height / 2);
     });
 });
+
+describe('cockpit view under bank', () => {
+    const project = (roll: number, p: Vector3) => {
+        const { canvas } = makeFakeCanvas(800, 600);
+        const renderer = new VectorRenderer(canvas, 380);
+        return renderer.projectCameraPoint(
+            renderer.transformToCamera(p, { x: 0, y: 0, z: 0 }, 0, 0, roll)
+        );
+    };
+
+    it('the camera basis is orthonormal at any roll, so the view is never sheared', () => {
+        for (const roll of [0.3, 0.8, -1.1, 2.4]) {
+            const { right, up, forward } = VectorRenderer.basisVectors(0.2, 1.1, roll);
+            const dot = (a: Vector3, b: Vector3) => a.x * b.x + a.y * b.y + a.z * b.z;
+            expect(dot(right, up)).toBeCloseTo(0, 9);
+            expect(dot(right, forward)).toBeCloseTo(0, 9);
+            expect(dot(up, forward)).toBeCloseTo(0, 9);
+        }
+    });
+
+    it('banking right lifts the right side of the horizon (the world rolls left)', () => {
+        const left = project(0.5, { x: -3000, y: 0, z: 6000 });
+        const right = project(0.5, { x: 3000, y: 0, z: 6000 });
+        // Canvas y grows downward: smaller y is higher on the screen.
+        expect(right.y).toBeLessThan(left.y);
+    });
+
+    it('banking left lifts the left side of the horizon', () => {
+        const left = project(-0.5, { x: -3000, y: 0, z: 6000 });
+        const right = project(-0.5, { x: 3000, y: 0, z: 6000 });
+        expect(left.y).toBeLessThan(right.y);
+    });
+
+    it('wings level, the horizon is level', () => {
+        const left = project(0, { x: -3000, y: 0, z: 6000 });
+        const right = project(0, { x: 3000, y: 0, z: 6000 });
+        expect(left.y).toBeCloseTo(right.y, 6);
+    });
+});

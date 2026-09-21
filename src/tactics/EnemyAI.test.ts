@@ -129,3 +129,56 @@ describe('updateEnemyAI', () => {
         expect(fighter.position).toEqual(before);
     });
 });
+
+describe('enemy guns fairness', () => {
+    it('gives a warning before the first burst, then fires after AIM_TIME', () => {
+        const player = new AircraftPhysics();
+        player.position = { x: 0, y: 1000, z: 0 };
+        const fighter = {
+            id: 'B1', name: 'MiG-23', position: { x: 0, y: 1000, z: -800 },
+            velocity: { x: 0, y: 0, z: 200 }, isAlive: true
+        } as AirborneTarget;
+        const log: string[] = [];
+        let t = 0;
+        for (let i = 0; i < 120; i++) {
+            t += 1 / 60;
+            updateEnemyAI(1 / 60, [fighter], player,
+                () => log.push(`fire@${t.toFixed(2)}`), () => log.push(`aim@${t.toFixed(2)}`), () => 0);
+        }
+        expect(log[0].startsWith('aim')).toBe(true);
+        const firstFire = log.find(l => l.startsWith('fire'));
+        expect(firstFire).toBeDefined();
+        expect(parseFloat(firstFire!.split('@')[1])).toBeGreaterThanOrEqual(AI_TUNING.AIM_TIME);
+    });
+
+    it('a burst can miss: hit follows the injected rng against HIT_CHANCE', () => {
+        const player = new AircraftPhysics();
+        player.position = { x: 0, y: 1000, z: 0 };
+        const mk = () => ({
+            id: 'B1', name: 'MiG-23', position: { x: 0, y: 1000, z: -800 },
+            velocity: { x: 0, y: 0, z: 200 }, isAlive: true
+        } as AirborneTarget);
+        const run = (roll: number) => {
+            const f = mk(); const hits: boolean[] = [];
+            for (let i = 0; i < 120; i++) updateEnemyAI(1 / 60, [f], player, (_t, hit) => hits.push(hit), undefined, () => roll);
+            return hits;
+        };
+        expect(run(0.01)[0]).toBe(true);
+        expect(run(0.99)[0]).toBe(false);
+    });
+
+    it('losing the solution resets the aim timer', () => {
+        const player = new AircraftPhysics();
+        player.position = { x: 0, y: 1000, z: 0 };
+        const f = {
+            id: 'B1', name: 'MiG-23', position: { x: 0, y: 1000, z: -800 },
+            velocity: { x: 0, y: 0, z: 200 }, isAlive: true
+        } as AirborneTarget;
+        for (let i = 0; i < 10; i++) updateEnemyAI(1 / 60, [f], player);
+        expect(f.aiAimTimer ?? 0).toBeGreaterThan(0);
+        // Break turn: the fighter is now pointing well off the player.
+        f.velocity = { x: 200, y: 0, z: 0 };
+        updateEnemyAI(1 / 60, [f], player);
+        expect(f.aiAimTimer).toBe(0);
+    });
+});

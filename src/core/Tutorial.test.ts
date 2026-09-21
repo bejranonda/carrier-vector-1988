@@ -137,3 +137,37 @@ describe('TrainingSequence', () => {
         }
     });
 });
+
+describe('Contextual flight coach - the attack and the tail', () => {
+    const base = {
+        isStalled: false, rwrState: 'SILENT' as const, altitudeAgl: 900, verticalSpeed: 0,
+        fuel: 4000, airSpeed: 240, damage: 0, distanceToCarrier: 9000, isAirborne: true, bayOpen: false
+    };
+
+    it('tells a pilot with a bandit ahead to lock it', () => {
+        const h = getContextualHint({ ...base, bandit: { ahead: true, locked: false, inRange: false } });
+        expect(h?.text).toContain('[T]');
+    });
+
+    it('tells a locked pilot to steer in, then to fire once in range', () => {
+        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: false } })?.text).toContain('LOCKED');
+        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: true } })?.text).toContain('[SPACE]');
+    });
+
+    it('warns of a fighter on the tail ahead of any attack prompt', () => {
+        const h = getContextualHint({
+            ...base, gunsTracking: true, bandit: { ahead: true, locked: true, inRange: true }
+        });
+        expect(h?.severity).toBe('CRITICAL');
+        expect(h?.text).toContain('TAIL');
+    });
+
+    it('keeps a missile launch above a guns warning, and says chaff', () => {
+        const h = getContextualHint({ ...base, rwrState: 'LAUNCH', gunsTracking: true });
+        expect(h?.text).toContain('[X]');
+    });
+
+    it('stays quiet when the sky is empty', () => {
+        expect(getContextualHint({ ...base, bandit: null })).toBeNull();
+    });
+});

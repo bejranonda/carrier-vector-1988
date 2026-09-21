@@ -29,10 +29,10 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     // --- Flight ---
     { keys: ['w', 'arrowup'], display: 'W / UP', label: 'Pitch nose UP', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['s', 'arrowdown'], display: 'S / DOWN', label: 'Pitch nose DOWN', context: 'FLIGHT', group: 'FLIGHT' },
-    { keys: ['a', 'arrowleft'], display: 'A / LEFT', label: 'Roll left', context: 'FLIGHT', group: 'FLIGHT' },
-    { keys: ['d', 'arrowright'], display: 'D / RIGHT', label: 'Roll right', context: 'FLIGHT', group: 'FLIGHT' },
-    { keys: ['q'], display: 'Q', label: 'Rudder yaw left', context: 'FLIGHT', group: 'FLIGHT' },
-    { keys: ['e'], display: 'E', label: 'Rudder yaw right', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['a', 'arrowleft'], display: 'A / LEFT', label: 'Bank left - the jet turns left (hold W to tighten)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['d', 'arrowright'], display: 'D / RIGHT', label: 'Bank right - the jet turns right (hold W to tighten)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['q'], display: 'Q', label: 'Rudder left (fine aim only - you do not need it to turn)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['e'], display: 'E', label: 'Rudder right (fine aim only - you do not need it to turn)', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['shift'], display: 'SHIFT', label: 'Throttle up (past 100% = afterburner)', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['control'], display: 'CTRL', label: 'Throttle down', context: 'FLIGHT', group: 'FLIGHT' },
 

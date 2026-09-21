@@ -25,6 +25,8 @@ export const AI_TUNING = {
     FIRE_RANGE: 1600,        // m - effective cannon range
     FIRE_CONE_DEG: 12,       // must be this well aligned to shoot
     FIRE_COOLDOWN: 1.4,      // s between bursts
+    AIM_TIME: 0.7,           // s of held guns solution before the first burst
+    HIT_CHANCE: 0.6,         // fraction of bursts that connect
     ENGAGE_TURN_RATE: 1.1,   // velocity-steering gain while dogfighting
     INGRESS_TURN_RATE: 0.4,  // gentler correction while running in
     MAX_BANK: 0.6            // rad, visual bank limit
@@ -47,14 +49,22 @@ export function decideBehavior(target: AirborneTarget, distanceToPlayer: number)
 }
 
 /**
- * Advance all enemy contacts. onFire is invoked when a fighter gets a valid
- * guns solution on the player.
+ * Advance all enemy contacts.
+ *
+ * A fighter that gets a guns solution does not shoot on the same frame: it
+ * has to hold the solution for AIM_TIME, and `onAim` fires the moment it first
+ * has one. That is the player's warning - the difference between "a MiG
+ * appeared on my tail and I was dead" and "a MiG is lining me up, break".
+ * `onFire` then reports each burst, with `hit` saying whether it connected
+ * (HIT_CHANCE), so a burst can be a near miss the pilot hears go past.
  */
 export function updateEnemyAI(
     dt: number,
     targets: AirborneTarget[],
     player: AircraftPhysics,
-    onFire?: (target: AirborneTarget) => void
+    onFire?: (target: AirborneTarget, hit: boolean) => void,
+    onAim?: (target: AirborneTarget) => void,
+    rng: () => number = Math.random
 ) {
     for (const t of targets) {
         if (!t.isAlive) continue;
@@ -72,13 +82,23 @@ export function updateEnemyAI(
             steerToward(t, dx / dist, dy / dist * 0.5, dz / dist, AI_TUNING.ENGAGE_TURN_RATE, dt);
 
             // Guns solution: close enough AND pointing at the player.
-            if (dist < AI_TUNING.FIRE_RANGE && (t.aiFireCooldown ?? 0) <= 0) {
+            let solution = false;
+            if (dist < AI_TUNING.FIRE_RANGE) {
                 const speed = Math.hypot(t.velocity.x, t.velocity.y, t.velocity.z) || 1;
                 const dot = (dx * t.velocity.x + dy * t.velocity.y + dz * t.velocity.z) / (dist * speed);
                 const angleDeg = Math.acos(Math.max(-1, Math.min(1, dot))) * (180 / Math.PI);
-                if (angleDeg < AI_TUNING.FIRE_CONE_DEG) {
+                solution = angleDeg < AI_TUNING.FIRE_CONE_DEG;
+            }
+
+            if (!solution) {
+                t.aiAimTimer = 0;
+            } else {
+                const before = t.aiAimTimer ?? 0;
+                t.aiAimTimer = before + dt;
+                if (before === 0 && onAim) onAim(t);
+                if (t.aiAimTimer >= AI_TUNING.AIM_TIME && (t.aiFireCooldown ?? 0) <= 0) {
                     t.aiFireCooldown = AI_TUNING.FIRE_COOLDOWN;
-                    if (onFire) onFire(t);
+                    if (onFire) onFire(t, rng() < AI_TUNING.HIT_CHANCE);
                 }
             }
         } else {

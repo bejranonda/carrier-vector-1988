@@ -88,12 +88,10 @@ export interface ControlDemand {
      * Rudder demand, -1..1. Only the autopilot uses this; at MANUAL and ASSIST
      * the rudder stays entirely the pilot's.
      *
-     * It is not decoration. This flight model has no bank-to-turn yaw
-     * coupling: banking tilts the lift vector and curves the flight PATH, but
-     * the nose keeps pointing where it pointed, so a bank-only autopilot banks
-     * beautifully and never captures the bearing. The rudder is what actually
-     * moves the heading here, so the autopilot flies a coordinated turn -
-     * bank for the turn, rudder to bring the nose round with it.
+     * The airframe now turns on its own when banked (pull-while-banked swings
+     * the nose, and the nose weathervanes onto the flight path), so the
+     * autopilot's rudder is a trim that brings the heading round a little
+     * sooner rather than the only thing that can move it.
      */
     yaw: number;
     /** Throttle rate demand, -1..1. */
