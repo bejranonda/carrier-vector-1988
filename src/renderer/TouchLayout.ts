@@ -49,8 +49,15 @@ export interface TouchLayout {
     fire: TouchCircle;
     /** Cycle designation. */
     target: TouchCircle;
-    /** Weapon selection, in fire order: gun, missile, bomb. */
+    /** Weapon selection, bottom up: gun, missile, bomb, HARM. */
     weapons: TouchRect[];
+    /**
+     * Chaff, above the target button under the right thumb (Known Issues #44).
+     * A touch pilot had no countermeasure at all, so a SAM launch on a phone
+     * could only be survived by terrain masking. Always present - it is the
+     * answer to a missile, and has to be learnable before one arrives.
+     */
+    chaff: TouchCircle;
     /** Menu / pause, top corner, deliberately small and out of the way. */
     menu: TouchRect;
     /**
@@ -163,12 +170,19 @@ export function solveTouchLayout(
     };
 
     const weaponsRight = fire.cx - fireR - edge;
-    const weapons: TouchRect[] = [0, 1, 2].map(i => ({
+    const weapons: TouchRect[] = [0, 1, 2, 3].map(i => ({
         x: weaponsRight - weaponW,
         y: bottom - weaponH * (i + 1) - edge * 0.5 * i,
         w: weaponW,
         h: weaponH
     }));
+
+    const chaffR = targetR * 0.95;
+    const chaff: TouchCircle = {
+        cx: fire.cx,
+        cy: target.cy - targetR - chaffR - edge * 0.7,
+        r: chaffR
+    };
 
     const menu: TouchRect = {
         x: right - m.minTarget,
@@ -202,6 +216,7 @@ export function solveTouchLayout(
         fire,
         target,
         weapons,
+        chaff,
         menu,
         recover,
         launch,
@@ -211,7 +226,7 @@ export function solveTouchLayout(
 
 export type TouchControlId =
     | 'STICK' | 'THROTTLE' | 'FIRE' | 'TARGET'
-    | 'WEAPON_GUN' | 'WEAPON_MISSILE' | 'WEAPON_BOMB'
+    | 'WEAPON_GUN' | 'WEAPON_MISSILE' | 'WEAPON_BOMB' | 'WEAPON_HARM' | 'CHAFF'
     | 'MENU' | 'RECOVER' | 'LAUNCH' | 'WORLD';
 
 const inRect = (r: TouchRect, x: number, y: number) =>
@@ -245,8 +260,9 @@ export function hitTest(
 
     if (inCircle(layout.fire, x, y, slop)) return 'FIRE';
     if (inCircle(layout.target, x, y, slop)) return 'TARGET';
+    if (inCircle(layout.chaff, x, y, slop)) return 'CHAFF';
 
-    const weaponIds: TouchControlId[] = ['WEAPON_GUN', 'WEAPON_MISSILE', 'WEAPON_BOMB'];
+    const weaponIds: TouchControlId[] = ['WEAPON_GUN', 'WEAPON_MISSILE', 'WEAPON_BOMB', 'WEAPON_HARM'];
     for (let i = 0; i < layout.weapons.length; i++) {
         if (inRect(layout.weapons[i], x, y)) return weaponIds[i];
     }

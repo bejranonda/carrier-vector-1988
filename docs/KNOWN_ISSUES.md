@@ -1,11 +1,29 @@
 # Known Issues & Deliberate Trade-offs
 
+## Status at v1.10.0
+
+**Open, deliberately:**
+
+| # | Issue | Why it is open |
+| :-: | :-- | :-- |
+| 53 | The fjord is a 1-D corridor | New map = new content with scenario re-balancing, not a fix |
+| 41 | No key-remapping screen (P2) | Layout independence shipped; build the screen only if feedback asks |
+| 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
+| — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
+
+**Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
+
+**Closed in v1.10.0:** #40, #41 (partly), #42, #44, #45, #47, #48, #54, #55, #56, #59, #61, #65, #66, #68, #69, #70 — and #71–#81, found and fixed during the release.
+Evidence: [`reviews/v1.10.0/`](reviews/v1.10.0/README.md).
+
+---
+
 Honest accounting of current limitations. Items marked **[By design]** are
 conscious decisions, not defects — please don't "fix" them without discussion.
 
 > **Numbering note:** two different sections were both numbered `## 1.` until
 > v1.9.0. The beginner-cognitive-load entry that occupied the first slot has
-> moved to [#61](#61-high-cognitive-load-for-beginners-partly-fixed-in-190),
+> moved to [#61](#61-high-cognitive-load-for-beginners-resolved-in-1100),
 > where it belongs alongside the measurements that finally quantified it.
 
 ## 1. Browser Web Audio autoplay policy
@@ -508,7 +526,9 @@ spike, and it is caused by missing equipment rather than intended challenge.
 state and goes ballistic if the site goes `SILENT`. The four-state radar machine
 this requires already exists in `RadarLOS.ts:307-325`.
 
-## 40. Pitch axis defaults against genre convention **[Partly resolved in v1.5.0]**
+## 40. Pitch axis defaults against genre convention **[Resolved in 1.10.0]**
+
+> **v1.10.0:** the in-context offer the fix below describes now exists. `PitchStruggleDetector` (`src/core/StruggleDetector.ts`) watches for short alternating pitch stabs; four inside 12 s, from a pilot who has never touched the stick setting, produce one callout: *STICK FEELS BACKWARDS? PRESS [I]*. Offered once per session. The default stays UP = climb (the briefing offers the flip before the first flight, as before).
 
 `Controls.ts:31-32` binds `ArrowUp` to **pitch up**. The flight-sim convention
 (MSFS, X-Plane, DCS, IL-2, Ace Combat) is `ArrowUp` = stick forward = **nose
@@ -520,14 +540,18 @@ the non-standard mode and is one of 40+ flat keybindings.
 ("PULL BACK TO CLIMB" vs "PUSH UP TO CLIMB" — never the word "inverted"), and
 detect rapid pitch-axis reversals in the first 60 s to offer the fix in context.
 
-## 41. No key remapping **[P2]**
+## 41. No key remapping **[Partly resolved in 1.10.0 — remap UI stays P2]**
+
+> **v1.10.0:** the practical harm - WASD scattered on AZERTY/QWERTZ - is fixed. The six stick keys (W A S D Q E) are now read by physical position (`KeyboardEvent.code`, see `Controls.normalizeKey`), so they sit under the same fingers on AZERTY, QWERTZ and Dvorak. Mnemonic shortcuts (M, H, …) keep their labels. A remapping screen is still not built; build it if pilot feedback asks.
 
 `CONTROL_SCHEMA` is a `readonly` const consumed directly, with no override
 layer. **Consequence:** `WASD`+`QE` occupy different physical positions on
 AZERTY and QWERTZ keyboards, so the game is measurably harder outside
 QWERTY regions, and left-handed or limited-mobility players have no recourse.
 
-## 42. Incoming missiles are effectively invisible **[Partly resolved in v1.5.0]**
+## 42. Incoming missiles are effectively invisible **[Resolved in 1.10.0]**
+
+> **v1.10.0:** each missile in flight draws a red chevron on the steering ring round the boresight, at its bearing relative to the nose, labelled `MISSILE LEFT / RIGHT / AHEAD / BEHIND` - in every HUD density, including FIRST_FLIGHT, which hides the radar. The banner keeps the time to impact.
 
 The SAM missile is drawn as a single 8-metre line segment
 (`src/core/GameLoop.ts:2310-2316`). At its 5,000 m launch range that is
@@ -570,13 +594,17 @@ unprompted first-run *question* was judged one screen too many.
 **#42** - Time-to-impact and a decoy cue landed. The missile is still drawn as a short line
 (34 m) and there is no directional threat caret; at 5 km it remains small.
 
-## 44. Chaff and the HARM have no touch controls
+## 44. Chaff and the HARM have no touch controls **[Resolved in 1.10.0]**
+
+> **v1.10.0:** `TouchLayout` has a chaff button above TGT under the right thumb (amber when a missile is inbound) and a fourth weapon slot for the HARM. Both are in the overlap / viewport / centre-keep-out test matrix for all seven handsets, and the browser harness taps chaff on 844×390 and 640×360 phones.
 
 The touch layout has three weapon buttons and no room for a fourth or a chaff button without
 re-solving `TouchLayout` and its hit-test priority order. A touch pilot can neither press `X` nor
 select the HARM. Same shape as #31 (deck touch parity), recorded rather than rushed.
 
-## 45. PRO HUD weapon-chip click regions are fixed-width
+## 45. PRO HUD weapon-chip click regions are fixed-width **[Resolved in 1.10.0]**
+
+> **v1.10.0:** chips are fixed-width and come from one solver (`HudLayout.proChipRects`) that the renderer and the hit-tester share; so do the corner buttons (`cornerButtonRects`), which were also hit-tested at different x than drawn. The click areas of the deleted keycap strip, which had become invisible traps, are gone. See #75, #76.
 
 The ARCADE bar's geometry is now one solver shared by renderer and hit-tester. The PRO systems
 panel is not: its chips are drawn at measured text width but hit-tested at a fixed 68 px, so a long
@@ -587,12 +615,16 @@ label can desynchronise them. Fix the same way (`solveArcadeBar`'s approach).
 One screen style, deliberately. A stored value from the old ladder is ignored and the game boots into
 MODERN. RETRO's per-stroke shadow cost ~7 ms/frame at 1600x900 and its 0.7 vignette hurt legibility.
 
-## 47. The HARM's kill radius and range are tuned by reasoning, not by playtest
+## 47. The HARM's kill radius and range are tuned by reasoning, not by playtest **[Verified by simulation in 1.10.0]**
+
+> **v1.10.0:** a stand-off engagement now runs through the real game loop - fired inbound from 7 km, the HARM kills a radiating site (`GameLoop.smoke.test.ts`). A human feel pass is still welcome but no longer blocks anything.
 
 `HARM_TUNING` (600 m/s, 15 s burn, 20 m hit radius) has unit tests but has not been flown by a human
 against the SHATTERED_RIDGE belt. Expect a balance pass.
 
-## 48. Not shipped from the v1.5.0 plan
+## 48. Not shipped from the v1.5.0 plan **[Mostly resolved in 1.10.0]**
+
+> **v1.10.0:** struggle detection shipped (#40), and progressive disclosure shipped as the FIRST_FLIGHT HUD and brief deck (#61). Still not built: cruise-missile support (`Z`), a remap screen (#41).
 
 Cruise-missile fire support (`Z`), progressive control disclosure by mission, struggle detection
 (auto-offering the stick flip after repeated pitch reversals), key remapping, and the autopilot
@@ -650,19 +682,25 @@ Now that the jet turns, the corridor plays as a slalom rather than a hallway, wh
 complaint. `OPEN_SEA` and `SHATTERED_RIDGE` already give open air. A branching archipelago map is the
 right answer and is a v1.7 item, because a new map means re-balancing every scenario that names it.
 
-## 54. Guidance **[Partly fixed]**
+## 54. Guidance **[Resolved in 1.10.0]**
+
+> **v1.10.0:** the go-here cue: a chevron on a ring round the boresight pointing at the boat when the jet should be going home (recovery phase, bingo fuel, heavy damage), or at a standing hardened target - `BOAT 4.2 KM · TURN LEFT`.
 
 The review said no hints existed; a priority-ranked coach ticker did (`Tutorial.ts`). What was missing
 was *offensive* coaching, which is now in. Still not done: nothing prompts the player to *land* except
 the final approach aids, and there is no first-flight guided "go here" arrow on the HUD.
 
-## 55. Winning **[Partly fixed]**
+## 55. Winning **[Resolved in 1.10.0]**
+
+> **v1.10.0:** completing the training sortie is `WINGS EARNED`, and it is also the graduation from the FIRST_FLIGHT HUD to the full instruments - the debrief says so.
 
 `Milestones.ts` pays out four first-times once each. There is still no new "first sortie" mission with
 a fanfare debrief; `TRAINING_SORTIE` already exists and is shielded. A qualification debrief ("WINGS")
 is the obvious next reward.
 
-## 56. Turns are energy-limited, not snappy **[Open - tuning]**
+## 56. Turns are energy-limited, not snappy **[Resolved in 1.10.0 — see #65, #71]**
+
+> **v1.10.0:** superseded by #65 and #71.
 
 Measured through the real game loop: about 9 degrees/s from a held bank, ~19 s for a sustained 180 at
 full afterburner, ending near 96 m/s. The assist holds the wing at its limit, and the airframe's induced
@@ -680,7 +718,9 @@ tests exercise and is unchanged. There is no setting to turn the assist off in t
 They live in `localStorage` (`carrier-vector-1988.milestones`). A cleared store or a new browser earns
 them again. Blocked storage means they repeat every session, which is the chosen failure mode.
 
-## 59. The guns warning is a callout, not a sound **[Open]**
+## 59. The guns warning is a callout, not a sound **[Resolved in 1.10.0]**
+
+> **v1.10.0:** `SoundFX.playGunsTracking` - a rising three-pip warble, panned toward the shooter, distinct from the master caution and the missile lock tone. Played when a fighter first gains a solution.
 
 `GUNS TRACKING` is on the callout channel only. A dedicated lock-tone for "a fighter has a solution on
 you" would read faster than text at the moment the pilot is looking at the target.
@@ -703,7 +743,9 @@ The first review to run the live build in a real browser and inspect rendered
 frames. Everything below is measured, not inferred — see
 [`docs/reviews/v1.9.0/PLAYTEST_EVIDENCE.md`](reviews/v1.9.0/PLAYTEST_EVIDENCE.md).
 
-## 61. High cognitive load for beginners **[Partly fixed in 1.9.0]**
+## 61. High cognitive load for beginners **[Resolved in 1.10.0]**
+
+> **v1.10.0:** a new pilot flies the FIRST_FLIGHT HUD - three optional regions (horizon, armed-weapon chip, one hint line) instead of nine, with a single steering cue replacing the compass and radar - and sees the brief deck: four panels instead of eight. Both graduate automatically after the first completed mission; `U` steps through FIRST FLIGHT / ARCADE / PRO at any time and the choice is remembered. Budgets are enforced by `HudDensity.test.ts`. The briefing screen is the remaining dense screen (v1.10.0 roadmap N1).
 
 The long-running entry, now with numbers behind it. Measured at 1440×900,
 default settings: **27 simultaneous draw regions, 33 labelled values, 29 key
@@ -775,7 +817,9 @@ hint 60 px below it read `REDUCE TO BELOW 90 M/S`. Obeying it stalls the jet.
 `HUD.isOnApproach`), `altitudeAgl < 400` and a non-climbing vertical speed. Two
 regression tests cover the launch and departure cases.
 
-## 65. Turn rate and roll feel **[Open — needs an owner's decision]**
+## 65. Turn rate and roll feel **[Resolved in 1.10.0]**
+
+> **v1.10.0:** the roll-easing idea below was measured and dropped (the roll already reaches its cap in ~0.45 s, normal arcade feel). The real causes were #71 (stability on the wrong axis) and an under-lifted airframe. The ARCADE tempo now flies a bigger wing (`PacingSpec.liftScale` 1.7, lift and drag both scaled); SIM keeps the original. Held-bank turn in the running game: **12.3 °/s with the nose at +6°** (was 7.2 °/s with the nose climbing to 29°).
 
 Supersedes and quantifies #56. Measured in-browser, held input, 200 m/s at
 2500 m:
@@ -806,7 +850,9 @@ timing budget is built on. Three options in
 the recommended one (ease the roll to the cap over ~0.4 s) changes no mission
 timing.
 
-## 66. The anti-stall throttle floor never retards **[Open]**
+## 66. The anti-stall throttle floor never retards **[Resolved in 1.10.0]**
+
+> **v1.10.0:** in ASSIST, afterburner is a held boost: released above 180 m/s, it returns to military power within about a second. A throttle the pilot set below 100% is never touched; MANUAL keeps a latched burner.
 
 `FlightAssist.ts` raises throttle to 0.7 when airspeed decays below 130 m/s, and
 nothing ever lowers it. Measured: a new pilot who touches no throttle key flies
@@ -833,7 +879,9 @@ carrier damage path without ever checking it.
 A shielded package logs a completed drone pass and deals no damage. Three
 regression tests.
 
-## 68. The deck screen contradicts itself **[Open]**
+## 68. The deck screen contradicts itself **[Resolved in 1.10.0]**
+
+> **v1.10.0:** the bomb contradiction was a real **free-ordnance bug** (#73), now fixed; the payload panel shows `NONE ABOARD` / `MAGAZINE SHORT` in caution. A shielded scenario's contact panel reads `TRAINING RANGE · TARGET DRONE` in the neutral colour, and the cockpit tags it `DRONE`.
 
 Two contradictions visible in a single frame on the training mission:
 
@@ -847,7 +895,9 @@ Two contradictions visible in a single frame on the training mission:
 
 See R6.
 
-## 69. The desktop deck screen is worse than the phone one **[Open — by accident]**
+## 69. The desktop deck screen is worse than the phone one **[Resolved in 1.10.0]**
+
+> **v1.10.0:** `DeckView.deckPanelSpecs` - a FIRST_FLIGHT pilot sees the BRIEF deck (orders, turnaround, contacts, log) on any screen; the full deck (payload, stocks, deck plan) follows the HUD density. The crew panel is folded into one turnaround line.
 
 Desktop: 8 panels, ~35 numbers, 4 progress-bar groups. Phone landscape: 4 panels
 and one large `LAUNCH` button, from the same code via `DeckLayout`'s priority
@@ -856,7 +906,9 @@ shedding. The phone version is clearer for a first-time player **on any device**
 The simplified deck screen this game needs already exists and already ships — it
 is just gated on viewport size instead of on player experience. See R5.
 
-## 70. `BankToTurn.test.ts` does not cover the saturated case **[Open]**
+## 70. `BankToTurn.test.ts` does not cover the saturated case **[Resolved in 1.10.0]**
+
+> **v1.10.0:** "coordinated turning (v1.10.0)" adds full-deflection sustained bank-and-pull, nose-on-flight-path and sideslip tests, and an ARCADE-vs-SIM airframe comparison.
 
 The test *"bank and pull swings the nose round faster than the bank alone"*
 exercises 0.6 stick deflection for 6 s from 220 m/s, where the property holds.
@@ -865,3 +917,89 @@ nose-high start, where heading change falls to ~0.25 °/s (#65).
 
 Not a false test — an incomplete one. 921 green tests made the gap invisible.
 Add the saturated case and assert whatever the intended behaviour actually is.
+
+
+---
+
+# Found and fixed in v1.10.0
+
+Each of these was found while implementing the v1.9.0 review, by measuring or by
+the browser harness - none appear in any review. Evidence:
+[`reviews/v1.10.0/IMPLEMENTATION_REPORT.md`](reviews/v1.10.0/IMPLEMENTATION_REPORT.md) §3.
+
+## 71. Directional stability acted about the wrong axis **[Fixed in 1.10.0]**
+
+The weathervane term rotated the nose about the WORLD vertical toward the
+velocity heading. Wings-level that is correct; banked it is not, because the
+airframe's yaw axis is tilted and the restoring moment is mostly nose-down.
+Measured: 16 s of held bank left the nose 43° above the horizon while the jet
+descended 146 m - a sideslip nothing corrected, and the "climbing spiral" behind
+*"I pull and nothing happens"*. Now acts on sideslip β about the body yaw axis
+(`AircraftPhysics.update`), identical wings-level.
+
+## 72. The recovery assist could not fly its own approach **[Fixed in 1.10.0]**
+
+Three compounding faults: a pure-integral autothrottle (no anticipation); an
+altitude law damped toward zero *attitude*, which settles below any slope that
+needs a nose-up attitude; and a fixed 70 m/s approach speed the original airframe
+could only fly at 15.5° AoA (past the limiter). On SIM it handed over 34 m low at
+95 m/s; on the ARCADE airframe it flew into the sea 900 m short. Now: rate-damped
+autothrottle (`speedRate`), flight-path (γ) damping wings-level, a glideslope
+feed-forward (`NavTarget.pathAngle`), and an approach speed derived from the
+airframe's on-speed AoA (`AircraftPhysics.onSpeedApproachSpeed`). Hands over
+within 1 m of the slope on both airframes.
+
+## 73. Free ordnance from an empty magazine **[Fixed in 1.10.0]**
+
+Launch clamped the ship's stock at zero but handed the jet its full planned
+loadout. `DeckManager.loadableLoadout()` caps the plan at the magazine; launch
+deducts and flies exactly that, and logs `MAGAZINE SHORT`.
+
+## 74. The turnaround panel's stores rows were never visible **[Fixed in 1.10.0]**
+
+The progress bar was pinned to the panel's bottom edge and the LOADED rows were
+laid out below it - off the panel, on every desktop size.
+
+## 75. ARCADE pill clicks landed 104 px left **[Fixed in 1.10.0]**
+
+Renderer and hit-tester passed different pill flags (the hit-tester omitted the
+chaff pill). Both now read `HudLayout.arcadeBarFlags`, and a test pins every
+clickable rect to its drawn rect.
+
+## 76. PRO buttons mis-hit; deleted strip left click traps **[Fixed in 1.10.0]**
+
+See #45. Shared `cornerButtonRects` / `proChipRects`.
+
+## 77. TERRAIN alarm on every catapult climb-out **[Fixed in 1.10.0]**
+
+The terrain floor's height-only partial pull annunciated as a red
+`TERRAIN — AUTO PULL-UP`. Now announced only when sinking or at the hard floor.
+
+## 78. Two orders at once on phones **[Fixed in 1.10.0]**
+
+Phones default the recovery assist on, and its JOIN cue (`GET ASTERN OF THE BOAT`)
+showed from take-off, over `CLIMB TO 2,500 FT`. The JOIN cue now shows only when
+the jet should be going home (`GameLoop.isHomeward`).
+
+## 79. Any exception froze the game silently **[Fixed in 1.10.0]**
+
+The frame body scheduled the next frame on its last line. Now one bad frame is
+logged and skipped; 30 consecutive failures stop the loop and show a crash screen
+with Reload and a pre-filled report (`GameLoop.onFatalError`).
+
+## 80. Returning pilots: START HERE on one mission, FLY on another **[Fixed in 1.10.0]**
+
+`start()` now always opens on `recommendScenario`, not only for new pilots.
+
+## 81. Touch readouts drifted into the objective strip **[Fixed in 1.10.0]**
+
+Touch-mode bottom readouts were measured up from the tallest thumb control; they
+now sit in the free bottom-centre gap (`HudReserve.bottomCentre`).
+
+## 82. SIM's approach speed is clamped below its own on-speed speed **[Open]**
+
+The original airframe's on-speed approach speed (1 g at 8.1° AoA) is about
+100 m/s, above what the wires accept (< 95 m/s). The recovery assist clamps it to
+88 m/s, so on SIM a correct approach reads slightly slow on the AoA indexer
+(~9.6°). ARCADE (the default) is on-speed. The honest fix is a SIM airframe pass
+(roadmap N3).

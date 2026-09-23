@@ -48,8 +48,8 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['y'], display: 'Y', label: 'Release the designation', context: 'FLIGHT', group: 'WEAPONS' },
 
     // --- Flight assistance ---
-    { keys: ['f'], display: 'F', label: 'Cycle flight assist: MANUAL / ASSIST / AUTO', context: 'FLIGHT', group: 'FLIGHT' },
-    { keys: ['g'], display: 'G', label: 'Terrain-following autopilot (on by default)', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['f'], display: 'F', label: 'Cycle flight assist: MANUAL/ASSIST/AUTO', context: 'FLIGHT', group: 'FLIGHT' },
+    { keys: ['g'], display: 'G', label: 'Terrain-following autopilot (default on)', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['l'], display: 'L', label: 'Recovery assist - flies the approach home', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['v'], display: 'V', label: 'Padlock camera onto the locked target', context: 'FLIGHT', group: 'FLIGHT' },
     { keys: ['backspace'], display: 'BACKSPACE', label: 'Rewind 5 seconds (2 uses per sortie)', context: 'FLIGHT', group: 'FLIGHT' },
@@ -62,6 +62,7 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['4'], display: '4', label: 'Mk.82 bomb loadout', context: 'DECK', group: 'DECK OPS' },
     { keys: ['r'], display: 'R', label: 'Rush the turnaround (costs crew stamina)', context: 'DECK', group: 'DECK OPS' },
     { keys: ['v'], display: 'V', label: 'Threat level: CADET / REGULAR / VETERAN', context: 'DECK', group: 'DECK OPS' },
+    { keys: ['u'], display: 'U', label: 'Deck detail: brief / full (follows HUD)', context: 'DECK', group: 'DECK OPS' },
 
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
@@ -80,9 +81,45 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     { keys: ['o'], display: 'O', label: 'Ops tempo: ARCADE / SIM', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['k'], display: 'K', label: 'Controls: AUTO / TOUCH / KEYBOARD', context: 'GLOBAL', group: 'SYSTEM' },
     { keys: ['c'], display: 'C', label: 'Colour palette: classic / colour-blind', context: 'GLOBAL', group: 'SYSTEM' },
-    { keys: ['u'], display: 'U', label: 'HUD density: ARCADE / PRO', context: 'FLIGHT', group: 'SYSTEM' },
+    { keys: ['u'], display: 'U', label: 'HUD: FIRST FLIGHT / ARCADE / PRO', context: 'FLIGHT', group: 'SYSTEM' },
     { keys: ['i'], display: 'I', label: 'Invert pitch (flight-sim stick)', context: 'FLIGHT', group: 'FLIGHT' }
 ];
+
+/**
+ * The flight-control cluster, by PHYSICAL key position (Known Issues #41).
+ *
+ * `KeyboardEvent.key` reports the label on the key, so on an AZERTY keyboard
+ * the physical W key reports "z" and WASD is scattered across the board; on
+ * QWERTZ, Y and Z swap. The stick keys are about where your fingers rest, not
+ * what is printed on the caps, so for these six the game reads
+ * `KeyboardEvent.code` - which names the position ("KeyW" is always the key
+ * above S) - and every other shortcut keeps its label, because M for mute and
+ * H for help are mnemonics, not positions.
+ */
+const FLIGHT_CLUSTER_CODES: Readonly<Record<string, string>> = {
+    KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyQ: 'q', KeyE: 'e'
+};
+
+/** Labels that the flight cluster owns, whatever key produced them. */
+const FLIGHT_CLUSTER_LABELS = new Set(Object.values(FLIGHT_CLUSTER_CODES));
+
+/**
+ * Normalise a keyboard event to the key name the input table uses.
+ *
+ * A position in the flight cluster maps to its QWERTY letter. A LABEL that
+ * belongs to the cluster but arrives from outside it (AZERTY's "a", which sits
+ * where QWERTY's Q is, is already handled by its code; but AZERTY's "w" sits
+ * bottom-left, where QWERTY's Z is) is renamed so it cannot fire a stick axis
+ * from the wrong side of the keyboard.
+ */
+export function normalizeKey(key: string, code?: string): string {
+    if (code && code in FLIGHT_CLUSTER_CODES) return FLIGHT_CLUSTER_CODES[code];
+    const lower = key.toLowerCase();
+    if (code && code.startsWith('Key') && FLIGHT_CLUSTER_LABELS.has(lower)) {
+        return `label:${lower}`;
+    }
+    return lower;
+}
 
 const PITCH_INVERT_KEY = 'carrier_vector_pitch_invert';
 

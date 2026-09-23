@@ -143,3 +143,91 @@ describe('loops through the vertical', () => {
         expect(d).toBeLessThan(0.05);
     });
 });
+
+describe('coordinated turning (v1.10.0)', () => {
+    let p: AircraftPhysics;
+
+    beforeEach(() => {
+        p = new AircraftPhysics();
+        p.position = { x: 0, y: 2500, z: 0 };
+        p.velocity = { x: 0, y: 0, z: 200 };
+        p.throttle = 1.0;
+        p.turnAssist = 1;
+    });
+
+    /**
+     * Directional stability acts about the BODY yaw axis.
+     *
+     * It used to act about the world vertical, which is right wings-level and
+     * wrong in a bank: nothing pulled a banked nose back down to the flight
+     * path. Measured before the fix, 16 s of held bank left the nose 43 deg
+     * above the horizon while the jet DESCENDED 146 m - a large sideslip the
+     * model never corrected, and the reason every held bank became a slow
+     * climbing spiral.
+     */
+    it('keeps the nose on the flight path in a sustained bank (no climbing spiral)', () => {
+        p.throttle = 1.0; p.pitch = 0; p.position.y = 2500; p.velocity = { x: 0, y: 0, z: 200 };
+        p.turnAssist = 1;
+        fly(p, 16, (a) => a.applyRollInput(-1, DT));
+        const pathPitch = Math.asin(p.velocity.y / p.airSpeed);
+        expect(Math.abs(p.pitch - pathPitch)).toBeLessThan(15 * Math.PI / 180);
+        expect(p.pitch).toBeLessThan(20 * Math.PI / 180);
+    });
+
+    it('reduces sideslip when banked', () => {
+        p.turnAssist = 1; p.throttle = 1.0; p.position.y = 2500;
+        fly(p, 1, (a) => a.applyRollInput(-1, DT));
+        const slip = () => {
+            const r = p.rightVector;
+            return Math.abs((p.velocity.x * r.x + p.velocity.y * r.y + p.velocity.z * r.z) / p.airSpeed);
+        };
+        fly(p, 12, () => {});
+        expect(slip()).toBeLessThan(0.1);
+    });
+
+    /**
+     * #70: the saturated case the older bank-and-pull test never covered - full
+     * deflection, sustained, from the state the game actually creates. The
+     * property the game promises is that holding the stick keeps turning; it
+     * must not collapse to a stationary heading.
+     */
+    it('a held full-deflection bank-and-pull keeps turning for 16 s', () => {
+        p.turnAssist = 1; p.throttle = 1.0; p.position.y = 2500; p.velocity = { x: 0, y: 0, z: 200 };
+        let turned = 0;
+        let prev = p.yaw;
+        fly(p, 16, (a) => {
+            a.applyRollInput(-1, DT);
+            a.applyPitchInput(1, DT);
+            turned += headingDelta(prev, a.yaw);
+            prev = a.yaw;
+        });
+        // 16 s at no less than 6 deg/s, and never stalled at the end.
+        expect(Math.abs(turned)).toBeGreaterThan(16 * 6 * Math.PI / 180);
+        expect(p.isStalled).toBe(false);
+    });
+
+    it('the ARCADE airframe (liftScale 1.7) turns faster and holds altitude in a held bank', () => {
+        const run = (liftScale: number) => {
+            const q = new AircraftPhysics();
+            q.position = { x: 0, y: 2500, z: 0 };
+            q.velocity = { x: 0, y: 0, z: 200 };
+            q.throttle = 1.0; q.turnAssist = 1; q.liftScale = liftScale;
+            let turned = 0;
+            let prev = q.yaw;
+            fly(q, 16, (a) => {
+                a.applyRollInput(-1, DT);
+                turned += headingDelta(prev, a.yaw);
+                prev = a.yaw;
+            });
+            return { rate: Math.abs(turned) / 16 * 180 / Math.PI, dAlt: q.position.y - 2500 };
+        };
+        const sim = run(1);
+        const arcade = run(1.7);
+        expect(arcade.rate).toBeGreaterThan(sim.rate * 1.2);
+        expect(arcade.rate).toBeGreaterThan(11);
+        // A bigger wing carries more drag as well as more lift, so the arcade
+        // jet still sinks a little in a hands-off 75-degree bank - but far less
+        // than the original airframe (measured: -126 m versus -284 m in 16 s).
+        expect(Math.abs(arcade.dAlt)).toBeLessThan(Math.abs(sim.dAlt) * 0.6);
+    });
+});

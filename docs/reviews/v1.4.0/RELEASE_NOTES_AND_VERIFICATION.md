@@ -25,15 +25,15 @@ Version 1.3.0 was a mathematical and architectural triumph: zero runtime depende
 ## 2. Completed Systems Breakdown
 
 ### 2.1. 3D Vector Line Fragmentation Debris ("Juice")
-- **Source:** [`src/renderer/VectorDebris.ts`](../../src/renderer/VectorDebris.ts)
-- **Unit Tests:** [`src/renderer/VectorDebris.test.ts`](../../src/renderer/VectorDebris.test.ts) (9/9 passed)
+- **Source:** [`src/renderer/VectorDebris.ts`](../../../src/renderer/VectorDebris.ts)
+- **Unit Tests:** [`src/renderer/VectorDebris.test.ts`](../../../src/renderer/VectorDebris.test.ts) (9/9 passed)
 - **Mechanics:** Exploding airframes and SAM sites shatter into 10–16 physics-driven tumbling line segments.
 - **Physics:** Segments inherit parent velocity plus radial blast impulse ($15–40\text{ m/s}$), gravity ($9.81\text{ m/s}^2$), and aerodynamic drag. Segments tumble via 3-axis angular velocity ($\boldsymbol{\omega} \in [-4\pi, +4\pi]$), bounce off terrain, and fade over 1.2 seconds of phosphor alpha decay.
 - **Zero GC Pause:** Objects are recycled from pre-allocated object pools.
 
 ### 2.2. Synthesized Cockpit Voice Warning System ("Bitchin' Betty")
-- **Source:** [`src/audio/CockpitVoiceSystem.ts`](../../src/audio/CockpitVoiceSystem.ts)
-- **Unit Tests:** [`src/audio/CockpitVoiceSystem.test.ts`](../../src/audio/CockpitVoiceSystem.test.ts) (8/8 passed)
+- **Source:** [`src/audio/CockpitVoiceSystem.ts`](../../../src/audio/CockpitVoiceSystem.ts)
+- **Unit Tests:** [`src/audio/CockpitVoiceSystem.test.ts`](../../../src/audio/CockpitVoiceSystem.test.ts) (8/8 passed)
 - **Mechanics:** Synthesizes authentic 1980s military avionics speech using the browser's native `window.speechSynthesis` API without external audio files.
 - **Priority Queue & De-bounce:**
   1. `MISSILE_LAUNCH` ("MISSILE LAUNCH. DEFENSIVE.") — Priority 100
@@ -43,25 +43,25 @@ Version 1.3.0 was a mathematical and architectural triumph: zero runtime depende
 - Enforces a 4.0-second cooldown per alert type to eliminate warning fatigue.
 
 ### 2.3. Padlock Target-Tracking Camera Mode (`V` Key)
-- **Source:** [`src/renderer/PadlockCamera.ts`](../../src/renderer/PadlockCamera.ts)
-- **Unit Tests:** [`src/renderer/PadlockCamera.test.ts`](../../src/renderer/PadlockCamera.test.ts) (8/8 passed)
+- **Source:** [`src/renderer/PadlockCamera.ts`](../../../src/renderer/PadlockCamera.ts)
+- **Unit Tests:** [`src/renderer/PadlockCamera.test.ts`](../../../src/renderer/PadlockCamera.test.ts) (8/8 passed)
 - **Mechanics:** Slaves cockpit camera gaze to track the designated target vector.
 - **Ergonomics:** Constrained to human canopy limits ($\pm 110^\circ$ azimuth, $-30^\circ / +60^\circ$ elevation) with 250ms ease-out cubic transitions. The HUD renders a dynamic `PADLOCK` status reticle.
 
 ### 2.4. Non-Lethal Narrative Onboarding (`TRAINING_SORTIE`)
-- **Source:** [`src/core/Scenarios.ts`](../../src/core/Scenarios.ts)
-- **Unit Tests:** [`src/core/TrainingSortie.test.ts`](../../src/core/TrainingSortie.test.ts) (4/4 passed)
+- **Source:** [`src/core/Scenarios.ts`](../../../src/core/Scenarios.ts)
+- **Unit Tests:** [`src/core/TrainingSortie.test.ts`](../../../src/core/TrainingSortie.test.ts) (4/4 passed)
 - **Resolution of Issue #32:** Zero hostile SAM sites (`noSamSites: true`) and narrative wingman ("Ghost-Lead") radio sequence guiding rookie pilots through climb-out, weapons checks, canyon maneuvering, and carrier pattern entry in complete safety.
 
 ### 2.5. Arcade 5-Second Time-Rewind ("Oops" Button)
-- **Source:** [`src/core/TimeRewind.ts`](../../src/core/TimeRewind.ts)
-- **Unit Tests:** [`src/core/TimeRewind.test.ts`](../../src/core/TimeRewind.test.ts) (5/5 passed)
+- **Source:** [`src/core/TimeRewind.ts`](../../../src/core/TimeRewind.ts)
+- **Unit Tests:** [`src/core/TimeRewind.test.ts`](../../../src/core/TimeRewind.test.ts) (5/5 passed)
 - **Mechanics:** Zero-allocation circular buffer capturing 5.0 seconds of flight telemetry at 20Hz (100 snapshot entries).
 - **Control:** Triggered via `Backspace` in flight. Restores prior flight state while retaining current battle damage to prevent invulnerability exploits. Budgeted to 2 uses per sortie in ARCADE and ASSIST modes.
 
 ### 2.6. Persistent Rogue-lite Campaign State Machine
-- **Source:** [`src/campaign/CampaignState.ts`](../../src/campaign/CampaignState.ts)
-- **Unit Tests:** [`src/campaign/CampaignState.test.ts`](../../src/campaign/CampaignState.test.ts) (6/6 passed)
+- **Source:** [`src/campaign/CampaignState.ts`](../../../src/campaign/CampaignState.ts)
+- **Unit Tests:** [`src/campaign/CampaignState.test.ts`](../../../src/campaign/CampaignState.test.ts) (6/6 passed)
 - **Air Wing Logistics:** Tracks 24 F-14 Tomcats, 12 A-6 Intruders, finite munitions, and carrier hull integrity across a branching 7-sector Norwegian Sea theater network.
 - **Strategic Threat Attenuation:** Neutralizing Early Warning Radars applies a permanent 40% attenuation to enemy interceptor scramble times and SAM density across adjacent operational sectors.
 

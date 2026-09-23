@@ -19,9 +19,13 @@ import type { TouchDemand } from '../core/TouchInput';
 export interface TouchChromeContext {
     demand: TouchDemand;
     /** Currently armed weapon, to light the right pill. */
-    selectedWeapon: 'GUN' | 'AIM9' | 'BOMB';
-    /** Rounds / missiles / bombs remaining, drawn on the pills. */
-    ammo: [number, number, number];
+    selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM';
+    /** Rounds / missiles / bombs / HARMs remaining, drawn on the pills. */
+    ammo: [number, number, number, number];
+    /** Chaff cartridges left, drawn on the chaff button. */
+    chaff: number;
+    /** A missile is in the air at you - light the chaff button. */
+    missileInbound: boolean;
     /** Present throttle 0..1.5, for the track's fill. */
     throttle: number;
     /** Whether anything is designated, to light the target button. */
@@ -138,8 +142,8 @@ export function drawTouchControls(
     }
 
     // --- Weapon pills ---
-    const ids: ('GUN' | 'AIM9' | 'BOMB')[] = ['GUN', 'AIM9', 'BOMB'];
-    const names = ['GUN', 'AIM9', 'MK82'];
+    const ids: ('GUN' | 'AIM9' | 'BOMB' | 'HARM')[] = ['GUN', 'AIM9', 'BOMB', 'HARM'];
+    const names = ['GUN', 'AIM9', 'MK82', 'HARM'];
     layout.weapons.forEach((r, i) => {
         const selected = context.selectedWeapon === ids[i];
         const empty = context.ammo[i] <= 0;
@@ -170,6 +174,12 @@ export function drawTouchControls(
 
     ring(ctx, layout.fire.cx, layout.fire.cy, layout.fire.r,
         context.fireArmed ? THEME.alert : THEME.key, demand.firing, 'FIRE', 12);
+
+    // Chaff: amber and lit the moment a missile is in the air at you, which
+    // is the only moment it is the right button to press.
+    const chaffColor = context.chaff <= 0 ? THEME.muted : context.missileInbound ? THEME.caution : THEME.key;
+    ring(ctx, layout.chaff.cx, layout.chaff.cy, layout.chaff.r,
+        chaffColor, context.missileInbound && context.chaff > 0, `CHF ${context.chaff}`, 9);
 
     // --- Recovery assist ---
     // Lit when engaged, because "am I being flown home or not" is the whole

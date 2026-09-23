@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    arbitrateHint,
     getContextualHint,
     TrainingSequence,
     TRAINING_STEPS,
@@ -209,5 +210,34 @@ describe('Contextual flight coach - the attack and the tail', () => {
 
     it('stays quiet when the sky is empty', () => {
         expect(getContextualHint({ ...base, bandit: null })).toBeNull();
+    });
+});
+
+describe('arbitrateHint - one instruction at a time', () => {
+    const info = { text: 'LOCKED - TURN TOWARD THE BANDIT UNTIL IT IS IN RANGE', severity: 'INFO' as const };
+    const fire = { text: 'IN RANGE - FIRE [SPACE]', severity: 'INFO' as const };
+    const stall = { text: 'STALL - PUSH NOSE DOWN [S] AND ADD POWER [SHIFT]', severity: 'CRITICAL' as const };
+
+    // The measured v1.9.0 case: CLIMB on the strip, TURN TOWARD THE BANDIT below it.
+    it('silences routine coaching that competes with a non-attack order', () => {
+        expect(arbitrateHint(info, null, { urgency: 'ACTION', key: 'W' })).toBeNull();
+    });
+
+    it('lets attack coaching reinforce an attack objective', () => {
+        expect(arbitrateHint(fire, null, { urgency: 'ACTION', key: 'SPACE' })).toBe(fire);
+    });
+
+    it('always lets safety speak, whatever the objective says', () => {
+        expect(arbitrateHint(stall, null, { urgency: 'ACTION', key: 'W' })).toBe(stall);
+        expect(arbitrateHint(stall, 'TRAINING 1/6', null)).toBe(stall);
+    });
+
+    it('puts the training checkout ahead of routine coaching', () => {
+        expect(arbitrateHint(info, 'TRAINING 2/6 - BANK', null)?.text).toBe('TRAINING 2/6 - BANK');
+    });
+
+    it('shows routine coaching when the objective is only informational', () => {
+        expect(arbitrateHint(info, null, { urgency: 'NORMAL' })).toBe(info);
+        expect(arbitrateHint(info, null, null)).toBe(info);
     });
 });

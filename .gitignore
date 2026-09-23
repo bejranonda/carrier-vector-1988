@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Instrumented playtest screenshots and report (npm run playtest)
+playtest-output

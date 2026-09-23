@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeDeckLayout, columnsForWidth, type PanelSpec, type Rect } from './DeckLayout';
+import { deckPanelSpecs } from './DeckView';
 
 /** The real deck screen panel set. */
 const SPECS: PanelSpec[] = [
@@ -257,5 +258,36 @@ describe('essential panels on a short screen', () => {
     it('still grows to fill a tall window', () => {
         const layout = computeDeckLayout(essentialSpecs, { width: 1440, height: 1200 });
         expect(layout.growScale).toBeGreaterThan(1);
+    });
+});
+
+describe('deck panel sets (v1.10.0)', () => {
+    it('shows a first-time pilot the brief deck: orders, turnaround, contacts, log', () => {
+        const ids = deckPanelSpecs({ detail: 'BRIEF' }).map(s => s.id);
+        expect(ids).toEqual(['ORDERS', 'TURNAROUND', 'THREATS', 'LOG']);
+    });
+
+    it('keeps the full deck without a separate crew panel', () => {
+        const ids = deckPanelSpecs({ detail: 'FULL' }).map(s => s.id);
+        expect(ids).toContain('PAYLOAD');
+        expect(ids).toContain('STATUS');
+        expect(ids).not.toContain('CREW');
+    });
+
+    it('lays out every set without overlap at desktop and laptop sizes', () => {
+        for (const detail of ['BRIEF', 'FULL'] as const) {
+            for (const [width, height] of [[1440, 900], [1280, 720], [1024, 640]]) {
+                const out = computeDeckLayout(deckPanelSpecs({ detail }), { width, height });
+                const rects = Object.values(out.panels);
+                for (let i = 0; i < rects.length; i++) {
+                    for (let j = i + 1; j < rects.length; j++) {
+                        const a = rects[i];
+                        const b = rects[j];
+                        const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+                        expect(overlap, `${detail} ${width}x${height}`).toBe(false);
+                    }
+                }
+            }
+        }
     });
 });

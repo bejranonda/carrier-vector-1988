@@ -70,6 +70,11 @@ export interface FlightState {
      * game, literally impossible.
      */
     onApproach: boolean;
+    /**
+     * Rate of change of airspeed, m/s^2, smoothed. Optional so a caller that
+     * does not measure it gets the old pure-integral autothrottle.
+     */
+    speedRate?: number;
 }
 
 /** What the player is currently asking for, -1..1 per axis. */
@@ -122,6 +127,13 @@ export interface NavTarget {
      * built, with everything that knows why.
      */
     overridesApproach?: boolean;
+    /**
+     * Flight-path angle the target itself is moving along, radians (negative
+     * descends). A glideslope is a moving altitude target, and a proportional
+     * altitude law chasing one always lags it; this feed-forward lets the law
+     * fly the slope and use the altitude error only for corrections.
+     */
+    pathAngle?: number;
 }
 
 // ---------------------------------------------------------------------
@@ -131,6 +143,12 @@ export interface NavTarget {
 export const ASSIST_TUNING = {
     /** Alpha the limiter will not let the pilot pull past, radians (~15deg). */
     alphaLimit: 0.26,
+    /** ASSIST cancels afterburner above this throttle (1.0 = military power). */
+    burnerCancelAbove: 1.0,
+    /** ...only once the jet is safely flying, m/s. */
+    burnerCancelSpeed: 180,
+    /** Throttle-rate demand used to come out of burner (units of full travel). */
+    burnerCancelRate: 1.0,
     /**
      * Fraction of the alpha limit at which the limiter STARTS to bite. Below
      * it the pilot has the whole aeroplane. A limiter that scales every pull
@@ -185,6 +203,10 @@ export const ASSIST_TUNING = {
     altitudeGain: 0.0016,
     /** Autopilot throttle per m/s of speed error. */
     speedGain: 0.05,
+    /** Bank, radians, above which altitude hold damps attitude instead of flight path. */
+    pathDampingBank: 0.35,
+    /** Throttle-rate demand per m/s^2 of speed change - the anticipation term. */
+    speedDamping: 0.3,
     defaultMaxBank: 1.05
 } as const;
 
@@ -328,9 +350,24 @@ export function autopilotDemand(state: FlightState, target: NavTarget): ControlD
      */
     const bankFactor = Math.max(0.25, Math.cos(state.roll));
     let pitch = clamp(altError * t.altitudeGain * bankFactor, -0.8, 0.9);
-    // Hold the nose where the climb rate wants it rather than chasing altitude
-    // with attitude, which oscillates.
-    pitch = clamp(pitch - state.pitch * 0.8, -1, 1);
+    /**
+     * Damp toward a flight path, not an attitude - when wings-level.
+     *
+     * Damping on `state.pitch` asks for zero nose-up at zero altitude error,
+     * but a jet holding a slope at approach AoA needs the nose several degrees
+     * UP. A proportional law therefore settled with a permanent error: measured,
+     * the recovery assist rode ~40 m below the glideslope all the way down and
+     * flew the original airframe into the sea short of the boat. Damping the
+     * flight-path angle (gamma = asin(vs / V)) removes the offset, because level
+     * flight is gamma = 0 whatever the AoA. In a bank the old attitude term is
+     * kept - see the note above about why a vertical-path loop departs in a
+     * sustained turn - and the two are blended across the first 20 degrees.
+     */
+    const gamma = Math.asin(clamp(state.verticalSpeed / Math.max(1, state.airSpeed), -1, 1));
+    const wingsLevel = clamp(1 - Math.abs(state.roll) / t.pathDampingBank, 0, 1);
+    const pathFeedForward = (target.pathAngle ?? 0) * wingsLevel;
+    const damped = (gamma - pathFeedForward) * wingsLevel + state.pitch * (1 - wingsLevel);
+    pitch = clamp(pitch - damped * 0.8, -1, 1);
 
     // Rudder follows the bank rather than the raw heading error, which is
     // what makes it a coordinated turn instead of a skid: leading with full
@@ -340,7 +377,23 @@ export function autopilotDemand(state: FlightState, target: NavTarget): ControlD
         * Math.min(1, Math.abs(state.roll) / Math.max(0.05, maxBank));
     const yaw = clamp(headingError * t.rudderGain, -t.maxRudder, t.maxRudder) * bankProgress;
 
-    const throttle = clamp((target.airSpeed - state.airSpeed) * t.speedGain, -1, 1);
+    /**
+     * Autothrottle: integral on the speed error, damped by the rate of change.
+     *
+     * The throttle demand is a RATE, so a bare speed-error term is a pure
+     * integrator that cannot see a deceleration coming: it holds idle until the
+     * jet is already below the target, then winds power up at 0.125/s. On the
+     * approach that flew the jet into the sea 900 m short of the boat - it
+     * reached approach speed 1.5 km out at idle, sank below the slope, and the
+     * power came too late. The damping term adds power while the jet is still
+     * decelerating toward the target (and trims it while accelerating), which
+     * is how a real autothrottle anticipates. It needs no knowledge of the
+     * airframe's drag, so it holds for every ops tempo.
+     */
+    const throttle = clamp(
+        (target.airSpeed - state.airSpeed) * t.speedGain - (state.speedRate ?? 0) * t.speedDamping,
+        -1, 1
+    );
 
     return { pitch, roll, yaw, throttle, override: 'AUTOPILOT' };
 }
@@ -394,6 +447,21 @@ export function resolveControls(
             throttleDemand = Math.max(throttleDemand, 0.7);
         }
 
+        // ...and its mirror image. The catapult stroke leaves the throttle in
+        // full afterburner (correctly - cat shots are made in burner), and the
+        // floor above only ever pushed UP, so nothing brought it back: measured,
+        // a pilot who never touched a throttle key flew the whole sortie at
+        // 150%, burning ~138 L in 25 s and climbing into the nose-high state
+        // where no turn comes round. In ASSIST, burner is a held boost: once the
+        // jet is flying and the pilot has let go of the throttle, it comes back
+        // to military power. Only the burner is cancelled - a throttle the
+        // pilot set below 100% is left exactly where they put it.
+        if (level === 'ASSIST' && !state.onApproach && input.throttle === 0
+            && state.throttle > ASSIST_TUNING.burnerCancelAbove
+            && state.airSpeed > ASSIST_TUNING.burnerCancelSpeed) {
+            throttleDemand = -ASSIST_TUNING.burnerCancelRate;
+        }
+
         demand = {
             pitch: held.pitch,
             roll: held.roll,
@@ -418,7 +486,12 @@ export function resolveControls(
     }
 
     const afterFloor = terrainFloor(state, afterStall);
-    if (afterFloor > afterStall + ANNUNCIATE_EPSILON) demand.override = 'TERRAIN';
+    // Announce the floor only when the ground is actually a threat. Its
+    // height-only partial pull is meant to feel like the aeroplane resisting,
+    // not an alarm - and announcing it painted a red TERRAIN - AUTO PULL-UP on
+    // every catapult climb-out, the first thing a new pilot saw in the air.
+    const groundThreat = state.verticalSpeed < 0 || state.altitudeAgl <= ASSIST_TUNING.hardFloorAgl;
+    if (afterFloor > afterStall + ANNUNCIATE_EPSILON && groundThreat) demand.override = 'TERRAIN';
 
     demand.pitch = clamp(afterFloor, -1, 1);
     demand.roll = clamp(demand.roll, -1, 1);

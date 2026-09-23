@@ -205,6 +205,9 @@ export class DeckManager {
      */
     public combatShielded = false;
 
+    /** The loadout the last catapult shot actually carried (see `loadableLoadout`). */
+    public lastLaunchLoadout: AircraftLoadout | null = null;
+
     // Next sortie planned loadout
     public plannedLoadout: AircraftLoadout = {
         vulcanAmmo: 500,
@@ -475,6 +478,25 @@ export class DeckManager {
     }
 
     /**
+     * What the jet can actually be loaded with: the plan, capped by what the
+     * magazine holds. Chaff and HARMs are per-sortie issue, not ship's stock.
+     *
+     * Launch used to clamp the SHIP's stock at zero while handing the jet the
+     * full PLAN - so with no bombs left aboard, the jet still flew with two.
+     * Free ordnance quietly broke the loop the whole game is built on (what you
+     * fly with comes out of what the carrier has), and the payload panel showed
+     * "MK.82 2 / 4" beside a magazine reading 0.
+     */
+    public loadableLoadout(): AircraftLoadout {
+        return {
+            ...this.plannedLoadout,
+            vulcanAmmo: Math.min(this.plannedLoadout.vulcanAmmo, this.inventory.vulcanRounds),
+            sidewinders: Math.min(this.plannedLoadout.sidewinders, this.inventory.sidewinders),
+            ironBombs: Math.min(this.plannedLoadout.ironBombs, this.inventory.ironBombs)
+        };
+    }
+
+    /**
      * Start catapult launch sequence, deducting loaded munitions from carrier inventory
      */
     public triggerCatapultLaunch(): boolean {
@@ -490,9 +512,14 @@ export class DeckManager {
         }
         this.inventory.fuelLiters -= this.plannedFuel;
 
-        this.inventory.vulcanRounds = Math.max(0, this.inventory.vulcanRounds - this.plannedLoadout.vulcanAmmo);
-        this.inventory.sidewinders = Math.max(0, this.inventory.sidewinders - this.plannedLoadout.sidewinders);
-        this.inventory.ironBombs = Math.max(0, this.inventory.ironBombs - this.plannedLoadout.ironBombs);
+        const loaded = this.loadableLoadout();
+        if (loaded.sidewinders < this.plannedLoadout.sidewinders || loaded.ironBombs < this.plannedLoadout.ironBombs) {
+            this.log(`MAGAZINE SHORT: LAUNCHING WITH ${loaded.sidewinders} AIM-9, ${loaded.ironBombs} MK.82.`);
+        }
+        this.inventory.vulcanRounds -= loaded.vulcanAmmo;
+        this.inventory.sidewinders -= loaded.sidewinders;
+        this.inventory.ironBombs -= loaded.ironBombs;
+        this.lastLaunchLoadout = loaded;
 
         this.aircraftState = 'CATAPULT_LAUNCHING';
         this.catapultTimer = 0;

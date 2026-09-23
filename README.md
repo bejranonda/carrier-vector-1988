@@ -9,7 +9,8 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-932%20passing-00ff66)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/tests-989%20passing-00ff66)](https://vitest.dev/)
+[![Playtest](https://img.shields.io/badge/browser%20checks-28%20passing-00ff66)](#testing)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -56,7 +57,8 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 921 headless Vitest tests
+npm run test     # 989 headless Vitest tests
+npm run playtest # 28 checks in a real browser, screenshots to playtest-output/
 npm run preview  # serve the production build
 ```
 
@@ -108,7 +110,15 @@ asks you to use all three in one run:
 
 ## How to Play
 
-The briefing screen lays this out in three cards; here it is in full.
+**Your first flight is deliberately small.** A new pilot is routed to the
+TRAINING SORTIE and flies the **FIRST FLIGHT** HUD: the horizon, speed, altitude,
+one line saying what to do, the armed weapon, and a single steering cue on a ring
+round the gunsight that says where to go (`BOAT 4.2 KM · TURN LEFT`) - no
+compass, no radar, no row of buttons. The deck shows four panels, not eight.
+Finish the training sortie (`WINGS EARNED`) and the full instruments unlock; `U`
+switches between **FIRST FLIGHT / ARCADE / PRO** at any time and is remembered.
+
+The briefing screen lays the rest out in three cards; here it is in full.
 
 1. **Boot & mission select** — The display warms up, then the briefing screen
    offers six missions. `←` / `→` or `1`-`6` picks one; the three cards under
@@ -124,9 +134,11 @@ The briefing screen lays this out in three cards; here it is in full.
    objective strip across the top of the HUD counts the live contacts and the
    time you have left. Bombers (Tu-22M) cost 35% hull integrity if they get
    through; fighters cost 15%.
-5. **Survive the SAMs** — When the radar rim shows a red `LAUNCH` arc, press `X` for
-   chaff, then **descend below the ridge line**. Breaking line of sight breaks the
-   lock and kills the missile in flight.
+5. **Survive the SAMs** — When a red `MISSILE LEFT` / `RIGHT` chevron appears on
+   the ring round the gunsight, press `X` for chaff (the `CHF` button on a phone),
+   then **descend below the ridge line**. Breaking line of sight breaks the lock
+   and kills the missile in flight. A fighter lining up a guns shot on you
+   sounds a rising three-pip warble - break hard.
 6. **Trap aboard** — Come home under 90 m/s, between 18–30 m altitude, within
    190 m of the boat. The approach panel (meatball, AoA indexer, range and
    speed) appears automatically once you are inside 3 km and closing.
@@ -143,7 +155,7 @@ somewhere it could not have flown.
 | Level | What it does |
 | --- | --- |
 | `MANUAL` | Nothing between you and the aerodynamics. |
-| `ASSIST` | **Default.** The jet levels itself when you let go, refuses to pull into a stall, and pulls up out of the dirt. You still fly it everywhere. |
+| `ASSIST` | **Default.** The jet levels itself when you let go, refuses to pull into a stall, and pulls up out of the dirt. Afterburner is a held boost: let go of `SHIFT` and it comes back to military power. You still fly it everywhere. |
 | `AUTOPILOT` | The jet flies and you fight: pick a target, pick a weapon, decide when to shoot and when to break. |
 
 The ground-proximity protections stand down on a carrier approach — an approach
@@ -184,7 +196,8 @@ a phone player is a weapons officer rather than a pilot short of eight fingers.
 | Far left track | Throttle, afterburner included. |
 | **Tap a contact** | Designates it. Pointing at the thing you want is the natural gesture; the `TGT` button still cycles anything off the glass. |
 | `FIRE` | Releases the armed weapon, or holds the trigger on the cannon. |
-| Weapon pills | Gun / AIM-9 / Mk.82, with rounds remaining. |
+| Weapon pills | Gun / AIM-9 / Mk.82 / HARM, with rounds remaining. |
+| `CHF` | Chaff, above `TGT` under the right thumb. It lights amber the moment a missile is in the air at you. |
 | `RCVY` | Recovery assist. It flies the ball and the speed on final and hands back at short final — the trap is still yours. |
 | ☰ | Pause and the full control reference. |
 
@@ -273,12 +286,17 @@ automatically from a rolling frame-time average.
 | `G` | Autopilot terrain following (hug the valleys; on by default) |
 | `L` | Recovery assist — flies the ball and the speed, hands back at short final |
 | `V` | Padlock camera onto the locked target |
-| `U` | Toggle HUD density — `ARCADE` / `PRO` |
+| `U` | HUD and deck detail — `FIRST FLIGHT` / `ARCADE` / `PRO` (remembered) |
 | `I` | Flip the stick: `UP` = climb (default) or `UP` = dive (flight-sim style) |
 | `BACKSPACE` | Time rewind (5 seconds flight restore, 2 uses per sortie) |
 | `O` | Cycle ops tempo — `ARCADE` / `SIM` pacing |
 | `C` | Cycle colour palette — classic phosphor / colour-blind |
 | `K` | Cycle controls — `AUTO` / `TOUCH` / `KEYBOARD` |
+
+> **AZERTY, QWERTZ, Dvorak:** the stick keys (`W` `A` `S` `D` `Q` `E`) are read
+> by *position*, so they sit under the same fingers on any keyboard layout. On
+> AZERTY that is `Z` `Q` `S` `D` `A` `E`. Every other shortcut follows the label
+> on the key.
 
 ### Flight Deck
 
@@ -289,6 +307,7 @@ automatically from a rolling frame-time average.
 | `3` / `4` | Cycle AIM-9 / Mk.82 loadout |
 | `R` | Rush the turnaround — costs crew stamina |
 | `V` | Cycle threat level — `CADET` / `REGULAR` / `VETERAN` |
+| `U` | Brief deck (4 panels) / full deck — follows the HUD setting |
 
 ### Mission Select (briefing screen)
 
@@ -616,7 +635,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**917 headless tests** across 51 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**989 headless tests** across 55 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -626,6 +645,23 @@ can actually recover from; and the same suicidal input must lose the airframe at
 
 The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `computeDeckLayout`, `gradeTrap`, `warmupEnvelope`) specifically so it can be verified without a browser.
 
+### In a real browser
+
+```bash
+npm run playtest              # 28 checks, screenshots + report in playtest-output/
+PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
+```
+
+Unit tests prove what the code does; they cannot see the screen. Five review
+suites and 921 green tests missed four HUD elements printed on top of each other,
+because nothing ever looked at a frame. `scripts/playtest.mjs` starts its own
+dev server and plays the first session in headless Chromium - desktop, laptop,
+two phones, portrait, and a forced crash - asserting what a player would feel
+(a new pilot on the small HUD, no contradictory orders, a held bank that
+actually turns, chaff that works on a phone, a crash that shows a recovery
+screen). Run it before every release; it is not in the deploy gate because its
+turn-rate check is timed against the wall clock.
+
 ## Documentation
 
 | Document | Contents |
@@ -634,10 +670,11 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#70) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#82, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [**docs/reviews/v1.9.0/**](docs/reviews/v1.9.0/README.md) | **Current review suite** — first browser-instrumented playtest. Start with [PLAYTEST_EVIDENCE.md](docs/reviews/v1.9.0/PLAYTEST_EVIDENCE.md) |
+| [**docs/reviews/v1.10.0/**](docs/reviews/v1.10.0/README.md) | **Current suite** — how the v1.9.0 review was implemented, measured first. Start with [IMPLEMENTATION_REPORT.md](docs/reviews/v1.10.0/IMPLEMENTATION_REPORT.md) |
+| [docs/reviews/v1.9.0/](docs/reviews/v1.9.0/README.md) | The first browser-instrumented playtest review |
 | [docs/reviews/](docs/reviews/README.md) | Review hub: version registry, score trend, and the standing rules every review must follow |
 | [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized **12-dimension** evaluation protocol (cut from 25 in v1.9.0) |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
@@ -645,6 +682,22 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ---
 
 ## Future Roadmap
+
+Shipped in v1.10.0 ("Built, Measured, Launch-Ready") - the v1.9.0 review,
+implemented after measuring each recommendation first:
+- **The jet flies the way it looks.** A physics defect - stability acting about
+  the world axis instead of the airframe's - let a banked nose drift 43° above a
+  descending flight path. Fixed; with the ARCADE airframe a held bank now turns
+  at 12 °/s with the nose on the horizon.
+- **The recovery assist works**: it hands over within a metre of the glideslope
+  (it used to ride 34 m low, or fly into the sea).
+- **FIRST FLIGHT HUD and brief deck** for new pilots, a steering cue instead of a
+  compass and radar, missile carets, a guns-tracking tone.
+- **No free bombs, no misplaced clicks, no false alarms, no two orders at once.**
+- **Pilot-customer ready**: touch chaff and HARM, AZERTY-safe keys, a crash
+  screen instead of a frozen image, and a versioned feedback link.
+
+See the [v1.10.0 suite](docs/reviews/v1.10.0/README.md).
 
 Shipped in v1.9.0 ("Look at the Pixels") — the first release driven by a
 browser-instrumented playtest rather than a source review:
@@ -681,23 +734,15 @@ wrong way is fixed), loops and Immelmanns work, a real tactical radar, a slow-mo
 names the killer, fairer enemy guns with a warning, attack coaching, and first-time milestones. See the
 [changelog](CHANGELOG.md) and the [review corrections](docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md).
 
-Next, ranked by player impact ÷ lines of code — see the full list in
-[Recommendations & Roadmap](docs/reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md).
+Next - see the [v1.10.0 roadmap](docs/reviews/v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md):
 
-1. **A `FIRST FLIGHT` HUD** — horizon, speed, altitude, one objective line, one
-   key hint. Nothing else, on by default until the first sortie is complete.
-   Every component already exists; this is a visibility predicate, ~150 lines.
-   *This is the single most important item on the list.*
-2. **Promote the phone deck layout to the default everywhere** — 4 panels and one
-   big `LAUNCH` button instead of 8 panels and ~35 numbers. The layout already
-   ships; it is gated on viewport width instead of on player experience (#69).
-3. **Delete the keycap cheat strip and the always-on `REWIND` / `PADLOCK`
-   pills** — duplicated elsewhere, and half of the bottom-band collision.
-4. **Retard the anti-stall throttle floor** — a new pilot currently flies the
-   entire sortie at 150% afterburner without touching a key (#66).
-5. **Decide what to do about the turn** — measured at 7–10 °/s, a 180° reversal
-   in 17–25 s, with the roll snapping instantly to its 75° cap. Three options,
-   one of which changes no mission timing (#65).
+1. **A pilot-customer feedback round, before any new feature.** No new human has
+   played v1.10.0. The in-game FEEDBACK link opens a pre-filled report; five new
+   players, no instructions, verbatim first-two-minute reactions.
+2. **A FIRST FLIGHT briefing** - the last dense screen a new pilot meets.
+3. **The browser harness in CI**, non-blocking, once its turn check is
+   simulation-timed.
+4. **A SIM airframe pass** (#82) and a decision on the deck loop's depth.
 
 ---
 

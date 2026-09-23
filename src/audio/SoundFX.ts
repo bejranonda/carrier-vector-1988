@@ -390,6 +390,35 @@ export class SoundFX {
     }
 
     /**
+     * "A fighter has a guns solution on you" (Known Issues #59).
+     *
+     * The warning was a callout only, and at the moment it matters the pilot is
+     * looking at the target, not reading text. A fast, rising three-pip warble,
+     * panned toward the shooter, is distinct from the master caution's two flat
+     * pips and from the missile lock tone - three different threats, three
+     * different sounds.
+     */
+    public playGunsTracking(place?: SoundPlacement) {
+        const out = this.route(this.busAlerts, place);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 3; i++) {
+            const t = now + i * 0.09;
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880 + i * 220, t);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(0.12, t + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+            osc.connect(gain);
+            gain.connect(out);
+            osc.start(t);
+            osc.stop(t + 0.08);
+        }
+    }
+
+    /**
      * Someone else's missile leaving the rail, out in the world. Panned and
      * attenuated, so "a SAM just launched, and it is behind my left shoulder"
      * is something the player hears rather than reads.

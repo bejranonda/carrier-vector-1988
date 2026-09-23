@@ -1,5 +1,12 @@
 # v1.9.0 — Recommendations & Roadmap
 
+> **Status: implemented in v1.10.0 — read
+> [`../v1.10.0/IMPLEMENTATION_REPORT.md`](../v1.10.0/IMPLEMENTATION_REPORT.md)
+> first.** Four of these recommendations were changed after measurement: R2's
+> roll easing was the wrong fix (the cause was a physics defect), R1 gained a
+> steering cue because the FIRST_FLIGHT HUD could not simply lose the compass,
+> R3 became a burner-only cancel, and R6 was a free-ordnance bug, not a label.
+
 Ranked by **player impact ÷ lines of code**, per standing rule #9 in
 [`../README.md`](../README.md). Each item states the reason, not just the
 action — a recommendation you cannot argue with is a recommendation you cannot

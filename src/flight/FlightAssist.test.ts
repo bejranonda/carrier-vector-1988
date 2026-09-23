@@ -422,6 +422,47 @@ describe('resolveControls', () => {
         expect(dApp.throttle).toBe(-1);
     });
 
+    /**
+     * Regression, v1.10.0: the catapult leaves the throttle in full burner and
+     * the floor above only pushed up, so a hands-off pilot flew a whole sortie
+     * at 150%.
+     */
+    it('ASSIST comes out of afterburner once flying with the throttle released', () => {
+        const d = resolveControls('ASSIST', state({ airSpeed: 230, throttle: 1.5 }), input(), null);
+        expect(d.throttle).toBeLessThan(0);
+    });
+
+    it('ASSIST leaves the burner alone while the pilot holds it', () => {
+        const d = resolveControls('ASSIST', state({ airSpeed: 230, throttle: 1.5 }), input({ throttle: 1 }), null);
+        expect(d.throttle).toBe(1);
+    });
+
+    it('ASSIST keeps the burner during the slow climb-out off the catapult', () => {
+        const d = resolveControls('ASSIST', state({ airSpeed: 165, throttle: 1.5 }), input(), null);
+        expect(d.throttle).toBe(0);
+    });
+
+    it('ASSIST never touches a throttle the pilot set below military power', () => {
+        const d = resolveControls('ASSIST', state({ airSpeed: 260, throttle: 0.8 }), input(), null);
+        expect(d.throttle).toBe(0);
+    });
+
+    it('MANUAL keeps a latched afterburner', () => {
+        const d = resolveControls('MANUAL', state({ airSpeed: 260, throttle: 1.5 }), input(), null);
+        expect(d.throttle).toBe(0);
+    });
+
+    it('does not cry TERRAIN during a normal climb-out off the catapult', () => {
+        // Low, but climbing: the floor may still help, silently.
+        const d = resolveControls('ASSIST', state({ altitudeAgl: 120, verticalSpeed: 25 }), input(), null);
+        expect(d.override).not.toBe('TERRAIN');
+    });
+
+    it('still cries TERRAIN when sinking toward the ground', () => {
+        const d = resolveControls('ASSIST', state({ altitudeAgl: 120, verticalSpeed: -30 }), input({ pitch: -1 }), null);
+        expect(d.override).toBe('TERRAIN');
+    });
+
     it('annunciates STALL when the limiter trims the pilot back', () => {
         const d = resolveControls('ASSIST', state({ alpha: 0.24 }), input({ pitch: 1, roll: 1 }), null);
         expect(d.pitch).toBeLessThan(1);
@@ -459,9 +500,18 @@ describe('resolveControls', () => {
     });
 
     it('AUTO cannot fly itself into the ground or into a stall', () => {
+        // Sinking hard near the ground, the autopilot's own flight-path damping
+        // already pulls full up; whichever law is responsible, the jet pulls.
         const low = resolveControls('AUTO', state({ altitudeAgl: 30, verticalSpeed: -40 }), input(), nav);
-        expect(low.override).toBe('TERRAIN');
         expect(low.pitch).toBe(1);
+
+        // The floor's real job: an autopilot COMMANDED into the ground (a nav
+        // target below the terrain) is overruled, and says so.
+        const diving = resolveControls(
+            'AUTO', state({ altitudeAgl: 30, verticalSpeed: -40 }), input(), { ...nav, altitudeAgl: 0 }
+        );
+        expect(diving.override).toBe('TERRAIN');
+        expect(diving.pitch).toBeGreaterThan(0.9);
 
         const stalled = resolveControls('AUTO', state({ isStalled: true }), input(), nav);
         expect(stalled.override).toBe('STALL');

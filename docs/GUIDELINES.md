@@ -505,3 +505,42 @@ rendered frames. Five suites of source-reading review had missed all of them.
   same commit.** `KNOWN_ISSUES.md` claimed pitch was clamped at +-88 degrees for
   two releases after v1.7.0 removed the clamp. Stale docs are read by humans and
   by AI agents, and both act on them.
+
+## 14. Rules added in v1.10.0 (each one encodes a bug that already shipped)
+
+- **Measure a recommendation before you build it.** The v1.9.0 review said
+  "ease the roll to the cap"; the roll already reached it in 0.45 s. The real
+  cause was a physics defect no review had looked for. A recommendation is a
+  hypothesis about a cause - check the cause, then build.
+- **A stability or damping term acts about a body axis, not a world axis.** The
+  weathervane rotated the nose about the world vertical; banked, the restoring
+  moment is mostly nose-down, and nothing supplied it. Write rates in the body
+  frame and map them through the Euler kinematics.
+- **A controller chasing a moving target needs a feed-forward.** A proportional
+  altitude law on a glideslope always lags it; one damped toward zero attitude
+  settles below any slope that needs nose-up. Damp the flight-path angle, and
+  feed the target's own path angle forward.
+- **An integral-only controller cannot anticipate.** The autothrottle held idle
+  until the jet was already slow. Feed the rate of change back.
+- **A number that should be derived must be derived.** A fixed 70 m/s approach
+  speed was only flyable on one airframe. Derive targets from the physics
+  (`onSpeedApproachSpeed`), and bound them by what the rules accept.
+- **One solver per rectangle, used by the drawer AND the hit-tester.** Three
+  separate click-vs-draw drifts shipped (the ARCADE pill bar, the PRO chips, the
+  corner buttons). If a click can land on it, its geometry lives in `HudLayout`
+  and both sides call the same function - and a test asserts the rects are equal.
+- **Deleting a drawn element means deleting its click areas.** The keycap strip
+  was removed and its shortcuts stayed clickable as invisible traps.
+- **Any "the game promises X" flag must be honoured at every site.** A launch
+  that clamped the ship's stock but not the jet's load produced free bombs. Grep
+  every place the promised quantity is consumed.
+- **A warning announces a threat, not an assistance.** A protection that quietly
+  helps (the terrain floor on a climb) must not paint a red alarm.
+- **A frame must not be able to end the game silently.** Catch per frame, log,
+  continue; stop only on a persistent failure, and then say so on screen with a
+  way back.
+- **Screen budgets are tests.** `HudDensity.test.ts` holds FIRST_FLIGHT to 3
+  optional regions and ARCADE to 8. Raise one only on purpose, in review.
+- **Run `npm run playtest` before every release.** It is not in the deploy gate
+  (its turn-rate check is wall-clock based), so it is on the release checklist
+  instead. A release whose harness has not been run has not been looked at.

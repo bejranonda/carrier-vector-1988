@@ -149,6 +149,52 @@ export function getContextualHint(snapshot: CoachSnapshot): Hint | null {
     return null;
 }
 
+/**
+ * What the objective strip is currently asking for, as far as arbitration
+ * cares. A structural subset of `ObjectiveStep`, kept here so this module
+ * stays free of imports.
+ */
+export interface ObjectiveSummary {
+    urgency: 'NORMAL' | 'ACTION' | 'URGENT';
+    key?: string;
+}
+
+/** Objective keys that mean "fight now" - attack coaching agrees with these. */
+const ATTACK_KEYS = new Set(['SPACE', 'T', '1', '2', '3', '4']);
+
+/**
+ * One instruction at a time.
+ *
+ * The objective strip, the coach ticker and the contact tags used to issue
+ * orders independently. Measured on v1.9.0, 4 s after the training cat shot:
+ * `CLIMB TO 2,500 FT` on the strip and `LOCKED - TURN TOWARD THE BANDIT` on the
+ * ticker directly below it. Each was correct on its own; together they were
+ * two different orders, and a beginner cannot obey both.
+ *
+ * Policy, in order:
+ *  1. Safety always speaks - any CRITICAL or WARNING hint.
+ *  2. An active training checkout step speaks next.
+ *  3. Routine INFO coaching speaks only if it does not compete with the
+ *     objective: when the objective is itself an order (ACTION / URGENT) that
+ *     is not an attack, the objective IS the instruction and the ticker is
+ *     silent. Attack coaching ("IN RANGE - FIRE") still speaks during an
+ *     attack objective, because there it is the same instruction, sharper.
+ */
+export function arbitrateHint(
+    contextual: Hint | null,
+    trainingPrompt: string | null,
+    objective: ObjectiveSummary | null
+): Hint | null {
+    if (contextual && contextual.severity !== 'INFO') return contextual;
+    if (trainingPrompt) return { text: trainingPrompt, severity: 'INFO' };
+    if (!contextual) return null;
+
+    const objectiveIsAnOrder = objective !== null && objective.urgency !== 'NORMAL';
+    const objectiveIsAttack = objective?.key !== undefined && ATTACK_KEYS.has(objective.key);
+    if (objectiveIsAnOrder && !objectiveIsAttack) return null;
+    return contextual;
+}
+
 // ---------------------------------------------------------------------
 // First-run training sequence
 // ---------------------------------------------------------------------

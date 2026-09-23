@@ -154,3 +154,91 @@ noscript {
   color: var(--ink);
   line-height: 1.6;
 }
+
+/* ------------------------------------------------------------------
+ * Shell: feedback link and crash screen (v1.10.0). Plain DOM on purpose -
+ * the crash screen must work when the canvas renderer is what failed.
+ * ------------------------------------------------------------------ */
+.shell-link {
+  position: fixed;
+  /* Top-left: the one corner every menu screen leaves empty. Bottom-right
+     collided with the briefing's wrapped secondary row at 1280x720. */
+  left: max(14px, env(safe-area-inset-left));
+  top: max(10px, env(safe-area-inset-top));
+  font: 600 11px ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  color: #93a9a4;
+  text-decoration: none;
+  padding: 6px 10px;
+  border: 1px solid rgba(147, 169, 164, 0.35);
+  border-radius: 4px;
+  background: rgba(7, 13, 17, 0.7);
+  z-index: 5;
+}
+.shell-link:hover,
+.shell-link:focus-visible {
+  color: var(--ink);
+  border-color: #5fd8ff;
+  outline: none;
+}
+.shell-link[hidden] { display: none; }
+
+.crash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 13, 17, 0.92);
+  z-index: 10;
+  padding: 16px;
+}
+.crash[hidden] { display: none; }
+.crash-panel {
+  max-width: 520px;
+  width: 100%;
+  border: 1px solid #ff6363;
+  border-radius: 6px;
+  padding: 20px 22px;
+  background: #0b1418;
+  color: var(--ink);
+  font: 400 13px/1.5 ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+.crash-panel h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  color: #ff6363;
+}
+.crash-actions {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+.crash-actions button,
+.crash-actions a {
+  font: 700 12px ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  padding: 9px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.crash-actions button {
+  background: rgba(95, 216, 255, 0.16);
+  color: #5fd8ff;
+  border: 1px solid #5fd8ff;
+}
+.crash-actions a {
+  color: #93a9a4;
+  border: 1px solid rgba(147, 169, 164, 0.45);
+}
+.crash-panel pre {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  font-size: 11px;
+  color: #93a9a4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

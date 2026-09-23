@@ -1360,3 +1360,78 @@ is drawn beside it whenever `|pitch| ≥ 5°`.
 | Test source | 10,971 lines |
 | Runtime dependencies | 0 |
 | Bundle | 235.2 kB raw / 75.8 kB gzip |
+
+---
+
+## 21. Airframe, Controllers and HUD Budgets (v1.10.0)
+
+### 21.1 Ops tempo airframes
+
+| Tempo | `liftScale` | Meaning |
+| :-- | --: | :-- |
+| ARCADE (default) | 1.7 | Wing area ×1.7 - lift **and** drag forces scale, so no free energy |
+| SIM | 1.0 | The original airframe |
+
+On-speed approach speed (1 g at 8.1° AoA, near sea level):
+`V = sqrt(2·m·g / (ρ₀ · S · liftScale · 0.085 · 8.1))` →
+**~76 m/s ARCADE**, **~100 m/s SIM** (clamped to 88 by `approachSpeedFor`).
+
+### 21.2 Measured turn performance (unit level, 2,500 m, 200 m/s start)
+
+| | SIM | ARCADE |
+| :-- | --: | --: |
+| Bank only, 16 s | 9.1 °/s, nose −10°, −284 m | 11.2 °/s, nose −6°, −126 m |
+| Bank + full pull, 8 s | 11.7 °/s | 14.3 °/s |
+| Running game, held `A`, default settings | — | **12.3 °/s, nose +6°** |
+
+### 21.3 Directional stability (#71)
+
+`β = asin(v̂ · right)`, `r = β · WEATHERVANE_GAIN (0.8) · min(1, V/150)`, applied
+through the Euler kinematics `θ' = −r·sin φ`, `ψ' = r·cos φ / cos θ`. Skipped
+below 30 m/s or when stalled.
+
+### 21.4 Autopilot laws
+
+| Law | Form | Constants |
+| :-- | :-- | :-- |
+| Autothrottle | `rate = (Vt − V)·speedGain − V̇·speedDamping` | 0.05, 0.3 |
+| Altitude hold | `q = clamp(Δh·0.0016·bankFactor) − 0.8·damped` | |
+| Damping blend | `damped = (γ − γff)·w + θ·(1 − w)`, `w = clamp(1 − |φ|/0.35)` | γ = asin(vs/V) |
+| Glideslope feed-forward | `γff = −3.5°` on the slope | `NavTarget.pathAngle` |
+| ASSIST burner cancel | above 180 m/s, throttle > 1.0, hands off → rate −1.0 | `burnerCancel*` |
+
+### 21.5 HUD density budgets (`HudDensity.ts`)
+
+| Density | Optional regions | Shown |
+| :-- | --: | :-- |
+| FIRST_FLIGHT | 3 | horizon, armed-weapon chip, "U / H" hint line |
+| ARCADE | 8 | horizon, FPM, compass, radar, pill bar, score, corner buttons, routine annunciator |
+| PRO | 7 | pitch ladder, FPM, compass, radar, score, corner buttons, routine annunciator (plus the systems panel) |
+
+Always on at every density: objective strip, speed, altitude, warnings, coach
+ticker, target brackets, callouts, landing aids on approach, the go-here cue and
+missile carets.
+
+### 21.6 Deck panel sets (`deckPanelSpecs`)
+
+| Set | Panels |
+| :-- | :-- |
+| Touch | ORDERS, TURNAROUND, THREATS |
+| BRIEF (FIRST_FLIGHT) | ORDERS, TURNAROUND, THREATS, LOG |
+| FULL | ORDERS, TURNAROUND (with crew line), PAYLOAD, THREATS, STATUS, DECK_PLAN, LOG |
+
+### 21.7 Struggle detector (`StruggleDetector.ts`)
+
+Four pitch reversals, each after a press shorter than 0.6 s, inside 12 s → one
+offer of the stick flip, once per session, only if the stick setting was never
+touched.
+
+### 21.8 Build metrics (v1.10.0)
+
+| Metric | Value |
+| :-- | --: |
+| Tests | 989 passing, 55 files |
+| Browser checks | 28 (`npm run playtest`) |
+| Non-test source | ~21,000 lines |
+| Runtime dependencies | 0 |
+| Bundle | 246.2 kB raw / 79.6 kB gzip |

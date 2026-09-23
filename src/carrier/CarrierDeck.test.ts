@@ -427,3 +427,38 @@ describe('combat-shielded scenarios', () => {
         expect(shielded.inventory.spareAirframes).toBe(before);
     });
 });
+
+/**
+ * REGRESSION, v1.10.0: launch clamped the SHIP's stock at zero but handed the
+ * jet its full PLANNED loadout - so an empty magazine still produced bombs.
+ */
+describe('the jet launches with what the magazine holds', () => {
+    it('caps the loadout at the ship stock', () => {
+        const deck = new DeckManager();
+        deck.inventory.ironBombs = 0;
+        deck.inventory.sidewinders = 1;
+        deck.plannedLoadout.ironBombs = 2;
+        deck.plannedLoadout.sidewinders = 4;
+        const loaded = deck.loadableLoadout();
+        expect(loaded.ironBombs).toBe(0);
+        expect(loaded.sidewinders).toBe(1);
+    });
+
+    it('deducts exactly what was loaded, and records it for the sortie', () => {
+        const deck = new DeckManager();
+        deck.inventory.ironBombs = 1;
+        deck.plannedLoadout.ironBombs = 3;
+        expect(deck.triggerCatapultLaunch()).toBe(true);
+        expect(deck.lastLaunchLoadout?.ironBombs).toBe(1);
+        expect(deck.inventory.ironBombs).toBe(0);
+        expect(deck.alertLog.some(l => l.includes('MAGAZINE SHORT'))).toBe(true);
+    });
+
+    it('never touches a plan the magazine can fully supply', () => {
+        const deck = new DeckManager();
+        const before = deck.inventory.sidewinders;
+        expect(deck.triggerCatapultLaunch()).toBe(true);
+        expect(deck.lastLaunchLoadout?.sidewinders).toBe(deck.plannedLoadout.sidewinders);
+        expect(deck.inventory.sidewinders).toBe(before - deck.plannedLoadout.sidewinders);
+    });
+});

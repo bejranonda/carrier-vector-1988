@@ -5,6 +5,99 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] — 2026-09-23
+
+**"Built, Measured, Launch-Ready."** Implements the v1.9.0 review — after
+measuring each recommendation first, which changed four of them — and prepares
+the game for pilot customers. The headline is a physics defect no review had
+found: directional stability acted about the world axis instead of the
+airframe's, so a banked nose drifted up to 43° above a descending flight path.
+That, not the roll, was *"I bank, I pull, nothing happens"*.
+
+Evidence and the full story: [`docs/reviews/v1.10.0/`](docs/reviews/v1.10.0/README.md).
+
+### Flight
+
+- **Directional stability acts on sideslip about the body yaw axis** (#71).
+  Identical wings-level; banked, the nose now tracks the flight path.
+- **ARCADE flies a bigger wing** (`PacingSpec.liftScale` 1.7, lift and drag both
+  scaled - no free energy). A held bank on default settings turns at **12.3 °/s
+  with the nose at +6°** (was 7.2 °/s, nose climbing to 29°). The value is not a
+  taste call: it is where the game's existing 70 m/s approach and 8.1° AoA
+  indexer finally agree. SIM keeps the original airframe.
+- **The recovery assist works** (#72). Rate-damped autothrottle; flight-path
+  damping wings-level; a glideslope feed-forward; an approach speed derived from
+  the airframe's on-speed AoA. It hands over **within 1 m of the slope** on both
+  airframes - it rode 34 m low on SIM and flew into the sea on ARCADE.
+- **Afterburner is a held boost in ASSIST** (#66): released above 180 m/s, it
+  returns to military power. A throttle the pilot set is never touched.
+- **One instruction at a time** (`Tutorial.arbitrateHint`): safety always speaks;
+  routine coaching is silent while the objective is a non-attack order.
+- **No TERRAIN alarm on a normal climb-out** (#77); **no "get astern of the
+  boat" on take-off** (#78).
+- **WASD by physical position** (#41): AZERTY, QWERTZ and Dvorak players get the
+  stick keys under the same fingers. Mnemonic shortcuts keep their labels.
+- **"Stick feels backwards?"** (#40, #48): four quick opposing pitch stabs offer
+  the stick flip once, in context.
+
+### HUD and deck
+
+- **FIRST_FLIGHT HUD** (`core/HudDensity.ts`): a new pilot sees three optional
+  regions - horizon, one armed-weapon chip, one hint line - instead of nine. A
+  **steering cue** on a ring round the boresight (`BOAT 4.2 KM · TURN LEFT`)
+  replaces the compass and radar (#54). Graduates to ARCADE after the first
+  completed mission; `U` cycles FIRST FLIGHT / ARCADE / PRO and is remembered.
+  Budgets are enforced by tests.
+- **Missile carets** (#42): each missile in flight is a red chevron on the same
+  ring - `MISSILE LEFT`.
+- **Guns-tracking tone** (#59).
+- **Brief deck** (#69): four panels for a new pilot, following the HUD density;
+  the crew panel is folded into one line; the turnaround's stores rows are
+  visible at last (#74).
+- The ten-key cheat strip is gone; REWIND shows while it has charges, PADLOCK
+  only with a designation.
+
+### Fixed
+
+- **Free ordnance** (#73): an empty magazine still produced bombs. The jet now
+  launches with what the ship holds; the payload panel says `NONE ABOARD`.
+- **Clicks landed on the wrong thing** (#75, #76): ARCADE pill clicks were 104 px
+  off; PRO corner buttons and chips were hit-tested where they were not drawn;
+  the deleted strip left invisible click traps. One solver per rectangle now,
+  shared by renderer and hit-tester, and tested.
+- **The training target is a drone everywhere** (#68): `DRONE` in the cockpit,
+  `TRAINING RANGE · TARGET DRONE` on the deck.
+- **Returning pilots open on the recommended mission** (#80).
+- **Touch readouts drifted into the objective strip** (#81).
+
+### Pilot-customer readiness
+
+- **Touch chaff and HARM** (#44), in the thumb-layout test matrix for 7 handsets.
+- **The loop survives a bad frame** (#79); a persistent failure shows a crash
+  screen with Reload and a pre-filled report instead of a frozen image.
+- **Versioned feedback link** on menu screens (pre-filled GitHub issue with
+  build, browser and screen size - the player reviews it before sending); the
+  build number on the briefing.
+- **`WINGS EARNED`** on completing the training sortie (#55).
+- Page metadata points at the live game; no broken large-image card.
+
+### Tooling and docs
+
+- **`npm run playtest`** (`scripts/playtest.mjs`, `playwright-core` dev
+  dependency): 28 browser checks across desktop, laptop, two phones, portrait and
+  a forced crash. Not in the deploy gate (wall-clock timing); run before release.
+- Tests: **933 → 989**. Bundle: 79.6 kB gzip (+3.8 kB). Zero runtime deps.
+- `KNOWN_ISSUES.md`: status summary; 17 closed; #71–#82 added (11 fixed, #82
+  open). `GUIDELINES.md` §14, `APPROACH_AND_METHOD.md` §12, `KNOWLEDGE.md` §21.
+
+### Still open, deliberately
+
+#53 (1-D fjord - new content), #41's remap screen (P2), #82 (SIM approach speed
+clamped), and the deck loop's depth (owner decision). **No new human has played
+this build** - the next step is a pilot-customer feedback round, not a feature.
+
+---
+
 ## [1.9.0] — 2026-09-21
 
 **"Look at the Pixels."** The first release driven by an *instrumented browser

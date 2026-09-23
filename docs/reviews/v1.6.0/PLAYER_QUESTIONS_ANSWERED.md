@@ -23,7 +23,7 @@ which causes a turn rate:
 $$\dot{\psi} = \frac{g \tan(\phi)}{V}$$
 When an arcade or simulator player presses `Left Arrow` or `A`, they expect the nose of the aircraft to swing left across the horizon.
 
-Here is what the code actually does in [AircraftPhysics.ts](file:///d:/Git/Werapol/Game/Flight/src/flight/AircraftPhysics.ts#L163-L185):
+Here is what the code actually does in [AircraftPhysics.ts](../../../src/flight/AircraftPhysics.ts#L163-L185):
 
 ```ts
 // AircraftPhysics.ts:163-172
@@ -56,7 +56,7 @@ public get forwardVector(): Vector3 {
 }
 ```
 
-And in [GameLoop.ts:1015-1033](file:///d:/Git/Werapol/Game/Flight/src/core/GameLoop.ts#L1015-L1033):
+And in [GameLoop.ts:1015-1033](../../../src/core/GameLoop.ts#L1015-L1033):
 
 ```ts
 roll: (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0)
@@ -78,7 +78,7 @@ if (k['e']) this.physics.applyYawInput(1.0, dt);
 
 When a frustrated player realizes they cannot turn left or right, their universal aviation instinct is to pull up into an **inside loop, Immelmann turn, or Split-S** (pull straight up, climb over vertical, invert, and roll upright facing South).
 
-Look at [AircraftPhysics.ts:154-158](file:///d:/Git/Werapol/Game/Flight/src/flight/AircraftPhysics.ts#L154-L158):
+Look at [AircraftPhysics.ts:154-158](../../../src/flight/AircraftPhysics.ts#L154-L158):
 
 ```ts
 // Limit pitch to avoid gimbal singularities in this arcade 6-DOF
@@ -98,7 +98,7 @@ The player is literally bolted to a North-bound trolley.
 
 ### Answer: **The game does not have a radar. It has an RWR masquerading as one.**
 
-#### Evidence: [HUD.ts:1454-1523](file:///d:/Git/Werapol/Game/Flight/src/renderer/HUD.ts#L1454-L1523)
+#### Evidence: [HUD.ts:1454-1523](../../../src/renderer/HUD.ts#L1454-L1523)
 
 In the bottom-right corner sits a circular green scope labeled `"RWR"`.
 
@@ -191,7 +191,7 @@ The player has no idea what happened. They were flying, heard a click, and sudde
 
 ### Answer: **The default terrain is literally a 500-metre straight trench.**
 
-#### Evidence: [TerrainProfiles.ts:60-79](file:///d:/Git/Werapol/Game/Flight/src/tactics/TerrainProfiles.ts#L60-L79)
+#### Evidence: [TerrainProfiles.ts:60-79](../../../src/tactics/TerrainProfiles.ts#L60-L79)
 
 ```ts
 function fjordHeight(worldX: number, worldZ: number): number {
@@ -221,7 +221,7 @@ The game's signature map, `FJORD`, is a straight gutter along the Z-axis:
 
 ### Answer: **There is no micro-win feedback loop, no intermediate checkpoint, and no victory fanfare.**
 
-#### Evidence: [Scenarios.ts](file:///d:/Git/Werapol/Game/Flight/src/core/Scenarios.ts), [Objectives.ts](file:///d:/Git/Werapol/Game/Flight/src/core/Objectives.ts)
+#### Evidence: [Scenarios.ts](../../../src/core/Scenarios.ts), [Objectives.ts](../../../src/core/Objectives.ts)
 
 In modern game design, a player is kept in the "flow state" via a ladder of **micro-wins** (dopamine bursts every 15–30 seconds):
 1. *Takeoff successful!* (+100 pts, audio chime)
@@ -244,7 +244,7 @@ In Carrier Vector currently:
 
 ### Answer: **The cockpit completely lacks dynamic contextual hints.**
 
-#### Evidence: [HUD.ts:1350-1420](file:///d:/Git/Werapol/Game/Flight/src/renderer/HUD.ts#L1350-L1420), [Tutorial.ts](file:///d:/Git/Werapol/Game/Flight/src/core/Tutorial.ts)
+#### Evidence: [HUD.ts:1350-1420](../../../src/renderer/HUD.ts#L1350-L1420), [Tutorial.ts](../../../src/core/Tutorial.ts)
 
 The only on-screen text during flight is the **RWR missile warning banner** and static checklist text.
 When a rookie sits in the cockpit:

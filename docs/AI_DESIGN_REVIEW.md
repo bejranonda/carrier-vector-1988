@@ -1,9 +1,11 @@
 # Carrier Vector 1988: Game Design Review & Development Roadmap
 
-> ## ⚠️ Superseded — read the v1.9.0 suite first
+> ## ⚠️ Superseded — read the v1.10.0 suite first
 >
 > This document is kept as a historical snapshot. The current evaluation is
-> [**`docs/reviews/v1.9.0/`**](reviews/v1.9.0/README.md), the first review to run
+> [**`docs/reviews/v1.10.0/`**](reviews/v1.10.0/README.md) (the implementation of
+> the v1.9.0 review), which builds on
+> [`docs/reviews/v1.9.0/`](reviews/v1.9.0/README.md), the first review to run
 > the live build in a real browser and inspect rendered frames rather than
 > reasoning from source.
 >
@@ -14,8 +16,8 @@
 > measurements only, no opinions — then the
 > [roadmap](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md).
 >
-> **Scores below are stale.** Current: Engineering 8.17, Player 6.67,
-> Composite 7.20.
+> **Scores below are stale.** Current (v1.10.0): Engineering 8.83, Player 7.44
+> (provisional - no new human playtest), Composite 7.93.
 
 > **Note:** This review evaluates the state of *Carrier Vector: 1988* as of v1.6.0. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
 >

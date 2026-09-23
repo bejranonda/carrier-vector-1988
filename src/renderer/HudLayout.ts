@@ -173,8 +173,21 @@ export interface HudLayout {
 export interface HudReserve {
     left: number;
     right: number;
+    /** Height of the tallest thumb control - the instrument band sits above it. */
     bottom: number;
     top: number;
+    /**
+     * Bottom inset in the free gap BETWEEN the thumb clusters. Bottom-anchored
+     * readouts (the touch systems line, the assist annunciator) belong here.
+     * Anchoring them above the tallest thumb control instead put them up in the
+     * objective strip once the right-thumb column grew (chaff, HARM).
+     */
+    bottomCentre?: number;
+}
+
+/** Where a bottom-anchored readout measures up from, in touch or keyboard mode. */
+export function bottomAnchor(reserve: HudReserve): number {
+    return reserve.bottomCentre ?? reserve.bottom;
 }
 
 export const NO_RESERVE: HudReserve = { left: 0, right: 0, bottom: 0, top: 0 };
@@ -327,6 +340,85 @@ export interface ArcadeBarInput {
      * STATUS slot is then always omitted.
      */
     statusTextWidth?: number;
+}
+
+/**
+ * The cockpit's top-right button row: STICK, HUD, DECK, right to left.
+ *
+ * Shared by the renderer and the hit-tester. They used to compute these rects
+ * separately and disagreed - in PRO the HUD button was hit-tested at
+ * `width - 130` while drawn at `width - 228` - so a click on a visible button
+ * could land on nothing, or on its neighbour.
+ */
+export const CORNER_BUTTONS = { y: 16, h: 28, gap: 8, edge: 20, deckW: 100, hudW: 100, stickW: 104 } as const;
+
+export function cornerButtonRects(width: number): { deck: Rect; hud: Rect; stick: Rect } {
+    const c = CORNER_BUTTONS;
+    const deckX = width - c.deckW - c.edge;
+    const hudX = deckX - c.gap - c.hudW;
+    const stickX = hudX - c.gap - c.stickW;
+    return {
+        deck: { x: deckX, y: c.y, w: c.deckW, h: c.h },
+        hud: { x: hudX, y: c.y, w: c.hudW, h: c.h },
+        stick: { x: stickX, y: c.y, w: c.stickW, h: c.h }
+    };
+}
+
+/**
+ * The PRO systems panel and its four weapon chips (Known Issues #45).
+ *
+ * The chips were drawn at MEASURED text width and hit-tested at a fixed 68 px,
+ * so a long label desynchronised them. They are fixed-width now - the label is
+ * monospace and bounded ("1 GUN 500"), so a fixed width costs nothing - and the
+ * one solver serves both sides.
+ */
+export const PRO_PANEL = { w: 236, h: 150, bottomGap: 54, chipW: 70, chipH: 18, chipGap: 6, inset: 12 } as const;
+
+export function proPanelRect(height: number): Rect {
+    return {
+        x: HUD_METRICS.edge,
+        y: height - PRO_PANEL.h - PRO_PANEL.bottomGap,
+        w: PRO_PANEL.w,
+        h: PRO_PANEL.h
+    };
+}
+
+export function proChipRects(height: number): Rect[] {
+    const panel = proPanelRect(height);
+    const centreY = panel.y + panel.h - 18;
+    return [0, 1, 2, 3].map(i => ({
+        x: panel.x + PRO_PANEL.inset + i * (PRO_PANEL.chipW + PRO_PANEL.chipGap),
+        y: centreY - PRO_PANEL.chipH / 2,
+        w: PRO_PANEL.chipW,
+        h: PRO_PANEL.chipH
+    }));
+}
+
+/** What the pill bar needs to know to decide which optional pills it carries. */
+export interface ArcadeBarState {
+    rewindsRemaining: number;
+    hasDesignation: boolean;
+    padlockActive: boolean;
+}
+
+/**
+ * Which optional pills the ARCADE bar carries right now.
+ *
+ * ONE function, read by both the renderer (`HUD.drawArcadeBottomBar`) and the
+ * hit-tester (`PointerInteractivity`). They used to each pass their own flags,
+ * and disagreed: the renderer drew the chaff pill, the hit-tester assumed it
+ * was absent, so every desktop click on ASSIST / REWIND / PADLOCK landed one
+ * pill-width (104 px) to the left of the pill the player could see.
+ *
+ * Contextual, per the v1.9.0 review: REWIND stays only while it has charges,
+ * PADLOCK appears only when there is something to lock the camera onto.
+ */
+export function arcadeBarFlags(state: ArcadeBarState): Pick<ArcadeBarInput, 'showCountermeasure' | 'showRewind' | 'showPadlock'> {
+    return {
+        showCountermeasure: true,
+        showRewind: state.rewindsRemaining > 0,
+        showPadlock: state.hasDesignation || state.padlockActive
+    };
 }
 
 const ARCADE_BAR_WEAPON_IDS: ArcadeBarSlotId[] = ['WEAPON_0', 'WEAPON_1', 'WEAPON_2', 'WEAPON_3'];

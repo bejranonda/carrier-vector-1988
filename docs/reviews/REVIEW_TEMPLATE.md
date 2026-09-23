@@ -67,7 +67,10 @@ Adding one requires removing one.**
 
 Run the live build in a real browser. Screenshot every distinct screen: boot,
 briefing, deck, cockpit (clean), cockpit (under threat), help overlay, debrief.
-Repeat at phone size.
+Repeat at phone size. **`npm run playtest`** (`scripts/playtest.mjs`) does the
+first-session path at 7 viewports/sessions and writes every frame plus a JSON
+report to `playtest-output/` - start there and extend it for what it does not
+cover.
 
 | Screen | Viewport | Elements drawn | Overlaps found | What a beginner would not understand |
 | :-- | :-- | :-: | :-: | :-- |
@@ -168,7 +171,7 @@ Player experience is weighted higher because it is the thing the game is for.
 ## Checklist before publishing
 
 - [ ] §0 Player Evidence contains verbatim quotes, or explicitly says it does not
-- [ ] §0b contains real screenshots from a real browser (rule #12)
+- [ ] §0b contains real screenshots from a real browser (rule #12); `npm run playtest` passes
 - [ ] Every finding cites `file:line` or a screenshot, or is marked `unverified`
 - [ ] Every dimension has a number, not just prose
 - [ ] Recommendations sorted by player impact ÷ lines of code (rule #9)

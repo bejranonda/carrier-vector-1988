@@ -601,3 +601,47 @@ The principle: **a layout constant that another constant should have determined
 is a latent overlap.** Hand-picked numbers agree with each other until one of
 them changes; `BAND.objective` grew from 40 px to 54 px at some point and
 `BAND.compass` stayed at 96, and nothing anywhere could notice.
+
+---
+
+## 12. Measure, Then Build (v1.10.0)
+
+The v1.10.0 release implemented a review. The method that made it work: **treat
+every recommendation as a hypothesis about a cause, and measure the cause before
+writing the fix.** Four of the review's recommendations changed as a result
+(see `docs/reviews/v1.10.0/IMPLEMENTATION_REPORT.md` §1).
+
+### Probes, not guesses
+
+A probe is a throwaway Vitest file that drives the real `AircraftPhysics` or the
+real `GameLoop` through a scripted scenario and prints numbers - turn rate,
+nose pitch, altitude change, AoA, glideslope error - once a second. It is
+deleted afterwards; what it found becomes a named regression test. Three probes
+did most of the work in v1.10.0:
+
+* **Held bank, 16 s** - revealed the nose 43° above a descending flight path,
+  i.e. the stability-axis defect (#71).
+* **Lift-scale sweep** - showed that 1.7 gives a level 12 °/s turn *and* puts
+  the existing 70 m/s approach inside the AoA indexer's band - two independent
+  numbers agreeing is what justified the value.
+* **Recovery approach from 9 km** - showed the assist riding 34 m low on one
+  airframe and flying into the sea on the other, and then, after each fix,
+  exactly which fault remained (speed → attitude offset → lag).
+
+### Layer by layer
+
+Fixing the approach took four changes, each exposed by the previous one: the
+autothrottle's missing anticipation, the attitude-damped altitude law's offset,
+the proportional lag on a moving slope, and the underivable 70 m/s. Fixing only
+the first would have made the probe *worse* (SIM went from "low" to "into the
+sea") - which is information, not failure. Keep the probe running until the
+numbers say the layer underneath is sound.
+
+### The browser harness as the acceptance test
+
+`npm run playtest` (`scripts/playtest.mjs`) is the definition of "done" for a
+player-facing change: it starts its own Vite server, plays the first session at
+desktop and phone sizes with a fresh profile, screenshots every screen to
+`playtest-output/`, and asserts what a player would feel (28 checks). Look at the
+screenshots, not only the checks: four of v1.10.0's defects (#77, #78, #80, #81)
+were visible in a frame before any check existed for them.

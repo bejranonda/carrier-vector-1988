@@ -26,6 +26,7 @@ const rects = (l: TouchLayout): [string, TouchRect][] => [
     ['stickZone', l.stickZone],
     ['fire', { x: l.fire.cx - l.fire.r, y: l.fire.cy - l.fire.r, w: l.fire.r * 2, h: l.fire.r * 2 }],
     ['target', { x: l.target.cx - l.target.r, y: l.target.cy - l.target.r, w: l.target.r * 2, h: l.target.r * 2 }],
+    ['chaff', { x: l.chaff.cx - l.chaff.r, y: l.chaff.cy - l.chaff.r, w: l.chaff.r * 2, h: l.chaff.r * 2 }],
     ...l.weapons.map((w, i) => [`weapon${i}`, w] as [string, TouchRect]),
     ['menu', l.menu],
     ['recover', l.recover]
@@ -145,8 +146,18 @@ describe('hitTest', () => {
         expect(hitTest(layout, layout.recover.x + 4, layout.recover.y + 4)).toBe('RECOVER');
     });
 
-    it('finds each weapon button', () => {
-        const ids = ['WEAPON_GUN', 'WEAPON_MISSILE', 'WEAPON_BOMB'];
+    it('finds the chaff button (Known Issues #44)', () => {
+        expect(hitTest(layout, layout.chaff.cx, layout.chaff.cy)).toBe('CHAFF');
+    });
+
+    it('keeps chaff within a thumb-sized target on the smallest handset', () => {
+        const small = solveTouchLayout(640, 360);
+        expect(small.chaff.r * 2).toBeGreaterThanOrEqual(TOUCH_METRICS.minTarget * 0.72 * 0.95 - 0.001);
+    });
+
+    it('finds each weapon button, HARM included', () => {
+        const ids = ['WEAPON_GUN', 'WEAPON_MISSILE', 'WEAPON_BOMB', 'WEAPON_HARM'];
+        expect(layout.weapons).toHaveLength(4);
         layout.weapons.forEach((w, i) => {
             expect(hitTest(layout, w.x + w.w / 2, w.y + w.h / 2)).toBe(ids[i]);
         });
