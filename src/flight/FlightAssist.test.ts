@@ -9,6 +9,7 @@ import {
     assistSpec,
     attitudeHold,
     autopilotDemand,
+    climbLimited,
     nextAssistLevel,
     resolveControls,
     stallLimiter,
@@ -386,6 +387,45 @@ describe('autopilot', () => {
         expect(Math.abs(s.altitudeAgl - target.altitudeAgl)).toBeLessThan(120);
         // And it settles rather than thrashing: wings roughly level on arrival.
         expect(Math.abs(s.roll)).toBeLessThan(0.3);
+    });
+});
+
+/**
+ * Regression, v1.11.0: a beginner following the training card's own
+ * instruction ("hold W to raise the nose") reached 85 degrees of pitch and
+ * 79 m/s in six seconds, because the stall limiter is unloaded in a zoom
+ * climb and never bit. Measured with a real browser session; see
+ * docs/reviews/v1.11.0/PLAYTEST_EVIDENCE.md.
+ */
+describe('climbLimited', () => {
+    it('leaves a nose-down demand alone at any attitude', () => {
+        expect(climbLimited(state({ pitch: 2 }), -1)).toBe(-1);
+        expect(climbLimited(state({ pitch: 2 }), 0)).toBe(0);
+    });
+
+    it('leaves a held pull alone well below the limit', () => {
+        expect(climbLimited(state({ pitch: 0 }), 1)).toBe(1);
+    });
+
+    it('fades a held pull out as the nose approaches the limit', () => {
+        const nearLimit = climbLimited(state({ pitch: ASSIST_TUNING.maxClimbPitch - 0.06 }), 1);
+        expect(nearLimit).toBeLessThan(1);
+        expect(nearLimit).toBeGreaterThan(0);
+    });
+
+    it('pushes the nose down once past the limit', () => {
+        const over = climbLimited(state({ pitch: ASSIST_TUNING.maxClimbPitch + 0.2 }), 1);
+        expect(over).toBeLessThan(0);
+    });
+
+    it('never lets a held pull in ASSIST take the nose past the limit', () => {
+        let pitch = 0;
+        const dt = 0.05;
+        for (let i = 0; i < 400; i++) {
+            const d = resolveControls('ASSIST', state({ pitch }), input({ pitch: 1 }), null);
+            pitch += d.pitch * 0.8 * dt;
+        }
+        expect(pitch).toBeLessThan(ASSIST_TUNING.maxClimbPitch + 0.05);
     });
 });
 

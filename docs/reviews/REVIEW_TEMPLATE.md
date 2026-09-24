@@ -21,6 +21,11 @@ Playwright screenshots.
 **Twelve dimensions, each of which must be backed by a number or a screenshot.
 Adding one requires removing one.**
 
+**v1.11.0 note:** asked to reconsider whether "fun" deserved its own
+dimension, the answer was no — folding a required stuck-time/fun-density
+metric into dimension 5's existing evidence (below) cost zero dimensions and
+answers the same question a new one would have. Still twelve.
+
 ---
 
 ## Review Metadata
@@ -107,7 +112,11 @@ a miss? Does a kill feel like anything?
 
 ### 5. Mission & session structure — the 30 s–15 min beat
 Objective clarity, phase pacing, win/lose legibility, session length against
-stated duration.
+stated duration. **Added in v1.11.0, required:** the longest stretch a
+hands-off pilot (no input) and a compliant pilot (does only what the on-screen
+objective says) each go with no change in what the game is telling them — a
+long stall here is stated the same way a defect anywhere else is, with a
+number and a screenshot, not just noted in prose.
 
 ### 6. Retention & meta
 What persists between sessions, what brings a player back tomorrow, what a

@@ -160,9 +160,39 @@ await session('desktop', { width: 1440, height: 900 }, false, async (page, shot)
     s = await snapshot(page);
     check('U steps FIRST_FLIGHT -> ARCADE', s.density === 'ARCADE', s.density);
 
+    // Pilot menu (v1.11.0): "I should have menu to click and select what to
+    // do" - a real, clickable, always-reachable pause menu.
+    const menuButtonVisible = await page.evaluate(() => {
+        const b = document.getElementById('menu-button');
+        return b && !b.hidden;
+    });
+    check('the MENU button is visible in flight on desktop', menuButtonVisible === true, menuButtonVisible);
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await shot('06-pilot-menu');
+    let menuState = await page.evaluate(() => ({ open: window.__game.menuOpen, paused: window.__game.paused }));
+    check('ESC opens the pilot menu and pauses the sortie', menuState.open && menuState.paused, menuState);
+
+    const posBefore = await page.evaluate(() => ({ ...window.__game.physics.position }));
+    await page.waitForTimeout(1000);
+    const posAfter = await page.evaluate(() => ({ ...window.__game.physics.position }));
+    check('the sortie is genuinely frozen while the menu is open',
+        JSON.stringify(posBefore) === JSON.stringify(posAfter), { posBefore, posAfter });
+
+    const objectivePanel = await page.evaluate(() => window.__game.menuObjective());
+    check('the menu restates the current objective in plain words',
+        typeof objectivePanel.plain === 'string' && objectivePanel.plain.length > 10, objectivePanel);
+
+    await page.keyboard.press('Enter'); // RESUME is always the first item
+    await page.waitForTimeout(300);
+    menuState = await page.evaluate(() => ({ open: window.__game.menuOpen, phase: window.__game.phase }));
+    check('ENTER on RESUME closes the menu and changes nothing else',
+        !menuState.open && menuState.phase === 'ACTIVE', menuState);
+
     await page.keyboard.press('h');
     await page.waitForTimeout(400);
-    await shot('06-help');
+    await shot('07-help');
     await page.keyboard.press('Escape');
 });
 

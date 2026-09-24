@@ -645,3 +645,47 @@ desktop and phone sizes with a fresh profile, screenshots every screen to
 `playtest-output/`, and asserts what a player would feel (28 checks). Look at the
 screenshots, not only the checks: four of v1.10.0's defects (#77, #78, #80, #81)
 were visible in a frame before any check existed for them.
+
+## 13. When the First Fix Makes It Worse, That Is a Result (v1.11.0)
+
+The v1.11.0 "take me home" fix went through two versions. The first taught the
+autopilot to fly the same join-point route it already uses for a genuinely
+distant recovery. A synthetic unit test (position and heading only, checked
+once) passed. Run against the actual measured failure state — 640 m astern,
+heading 197° — it produced an 11 km, 13,000-ft loop that never converged.
+
+**The method that caught it:** the fix was validated against a *replay of the
+measured bug*, not a hand-picked synthetic case. `GameLoop.smoke.test.ts`'s
+regression test starts from the exact position, velocity and heading the
+original browser session recorded, and asserts a numeric bound on how far the
+recovery is allowed to wander before it converges. The first fix failed that
+test outright (it never reached `HANDOVER` inside a generous frame budget);
+tracing WHY (`console.log` every 50 iterations, deleted afterwards) showed the
+join-point route's ~11 km turn radius at 200 m/s, appropriate for a multi-
+kilometre transit and absurd for a 600 m course reversal.
+
+**The fix that replaced it:** a distinct, tighter, slower turn
+(`homeTurnSpeed`, `homeTurnMaxBank` in `ApproachGuidance.ts`) for exactly the
+case where the aeroplane is already in a good *position* but a bad *heading* —
+distinguished from the genuinely-out-of-position case by reusing
+`inApproachCorridor`'s own position-only test, rather than adding a new
+`ApproachPhase` value that every consumer of the type would then need to
+handle.
+
+**The lesson, restated from v1.10.0's version of the same lesson:** a
+regression test that only encodes the shape of the fix ("does it turn at all")
+will pass a fix that is still wrong. Encode the actual measured failure -
+the exact numbers a real browser session produced - and bound the outcome
+numerically, not just as a boolean.
+
+### Scope cuts, said out loud
+
+Not every recommendation in a request gets built to the same depth in the same
+release, and pretending otherwise is worse than saying so. This release's
+review (`docs/reviews/v1.11.0/COMPREHENSIVE_GAME_REVIEW.md` §5) names three
+things sketched during planning and cut for time — a task-specific ghost-lead
+autopilot, a trimmed first-time briefing, a friendlier training step — rather
+than shipping thinner versions of them under the same names. `LET THE
+AUTOPILOT FLY` in the pilot menu does exactly what its own copy says
+("Ghost-Lead holds her steady") and no more, so the feature's description and
+its behaviour cannot drift apart.

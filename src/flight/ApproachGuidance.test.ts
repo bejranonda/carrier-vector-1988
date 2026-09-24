@@ -128,6 +128,36 @@ describe('approachGuidance', () => {
         expect(g.phase).toBe('JOIN');
     });
 
+    /**
+     * Regression, v1.11.0: a jet 265 m astern of the wires but pointed nearly
+     * directly away from the boat was classified FINAL on position alone, and
+     * "take me home" flew it away forever. With a heading, the same position
+     * is JOIN instead, and the bearing turns the jet around.
+     */
+    it('is JOIN, not FINAL, when astern but pointed away from the boat', () => {
+        const position = onSlope(265);
+        const facingAway = T.finalCourse + Math.PI; // 180 degrees off course
+        const g = approachGuidance(position, { heading: facingAway }, T);
+        expect(g.phase).toBe('JOIN');
+        // Already in a good position, so the fix is simply to turn and face
+        // the boat - not to route to the distant join point, which for a
+        // close-in aeroplane points even further away. See GameLoop's "take
+        // me home from anywhere" regression test for why this matters.
+        expect(g.bearing).toBeCloseTo(T.finalCourse, 6);
+    });
+
+    it('keeps flying FINAL when astern and roughly lined up', () => {
+        const position = onSlope(3000);
+        const g = approachGuidance(position, { heading: T.finalCourse + 0.2 }, T);
+        expect(g.phase).toBe('FINAL');
+    });
+
+    it('inApproachCorridor rejects a good position at a bad heading', () => {
+        const position = onSlope(1000);
+        expect(inApproachCorridor(position, T)).toBe(true);
+        expect(inApproachCorridor(position, T, T.finalCourse + Math.PI)).toBe(false);
+    });
+
     it('flies the final approach course once in the corridor', () => {
         const g = approachGuidance(onSlope(3000));
         expect(g.phase).toBe('FINAL');

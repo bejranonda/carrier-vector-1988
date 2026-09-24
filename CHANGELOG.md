@@ -5,6 +5,60 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] — 2026-09-24
+
+**"Click, Fly, Have Fun."** A desktop-focused fix round from four verbatim
+complaints: no menu, no idea what to do, too many keys, and — mid-session —
+"let user have fun to play too." Two of the three reported problems turned out
+to be worse in the code than in the complaint: the game's own training-card
+instruction stalled the jet at 85° of pitch, and the recovery assist could fly
+the jet away from the carrier forever when asked to bring it home.
+
+Evidence and the full story: [`docs/reviews/v1.11.0/`](docs/reviews/v1.11.0/README.md).
+
+### Pilot menu
+
+- **A real, clickable pause menu** (#83): `ESC`, a corner `MENU (ESC)` button
+  (desktop, in flight and on the deck), or the touch `MENU` control (which
+  used to just open the raw help overlay). Pauses the sortie; offers `LET THE
+  AUTOPILOT FLY`, `TAKE ME HOME`, `SHOW ALL CONTROLS`, `INSTRUMENTS`, `SOUND`,
+  `RESTART THIS SORTIE` and `MISSION SELECT`. Mouse hit-testing is built from
+  the same rectangles the renderer draws (`PilotMenuView.pilotMenuLayout`).
+- **The menu restates the current objective in plain words** (#84):
+  "YOUR JOB NOW: CLIMB TO 2,500 FT — Hold W (or the up arrow) to raise the
+  nose" instead of a keycap and a jargon phrase.
+
+### Flight
+
+- **ASSIST caps a held climb at ~35° of pitch** (#85). Measured: holding `W`
+  exactly as the training card says reached 85° and near-stall speed in six
+  seconds, because the alpha-based stall limiter is unloaded in a zoom climb
+  and never engaged. `FlightAssist.climbLimited` fades a held pull out
+  approaching the limit and gently pushes back over it. MANUAL is untouched.
+- **"Take me home" takes you home** (#86). Measured: a jet 640 m astern of the
+  carrier but pointed almost directly away, under the autopilot, was flown to
+  7.9 km out and diverging. `ApproachGuidance` now also checks heading, and a
+  jet in a good position but facing the wrong way gets a short, tight reversal
+  back onto the final course instead of either holding its bad heading or
+  routing via the same wide, ~11 km-radius turn a genuine long transit uses.
+- **The training card's altitude readout matches the altimeter's units**
+  (#87): both now read feet.
+
+### Feel
+
+- **Every scripted mission phase pays off** with an on-screen banner and a
+  confirmation tone, reusing the radio callout text every scenario already
+  had written rather than adding new copy (`Scenarios.shortCallout`).
+
+### Engineering
+
+- 1,029 tests (was 989), including a regression test that replays the exact
+  measured "take me home" failure state and bounds how far the recovery may
+  wander before converging.
+- Browser harness: 33/33 checks (was 28/28) — five new checks for the pilot
+  menu (visibility, pause, plain-language objective, click-to-resume).
+- Bundle: 253.6 kB raw / 82.0 kB gzip (was 246.2 / 79.6).
+
 ## [1.10.0] — 2026-09-23
 
 **"Built, Measured, Launch-Ready."** Implements the v1.9.0 review — after

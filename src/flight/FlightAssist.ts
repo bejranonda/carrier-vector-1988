@@ -38,7 +38,7 @@ export interface AssistSpec {
 
 export const ASSIST_SPECS: readonly AssistSpec[] = [
     { id: 'MANUAL', label: 'MANUAL', blurb: 'no assistance - the raw flight model' },
-    { id: 'ASSIST', label: 'ASSIST', blurb: 'auto-level, stall limiter and a terrain floor' },
+    { id: 'ASSIST', label: 'ASSIST', blurb: 'auto-level, stall and climb limiters, a terrain floor' },
     { id: 'AUTO', label: 'AUTOPILOT', blurb: 'the jet flies, you fight' }
 ];
 
@@ -207,7 +207,22 @@ export const ASSIST_TUNING = {
     pathDampingBank: 0.35,
     /** Throttle-rate demand per m/s^2 of speed change - the anticipation term. */
     speedDamping: 0.3,
-    defaultMaxBank: 1.05
+    defaultMaxBank: 1.05,
+    /**
+     * Steepest climb ASSIST lets a held pull reach, radians (~35 deg).
+     *
+     * Measured in v1.11.0: a new pilot told "CLIMB TO 2,500 FT" holds W and
+     * keeps holding it. With no attitude limit the nose went to 85 deg in six
+     * seconds and the jet hung on its tail at 79 m/s - the alpha limiter never
+     * bit, because in a zoom climb the wing is unloaded. Airliners protect
+     * pitch attitude for exactly this reason. Thirty-five degrees still makes
+     * 2,500 ft in about eight seconds; loops are one key (F -> MANUAL) away.
+     */
+    maxClimbPitch: 0.61,
+    /** Radians below the limit at which the protection starts to fade the pull in. */
+    climbPitchBlend: 0.12,
+    /** Push per radian beyond the limit. */
+    climbPitchGain: 3
 } as const;
 
 /** How much authority a protection must take before the HUD calls it out. */
@@ -399,6 +414,22 @@ export function autopilotDemand(state: FlightState, target: NavTarget): ControlD
 }
 
 /**
+ * ASSIST's pitch-attitude protection: a held pull fades out as the nose
+ * approaches `maxClimbPitch` and becomes a gentle push beyond it. Only a
+ * nose-up demand is touched - lowering the nose is always allowed - and the
+ * limit is on attitude, not alpha, because a zoom climb stalls with the wing
+ * unloaded. See `ASSIST_TUNING.maxClimbPitch`.
+ */
+export function climbLimited(state: FlightState, pitchDemand: number): number {
+    if (pitchDemand <= 0) return pitchDemand;
+    const t = ASSIST_TUNING;
+    const margin = t.maxClimbPitch - state.pitch;
+    if (margin >= t.climbPitchBlend) return pitchDemand;
+    if (margin > 0) return pitchDemand * (margin / t.climbPitchBlend);
+    return Math.max(-0.5, margin * t.climbPitchGain);
+}
+
+/**
  * The one entry point the simulation calls. Order matters: the terrain floor
  * outranks the stall limiter (a stall at 2000 m is survivable, a controlled
  * descent into a ridge is not), and both outrank whatever the autopilot or
@@ -463,7 +494,7 @@ export function resolveControls(
         }
 
         demand = {
-            pitch: held.pitch,
+            pitch: climbLimited(state, held.pitch),
             roll: held.roll,
             yaw: 0,
             throttle: throttleDemand,
