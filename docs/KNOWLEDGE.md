@@ -1242,3 +1242,196 @@ resets the timer.
 `DEATH_SEQUENCE_SECONDS = 2.6`, `DEATH_TIME_SCALE = 0.3`. The countdown is in real time; the world runs at
 0.3x. Controls, the coach and further damage are ignored while `dying`. The cause captured at the start
 is restored before the deck cut so a second hit cannot rewrite it.
+
+---
+
+## 20. Measured Flight & HUD Constants (v1.9.0)
+
+Everything here was **measured on the running game in a browser**, not derived
+from the source. Where a measurement contradicts a formula elsewhere in this
+document, the measurement is what the player experiences.
+Method: [`APPROACH_AND_METHOD.md` §10](APPROACH_AND_METHOD.md).
+
+### 20.1 Sustained turn performance
+
+Held input, sampled once per second. Start state: 2,500 m, 200 m/s, wings level,
+full throttle, `turnAssist = 1`.
+
+| Input | Assist law | Turn rate | 180° reversal | Final speed |
+| :-- | :-- | --: | --: | --: |
+| Bank only | `ASSIST` | 7.2 °/s | ~25 s | 186 m/s |
+| Bank + back-stick | `ASSIST` | 9.5 °/s | ~19 s | 134 m/s |
+| Bank only | `MANUAL` | 8.3 °/s | ~22 s | 166 m/s |
+| Bank + back-stick | `MANUAL` | 10.3 °/s | ~17 s | 120 m/s |
+| Bank + back-stick | `AUTO` | 9.6 °/s | ~19 s | 146 m/s |
+
+**Back-stick does tighten the turn** (+2.0 to +2.3 °/s), confirming the control
+reference. The cost is airspeed: ~50 m/s over eight seconds.
+
+### 20.2 The degenerate case — turning in the vertical plane
+
+From a nose-high, energy-bleeding state (pitch 35°, 154 m/s, throttle 1.5), eight
+seconds of held bank **and** held back-stick produced **2° of heading change**
+(~0.25 °/s) and ended in a stall warning.
+
+This is correct: at 75° of bank with the nose 35° above the horizon, the turn
+goes into the vertical plane and heading barely moves. It is also the state the
+game reliably puts a beginner in straight off the catapult (§20.3), and before
+v1.9.0 nothing on the default HUD displayed the pitch attitude that explains it.
+
+### 20.3 Throttle behaviour with no pilot input
+
+`FlightAssist` raises the throttle demand to 0.7 when airspeed decays below
+130 m/s in `ASSIST` and never lowers it. Measured: a pilot who touches no
+throttle key sits at **throttle = 1.5 (150%, full afterburner)** from the
+catapult stroke onward, burning ~138 L in 25 s. Known Issues #66.
+
+### 20.4 Roll response
+
+`applyRollInput` rate = `2.4 · qFactor · controlAuthority` rad/s, with
+`qFactor = clamp(speed/150, 0.2, 1.3)`. At 200 m/s that is ~2.9 rad/s, so the
+75° upright cap (`turnAssist > 0`) is reached in **~0.45 s** and then pinned.
+Measured: `roll = −75°` at t = 1 s and at every subsequent sample. There is no
+proportional bank feel; the key behaves as a toggle between 0° and 75°.
+
+### 20.5 HUD vertical band stack
+
+Derived, not hand-picked. `BAND_GAP = 8`. `HUD.bandRects()` exports these and
+`HudLayout.test.ts` asserts they are pairwise disjoint.
+
+| Band | Height | Top | Bottom |
+| :-- | --: | --: | --: |
+| Objective strip | 54 | 54 | 108 |
+| Compass tape (plate) | 32 | 116 | 148 |
+| Warning banner | 28 | 156 | 184 |
+| Coach ticker | 26 | 192 | 218 |
+
+> Pre-v1.9.0, `BAND.compass` was 96, putting the tape's plate at 76–108 —
+> entirely inside the objective strip. Both strings were unreadable on every
+> frame at every resolution.
+
+### 20.6 HUD bottom stack
+
+Measured up from the viewport bottom, or from the top of whatever the touch
+controls reserve. `HudLayout.bottomStackRects(height, reserve)`.
+
+| Element | Offset from base | Height |
+| :-- | --: | --: |
+| Assist annunciator | 94 | 22 |
+| Arcade pill bar | 58 | 34 |
+| Keycap cheat strip (centre line) | 14 | 16 |
+
+> Pre-v1.9.0 these were `52`/`22`, `52`/`34` and `22`/`16` — three elements in
+> one 35 px band, printing through each other.
+
+### 20.7 Arcade horizon projection
+
+`HUD.drawArcadeHorizon` uses the same exact projection as the pitch ladder's zero
+rung, so the bar sits on the true horizon rather than approximating it:
+
+```
+yOffset = fov · tan(pitch)        [px from screen centre, pre-roll-rotation]
+```
+
+Drawn only when `|pitch| ≤ 1.45 rad` (≈83°). Beyond `±0.34 · height` the bar is
+clamped to that edge and drawn at 45% alpha, so a steep attitude reads as
+"the horizon is that way" rather than as an empty screen. A signed pitch number
+is drawn beside it whenever `|pitch| ≥ 5°`.
+
+### 20.8 Screen inventory, 1440×900, default settings
+
+| Quantity | Count |
+| :-- | --: |
+| Simultaneous cockpit draw regions (ARCADE) | ~27 |
+| Distinct labelled values on the glass | 33 |
+| Key bindings in the help overlay | 29 |
+| Deck screen panels (desktop) | 8 |
+| Deck screen panels (phone landscape) | **4** |
+| Keys shown on the briefing before first flight | 14 |
+| Boot → briefing | 1.8 s (`BriefingScreen.WARMUP_DURATION`) |
+| Page load → first flying-like moment | ~75 s, mostly reading |
+
+### 20.9 Build metrics (v1.9.0)
+
+| Metric | Value |
+| :-- | --: |
+| Tests | 932 passing, 51 files |
+| Non-test source | 19,680 lines |
+| Test source | 10,971 lines |
+| Runtime dependencies | 0 |
+| Bundle | 235.2 kB raw / 75.8 kB gzip |
+
+---
+
+## 21. Airframe, Controllers and HUD Budgets (v1.10.0)
+
+### 21.1 Ops tempo airframes
+
+| Tempo | `liftScale` | Meaning |
+| :-- | --: | :-- |
+| ARCADE (default) | 1.7 | Wing area ×1.7 - lift **and** drag forces scale, so no free energy |
+| SIM | 1.0 | The original airframe |
+
+On-speed approach speed (1 g at 8.1° AoA, near sea level):
+`V = sqrt(2·m·g / (ρ₀ · S · liftScale · 0.085 · 8.1))` →
+**~76 m/s ARCADE**, **~100 m/s SIM** (clamped to 88 by `approachSpeedFor`).
+
+### 21.2 Measured turn performance (unit level, 2,500 m, 200 m/s start)
+
+| | SIM | ARCADE |
+| :-- | --: | --: |
+| Bank only, 16 s | 9.1 °/s, nose −10°, −284 m | 11.2 °/s, nose −6°, −126 m |
+| Bank + full pull, 8 s | 11.7 °/s | 14.3 °/s |
+| Running game, held `A`, default settings | — | **12.3 °/s, nose +6°** |
+
+### 21.3 Directional stability (#71)
+
+`β = asin(v̂ · right)`, `r = β · WEATHERVANE_GAIN (0.8) · min(1, V/150)`, applied
+through the Euler kinematics `θ' = −r·sin φ`, `ψ' = r·cos φ / cos θ`. Skipped
+below 30 m/s or when stalled.
+
+### 21.4 Autopilot laws
+
+| Law | Form | Constants |
+| :-- | :-- | :-- |
+| Autothrottle | `rate = (Vt − V)·speedGain − V̇·speedDamping` | 0.05, 0.3 |
+| Altitude hold | `q = clamp(Δh·0.0016·bankFactor) − 0.8·damped` | |
+| Damping blend | `damped = (γ − γff)·w + θ·(1 − w)`, `w = clamp(1 − |φ|/0.35)` | γ = asin(vs/V) |
+| Glideslope feed-forward | `γff = −3.5°` on the slope | `NavTarget.pathAngle` |
+| ASSIST burner cancel | above 180 m/s, throttle > 1.0, hands off → rate −1.0 | `burnerCancel*` |
+
+### 21.5 HUD density budgets (`HudDensity.ts`)
+
+| Density | Optional regions | Shown |
+| :-- | --: | :-- |
+| FIRST_FLIGHT | 3 | horizon, armed-weapon chip, "U / H" hint line |
+| ARCADE | 8 | horizon, FPM, compass, radar, pill bar, score, corner buttons, routine annunciator |
+| PRO | 7 | pitch ladder, FPM, compass, radar, score, corner buttons, routine annunciator (plus the systems panel) |
+
+Always on at every density: objective strip, speed, altitude, warnings, coach
+ticker, target brackets, callouts, landing aids on approach, the go-here cue and
+missile carets.
+
+### 21.6 Deck panel sets (`deckPanelSpecs`)
+
+| Set | Panels |
+| :-- | :-- |
+| Touch | ORDERS, TURNAROUND, THREATS |
+| BRIEF (FIRST_FLIGHT) | ORDERS, TURNAROUND, THREATS, LOG |
+| FULL | ORDERS, TURNAROUND (with crew line), PAYLOAD, THREATS, STATUS, DECK_PLAN, LOG |
+
+### 21.7 Struggle detector (`StruggleDetector.ts`)
+
+Four pitch reversals, each after a press shorter than 0.6 s, inside 12 s → one
+offer of the stick flip, once per session, only if the stick setting was never
+touched.
+
+### 21.8 Build metrics (v1.10.0)
+
+| Metric | Value |
+| :-- | --: |
+| Tests | 989 passing, 55 files |
+| Browser checks | 28 (`npm run playtest`) |
+| Non-test source | ~21,000 lines |
+| Runtime dependencies | 0 |
+| Bundle | 246.2 kB raw / 79.6 kB gzip |

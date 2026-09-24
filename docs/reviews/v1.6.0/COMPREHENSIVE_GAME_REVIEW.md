@@ -32,12 +32,12 @@
 
 | # | Player Observation | Technical Reality | Root Cause Citation |
 | :-: | :--- | :--- | :--- |
-| **1** | Cannot turn left/right; only goes North | **Defect.** Roll does not couple into yaw rate; rudder is isolated on `Q`/`E`. Pitch clamped at $88^\circ$. | [`AircraftPhysics.ts:89, 155, 181`](file:///d:/Git/Werapol/Game/Flight/src/flight/AircraftPhysics.ts#L89) |
-| **2** | Radar is unclear and unintuitive | **UX Defect.** It is an electronic warfare RWR showing letters (`S/T/M`), not a tactical radar. | [`HUD.ts:1454-1523`](file:///d:/Git/Werapol/Game/Flight/src/renderer/HUD.ts#L1454) |
-| **3** | Sudden death without understanding | **Defect.** Hit-scan cannon from astern; instant cut to 2D deck without in-flight death sequence. | [`EnemyAI.ts:75`](file:///d:/Git/Werapol/Game/Flight/src/tactics/EnemyAI.ts#L75), [`GameLoop.ts:839`](file:///d:/Git/Werapol/Game/Flight/src/core/GameLoop.ts#L839) |
-| **4** | Terrain is narrow / repetitive | **Design Defect.** Fjord is a 1D straight corridor ($|X| < 500$ m) bounded by 1800 m vertical walls. | [`TerrainProfiles.ts:60-79`](file:///d:/Git/Werapol/Game/Flight/src/tactics/TerrainProfiles.ts#L60) |
-| **5** | No sense of winning after repeated deaths | **Pacing Defect.** Lack of intermediate micro-rewards, objective trackers, and novice milestones. | [`Scenarios.ts`](file:///d:/Git/Werapol/Game/Flight/src/core/Scenarios.ts), [`Objectives.ts`](file:///d:/Git/Werapol/Game/Flight/src/core/Objectives.ts) |
-| **6** | Cognitive overload; need on-screen hints | **UX Defect.** 20+ instruments displayed simultaneously with zero dynamic contextual prompts. | [`HUD.ts:1350`](file:///d:/Git/Werapol/Game/Flight/src/renderer/HUD.ts#L1350) |
+| **1** | Cannot turn left/right; only goes North | **Defect.** Roll does not couple into yaw rate; rudder is isolated on `Q`/`E`. Pitch clamped at $88^\circ$. | [`AircraftPhysics.ts:89, 155, 181`](../../../src/flight/AircraftPhysics.ts#L89) |
+| **2** | Radar is unclear and unintuitive | **UX Defect.** It is an electronic warfare RWR showing letters (`S/T/M`), not a tactical radar. | [`HUD.ts:1454-1523`](../../../src/renderer/HUD.ts#L1454) |
+| **3** | Sudden death without understanding | **Defect.** Hit-scan cannon from astern; instant cut to 2D deck without in-flight death sequence. | [`EnemyAI.ts:75`](../../../src/tactics/EnemyAI.ts#L75), [`GameLoop.ts:839`](../../../src/core/GameLoop.ts#L839) |
+| **4** | Terrain is narrow / repetitive | **Design Defect.** Fjord is a 1D straight corridor ($|X| < 500$ m) bounded by 1800 m vertical walls. | [`TerrainProfiles.ts:60-79`](../../../src/tactics/TerrainProfiles.ts#L60) |
+| **5** | No sense of winning after repeated deaths | **Pacing Defect.** Lack of intermediate micro-rewards, objective trackers, and novice milestones. | [`Scenarios.ts`](../../../src/core/Scenarios.ts), [`Objectives.ts`](../../../src/core/Objectives.ts) |
+| **6** | Cognitive overload; need on-screen hints | **UX Defect.** 20+ instruments displayed simultaneously with zero dynamic contextual prompts. | [`HUD.ts:1350`](../../../src/renderer/HUD.ts#L1350) |
 
 ---
 

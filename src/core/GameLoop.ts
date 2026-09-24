@@ -30,7 +30,10 @@ import { soundFX } from '../audio/SoundFX';
 import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
-import { getContextualHint, TrainingSequence } from './Tutorial';
+import { arbitrateHint, getContextualHint, TrainingSequence } from './Tutorial';
+import { HUD_DENSITY_LABEL, resolveHudDensity, saveHudDensity } from './HudDensity';
+import { PitchStruggleDetector } from './StruggleDetector';
+import type { HudDensity } from './HudDensity';
 import type { LossCause } from './PostMortem';
 import { formatLossCause } from './PostMortem';
 import { Milestones } from './Milestones';
@@ -92,6 +95,7 @@ import {
     APPROACH_TUNING,
     approachCaption,
     approachGuidance,
+    approachSpeedFor,
     loadApproachAssist,
     saveApproachAssist,
     storedApproachAssist
@@ -447,6 +451,11 @@ export class GameLoop {
     private lastSpawnedWave = 0;
     /** Latest coach line. Public so the wiring can be asserted headlessly. */
     public currentHint: Hint | null = null;
+    /** Watches for a pilot fighting the pitch keys - see StruggleDetector. */
+    private pitchStruggle = new PitchStruggleDetector();
+    /** Smoothed d(airspeed)/dt, m/s^2 - see `assistFlightState`. */
+    private speedRate = 0;
+    private lastAirSpeed: number | null = null;
     /** Seconds left on the "a fighter is lining me up" warning. */
     private gunsWarningTimer = 0;
 
@@ -471,6 +480,7 @@ export class GameLoop {
         this.weapons = new WeaponsSystem();
         this.physics = new AircraftPhysics();
         this.physics.turnAssist = 1;
+        this.physics.liftScale = pacingSpec(this.pacing).liftScale;
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         this.deckView = new DeckView();
@@ -481,6 +491,12 @@ export class GameLoop {
         this.scenario = scenarioById(DEFAULT_SCENARIO);
         this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === DEFAULT_SCENARIO);
         this.applyScenario(this.scenario);
+        this.hud.hudDensity = resolveHudDensity(this.hasCompletedAMission());
+    }
+
+    /** Any mission ever completed - the FIRST_FLIGHT HUD's graduation test. */
+    public hasCompletedAMission(): boolean {
+        return SCENARIOS.some(sc => recordFor(this.missionRecords, sc.id).completions > 0);
     }
 
     // -----------------------------------------------------------------
@@ -550,11 +566,16 @@ export class GameLoop {
         }
 
         this.deck = new DeckManager(this.pacedThreat(setup.threat, seedOverride));
+        // A shielded scenario's contacts are drones: they fly the pattern, they
+        // do not strafe the boat. The deck has to know, because it owns the
+        // package-reaches-the-carrier damage path.
+        this.deck.combatShielded = setup.combatShielded === true;
         this.sensors = new SensorTacticsManager(this.terrain);
         if (setup.noSamSites) this.sensors.samSites.length = 0;
         this.weapons = new WeaponsSystem();
         this.physics = new AircraftPhysics();
         this.physics.turnAssist = 1;
+        this.physics.liftScale = pacingSpec(this.pacing).liftScale;
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         // The flight checkout is the intro mode's teaching tool; on a scripted
@@ -751,7 +772,13 @@ export class GameLoop {
             for (let i = 0; i < pkg.count; i++) {
                 targets.push({
                     id: `${pkg.id}-${i}`,
-                    name: pkg.aircraftType === 'Tu-22' ? 'Tu-22M BACKFIRE' : `MiG-23 FLOGGER #${i + 1}`,
+                    // A shielded scenario's contacts are target drones, and are
+                    // called that everywhere - a tag reading "MIG-23" on the
+                    // mission that promised zero hostiles is a contradiction the
+                    // player can see.
+                    name: this.scenario.setup.combatShielded
+                        ? `DRONE #${i + 1}`
+                        : pkg.aircraftType === 'Tu-22' ? 'Tu-22M BACKFIRE' : `MiG-23 FLOGGER #${i + 1}`,
                     position: {
                         x: lateralX + (i - (pkg.count - 1) / 2) * 350,
                         y: alt,
@@ -842,7 +869,8 @@ export class GameLoop {
         if (this.deck.aircraftState !== 'CATAPULT_READY') return false;
         if (!this.deck.triggerCatapultLaunch()) return false;
 
-        this.beginSortie(this.deck.plannedFuel, this.deck.plannedLoadout);
+        // What the magazine could supply, not what was planned.
+        this.beginSortie(this.deck.plannedFuel, this.deck.lastLaunchLoadout ?? this.deck.loadableLoadout());
         this.isCatapultLaunching = true;
         this.catapultProgress = 0;
         this.currentView = 'MICRO_FLIGHT';
@@ -1033,10 +1061,11 @@ export class GameLoop {
     }
 
     public start() {
-        const neverFlown = SCENARIOS.every(s => recordFor(this.missionRecords, s.id).attempts === 0);
-        if (neverFlown) {
-            this.selectScenarioById('TRAINING_SORTIE');
-        }
+        // Open on the mission the briefing marks START HERE - the training
+        // sortie for a new pilot, the easiest uncleared mission after that. It
+        // used to do this for new pilots only, so a returning pilot saw START
+        // HERE on one mission while the big FLY button flew another.
+        this.selectScenarioById(recommendScenario(this.missionRecords).id);
         requestAnimationFrame(this.step.bind(this));
     }
 
@@ -1051,7 +1080,39 @@ export class GameLoop {
         return this.phase !== 'ACTIVE' || this.helpVisible;
     }
 
+    /**
+     * One animation frame, made survivable.
+     *
+     * The frame body used to schedule the next frame on its last line, so a
+     * single exception anywhere in update or draw skipped that line and froze
+     * the game on a still image with no message - the worst possible failure
+     * in front of a new player. Now a bad frame is logged and the loop carries
+     * on; only a failure that persists for `FATAL_FRAME_ERRORS` consecutive
+     * frames (about half a second) stops the loop and reports itself through
+     * `onFatalError`, which the shell turns into a visible recovery screen.
+     */
     private step(timestamp: number) {
+        try {
+            this.frame(timestamp);
+            this.consecutiveFrameErrors = 0;
+        } catch (error) {
+            this.consecutiveFrameErrors++;
+            console.error('Frame failed:', error);
+            if (this.consecutiveFrameErrors >= GameLoop.FATAL_FRAME_ERRORS) {
+                this.onFatalError?.(error);
+                return;
+            }
+        }
+        requestAnimationFrame(this.step.bind(this));
+    }
+
+    /** Consecutive failing frames after which the loop gives up. */
+    public static readonly FATAL_FRAME_ERRORS = 30;
+    private consecutiveFrameErrors = 0;
+    /** Called once if the loop stops for good; the shell shows a recovery screen. */
+    public onFatalError: ((error: unknown) => void) | null = null;
+
+    private frame(timestamp: number) {
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = (timestamp - this.lastTimestamp) / 1000;
         this.lastTimestamp = timestamp;
@@ -1082,7 +1143,6 @@ export class GameLoop {
 
         this.updateAdaptiveQuality(elapsed);
         this.draw(elapsed);
-        requestAnimationFrame(this.step.bind(this));
     }
 
     /**
@@ -1116,6 +1176,23 @@ export class GameLoop {
                 : (k['d'] || k['arrowright'] ? 1 : 0) + (k['a'] || k['arrowleft'] ? -1 : 0),
             throttle: (k['shift'] ? 1 : 0) + (k['control'] ? -1 : 0)
         };
+
+        // A pilot stabbing the pitch keys back and forth is usually fighting a
+        // stick that feels backwards. Offer the flip once, in context - only
+        // to someone who has never touched the setting, and only on keys (the
+        // thumb stick has no "arrow-up" convention to fight).
+        if (!this.analog && this.pitchStruggle.update(rawPitch, dt) && storedPitchInversion() === null) {
+            this.callouts.push('STICK FEELS BACKWARDS?', 'MODE', 'PRESS [I] - UP ARROW DIVES, LIKE A FLIGHT SIM');
+            this.deck.log('TIP: [I] FLIPS THE STICK - UP ARROW DIVES, AS IN MOST FLIGHT SIMS.');
+        }
+
+        // Smoothed airspeed rate, for the autothrottle's anticipation term.
+        const speed = this.physics.airSpeed;
+        if (this.lastAirSpeed !== null && dt > 0) {
+            const raw = (speed - this.lastAirSpeed) / dt;
+            this.speedRate += (raw - this.speedRate) * Math.min(1, dt * 4);
+        }
+        this.lastAirSpeed = speed;
 
         const demand = resolveControls(this.assistLevel, this.assistFlightState(), pilot, this.navTarget());
         this.assistOverride = demand.override;
@@ -1239,6 +1316,13 @@ export class GameLoop {
                 this.selectedWeapon = 'BOMB';
                 soundFX.playUiMove();
                 return;
+            case 'WEAPON_HARM':
+                this.selectedWeapon = 'HARM';
+                soundFX.playUiMove();
+                return;
+            case 'CHAFF':
+                this.releaseChaff();
+                return;
             case 'MENU':
                 this.helpVisible = !this.helpVisible;
                 soundFX.playUiMove();
@@ -1340,7 +1424,8 @@ export class GameLoop {
             altitudeAgl: Math.max(0, this.physics.position.y - ground),
             verticalSpeed: this.physics.velocity.y,
             isStalled: this.physics.isStalled,
-            onApproach: HUD.isOnApproach(this.physics)
+            onApproach: HUD.isOnApproach(this.physics),
+            speedRate: this.speedRate
         };
     }
 
@@ -1427,10 +1512,16 @@ export class GameLoop {
         if (this.assistLevel !== 'AUTO') return null;
         if (this.deck.aircraftState !== 'AIRBORNE') return null;
 
+        // Fly the approach at this airframe's on-speed speed, not a constant:
+        // see `AircraftPhysics.onSpeedApproachSpeed`.
+        const tuning = {
+            ...APPROACH_TUNING,
+            approachSpeed: approachSpeedFor(this.physics.onSpeedApproachSpeed())
+        };
         const guidance = approachGuidance(this.physics.position, {
             bank: this.physics.roll,
             lateralSpeed: this.physics.velocity.x
-        });
+        }, tuning);
         this.approachPhase = guidance.phase;
         // The assist flies the APPROACH, not the transit and not the landing.
         // JOIN is a cue, not a hand-over: see `ApproachGuidance`.
@@ -1444,7 +1535,7 @@ export class GameLoop {
         // bay, and without it an idle descent on the glideslope stabilises
         // far too fast for the wires - see APPROACH_TUNING.boardsOutAbove.
         this.physics.bayOpen =
-            this.physics.airSpeed > APPROACH_TUNING.approachSpeed + APPROACH_TUNING.boardsOutAbove;
+            this.physics.airSpeed > tuning.approachSpeed + APPROACH_TUNING.boardsOutAbove;
 
         const p = this.physics.position;
         const ground = this.terrain.getElevation(p.x, p.z);
@@ -1468,7 +1559,12 @@ export class GameLoop {
             altitudeAgl,
             airSpeed: guidance.airSpeed,
             maxBank: guidance.maxBank,
-            overridesApproach: true
+            overridesApproach: true,
+            // On the slope, fly the slope: the altitude error is then only a
+            // correction, instead of the whole descent being chased from behind.
+            pathAngle: guidance.altitudeMsl < APPROACH_TUNING.patternAltitude
+                ? -APPROACH_TUNING.glideslopeDegrees * (Math.PI / 180)
+                : 0
         };
     }
 
@@ -1597,15 +1693,54 @@ export class GameLoop {
         return this.pitchInverted;
     }
 
-    /** Toggle HUD density between ARCADE and PRO. */
-    public toggleHudDensity(): 'ARCADE' | 'PRO' {
+    /**
+     * Cycle HUD density FIRST FLIGHT -> ARCADE -> PRO, and remember the choice.
+     * Once the player has picked one, graduation never overrides it.
+     */
+    public toggleHudDensity(): HudDensity {
         this.hud.toggleHudDensity();
+        saveHudDensity(this.hud.hudDensity);
         soundFX.playRelayClick();
-        this.callouts.push(
-            this.hud.hudDensity === 'ARCADE' ? 'HUD: ARCADE MODE' : 'HUD: PRO MODE',
-            'MODE'
-        );
+        this.callouts.push(`HUD: ${HUD_DENSITY_LABEL[this.hud.hudDensity]}`, 'MODE');
         return this.hud.hudDensity;
+    }
+
+    /**
+     * The jet should be going home: the mission's recovery phase, bingo fuel,
+     * or heavy damage. One test, shared by every "go home" cue so they cannot
+     * disagree about when it is time.
+     */
+    public isHomeward(): boolean {
+        return this.missionStatus.phase?.id === 'RECOVER'
+            || this.physics.fuel < 800
+            || this.physics.damage >= 60;
+    }
+
+    /**
+     * Where the mission wants the jet next, when the target brackets do not
+     * already say: the boat on the way home (recovery phase, bingo fuel, heavy
+     * damage), or a hardened target still standing. Null otherwise.
+     */
+    public goHereGoal(): { bearing: number; rangeMetres: number; label: string } | null {
+        if (this.deck.aircraftState !== 'AIRBORNE') return null;
+        const p = this.physics.position;
+        const homeward = this.isHomeward();
+        // Inside the approach the landing aids and the recovery caption own the
+        // job; a cue pointing at the deck from 2 km astern is noise.
+        if (homeward && !HUD.isOnApproach(this.physics)) {
+            return {
+                bearing: Math.atan2(0 - p.x, 0 - p.z),
+                rangeMetres: Math.hypot(p.x, p.z),
+                label: 'BOAT'
+            };
+        }
+        const target = this.strikeTargets.find(t => !t.destroyed);
+        if (target && !homeward) {
+            const dx = target.position.x - p.x;
+            const dz = target.position.z - p.z;
+            return { bearing: Math.atan2(dx, dz), rangeMetres: Math.hypot(dx, dz), label: 'TARGET' };
+        }
+        return null;
     }
 
     /**
@@ -1648,7 +1783,9 @@ export class GameLoop {
                 assistLabel: assistSpec(this.assistLevel).label,
                 hudDensity: this.hud.hudDensity,
                 padlockActive: this.padlock.isPadlocked,
-                pitchInverted: this.pitchInverted
+                pitchInverted: this.pitchInverted,
+                rewindsRemaining: this.timeRewind.rewindsRemaining,
+                hasDesignation: Boolean(this.tracker.designated())
             };
             // controlScheme is narrowed to KEYBOARD by the guard at the top of
             // this method, so the touch reserve can never apply here.
@@ -2063,6 +2200,8 @@ export class GameLoop {
             // The warning that makes cannon fire a fight instead of an ambush.
             if (this.scenario.setup.combatShielded) return;
             this.callouts.push('GUNS TRACKING', 'LOSS', `${enemy.name} - BREAK TURN`);
+            // Heard, not just read: the pilot is looking at the target.
+            if (this.gunsWarningTimer <= 0) soundFX.playGunsTracking(this.placeAt(enemy.position));
             this.gunsWarningTimer = 4;
         });
 
@@ -2332,23 +2471,22 @@ export class GameLoop {
             damage: this.physics.damage,
             distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
             isAirborne: true,
+            // The trap-speed warning is for a recovery, not for the cat shot
+            // that necessarily happens fast and at zero range from the boat.
+            closingOnCarrier: HUD.isOnApproach(this.physics),
             bayOpen: this.physics.bayOpen,
             gunsTracking: this.gunsWarningTimer > 0,
             bandit: this.nearestBandit()
         });
 
-        // Warnings and critical emergencies (stall, terrain, missile launch, etc.)
-        // always take top priority to save the aircraft.
-        if (contextual && contextual.severity !== 'INFO') return contextual;
-
-        // While a training checkout is active, training instructions take precedence
-        // over routine informational prompts (like "bandit ahead" or "radar searching").
-        const trainingStep = this.training.currentStep;
-        if (trainingStep) return { text: trainingStep.prompt, severity: 'INFO' };
-
-        // Otherwise return any routine informational hint.
-        if (contextual) return contextual;
-        return null;
+        // Safety first, then the training checkout, then routine coaching - and
+        // routine coaching only when it does not contradict the objective strip.
+        // See `arbitrateHint` for the measured case that made this necessary.
+        return arbitrateHint(
+            contextual,
+            this.training.currentStep?.prompt ?? null,
+            this.currentObjective()
+        );
     }
 
     // -----------------------------------------------------------------
@@ -2436,7 +2574,8 @@ export class GameLoop {
                         : undefined,
                     touchReserveTopRight: this.controlScheme === 'TOUCH'
                         ? this.viewWidth - this.touchLayout.menu.x + 10
-                        : undefined
+                        : undefined,
+                    detail: this.hud.hudDensity === 'FIRST_FLIGHT' ? 'BRIEF' : 'FULL'
                 },
                 w, h, this.elapsedSeconds
             );
@@ -2475,8 +2614,18 @@ export class GameLoop {
         return {
             left: Math.max(0, l.stickZone.x + l.stickZone.w - l.safe.x),
             right: Math.max(0, l.safe.x + l.safe.w - (l.weapons[0]?.x ?? l.fire.cx - l.fire.r)),
-            bottom: Math.max(0, l.safe.y + l.safe.h - Math.min(l.stickZone.y, l.target.cy - l.target.r)),
-            top: 0
+            // The highest thumb control on either side: the stick zone, the
+            // target and chaff buttons, and the top of the weapon column.
+            bottom: Math.max(0, l.safe.y + l.safe.h - Math.min(
+                l.stickZone.y,
+                l.target.cy - l.target.r,
+                l.chaff.cy - l.chaff.r,
+                ...l.weapons.map(w => w.y)
+            )),
+            top: 0,
+            // Between the two thumb clusters the bottom of the screen is free;
+            // bottom-anchored readouts live there, just above the safe edge.
+            bottomCentre: Math.max(0, this.viewHeight - (l.safe.y + l.safe.h)) + 10
         };
     }
 
@@ -2496,11 +2645,10 @@ export class GameLoop {
         const loadout = this.physics.loadout;
         drawTouchControls(this.ctx, this.touchLayout, {
             demand: this.touch.demand(this.touchLayout),
-            // HARM has no touch control yet (KNOWN_ISSUES) - a touch pilot who
-            // somehow has it selected still sees a sensible weapon highlighted
-            // rather than the type system being fought with a cast.
-            selectedWeapon: this.selectedWeapon === 'HARM' ? 'GUN' : this.selectedWeapon,
-            ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs],
+            selectedWeapon: this.selectedWeapon,
+            ammo: [loadout.vulcanAmmo, loadout.sidewinders, loadout.ironBombs, loadout.harms],
+            chaff: loadout.chaff,
+            missileInbound: this.sensors.masterRwrState === 'LAUNCH',
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
             fireArmed: this.deck.aircraftState === 'AIRBORNE',
@@ -2625,6 +2773,7 @@ export class GameLoop {
                 isPadlocked: this.padlock.isPadlocked,
                 pitchInverted: this.pitchInverted,
                 rewindsRemaining: this.timeRewind.rewindsRemaining,
+                goHere: this.goHereGoal(),
                 assistLabel: assistSpec(this.assistLevel).label,
                 assistOverride: this.assistOverride,
                 callouts: this.callouts.active(),
@@ -2635,10 +2784,18 @@ export class GameLoop {
                 motion: this.motion,
                 visibleContacts: this.visibility,
                 terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO',
-                recovery: this.approachPhase === null ? null : {
-                    text: approachCaption(approachGuidance(this.physics.position)),
-                    handover: this.approachPhase === 'HANDOVER'
-                }
+                // The JOIN cue ("get astern of the boat") is advice for a jet on
+                // its way home. Shown from the catapult onward - where it used
+                // to be, on phones, which default the recovery assist on - it
+                // sat on top of CLIMB TO 2,500 FT: two orders at once. FINAL and
+                // HANDOVER always show, because then the assist is flying.
+                recovery: this.approachPhase === null
+                    || (this.approachPhase === 'JOIN' && !this.isHomeward())
+                    ? null
+                    : {
+                        text: approachCaption(approachGuidance(this.physics.position)),
+                        handover: this.approachPhase === 'HANDOVER'
+                    },
             }
         );
     }
@@ -2686,6 +2843,9 @@ export class GameLoop {
     public confirmBriefing(seedOverride?: number) {
         if (this.phase !== 'BRIEFING') return;
         soundFX.playUiSelect();
+        // Re-resolved per mission so a first completion graduates the player
+        // to the full instruments - unless they have chosen a density already.
+        this.hud.hudDensity = resolveHudDensity(this.hasCompletedAMission());
         // Build the world fresh from whatever the selector landed on.
         this.applyScenario(this.scenario, seedOverride);
         this.missionOutcome = 'ACTIVE';

@@ -147,6 +147,30 @@ Rules:
   training checklist at 900x700. Both solvers are pure and both have tests
   asserting that nothing overlaps and nothing leaves the viewport — extend those
   matrices when adding a panel.
+
+  **This rule was written, and then broken seven times.** The solvers place the
+  *side* instruments; seven elements drawn directly in `HUD.ts` — the objective
+  strip, the compass tape, the warning banner, the coach ticker, the pill bar,
+  the assist annunciator and the keycap strip — carried their own hand-written
+  offsets, and by v1.8.0 four pairs of them were being drawn into the same
+  rectangle on every frame at 1440x900 (see Known Issues #62). So, explicitly:
+
+  - **Vertical position is a band, and bands are derived.** `HUD.BAND` (top
+    stack) and `HudLayout.BOTTOM_STACK` (bottom stack) compute each band's top
+    from its predecessor's bottom plus a gap. Never write a literal `y` for a
+    HUD element; add it to the stack.
+  - **A band's height belongs to the stack too.** `BAND_H.objective` is what
+    `drawObjectiveStrip` draws AND what the overlap test measures. The moment a
+    draw call uses a height the stack does not know about, the test is checking
+    fiction.
+  - **Every stack exports its rectangles** (`bandRects()`,
+    `bottomStackRects()`) and has a test asserting they are pairwise disjoint,
+    at every viewport height and every touch reserve.
+  - **Reserving space for decluttering is not the same as placing an element.**
+    `HUD.instrumentBoxes()` already reserved the annunciator's band — but only
+    so floating contact labels would avoid it. The pill bar and the keycap strip
+    never consulted it and printed straight through. A reservation that only one
+    consumer honours is not a layout.
 - **The camera transform is derived from the aircraft's own basis vectors.**
   `transformToCamera()` projects onto the same right / up / forward vectors
   `AircraftPhysics` uses for lift and thrust. It previously composed rotation
@@ -416,3 +440,107 @@ When directing AI assistants on this repository, structure all prompts into 4 ex
   chaffs. Two hints that told the player different things at the same moment (banner vs. ticker) is a bug.
 - **Give a first time its own moment.** A one-shot latch, persisted, on the channel the player is already
   watching. Do not build a menu for it.
+
+
+## 13. Rules added in v1.9.0 (each one encodes a bug that already shipped)
+
+Found by the first review to run the live build in a browser and look at
+rendered frames. Five suites of source-reading review had missed all of them.
+
+- **Look at the pixels.** A rendering defect is invisible to source review and to
+  a passing test suite. 921 tests were green while the mission order and the
+  compass tape were printed through each other at the default desktop size. Run
+  the build, screenshot every screen, at desktop and phone size, before claiming
+  a UI works. The twenty-minute Playwright harness that found this is worth more
+  than the next thousand lines of review.
+
+- **A "decluttering" change must not delete an instrument the player flies by.**
+  ARCADE mode suppressed the whole pitch ladder to keep the centre clean, which
+  also deleted the artificial horizon — so the default HUD had no attitude
+  reference at all. Clutter is a `PADLOCK` pill that is always on screen. A
+  horizon line is not clutter. When hiding a group, enumerate what is inside it.
+
+- **A coaching rule must not be true by construction.** `distanceToCarrier < 2500
+  && airSpeed > 95` describes a landing approach and also describes *every
+  catapult launch ever made*, so the game's most-seen hint told beginners to
+  decelerate into a stall. Before shipping a hint, ask what other states satisfy
+  its predicate — especially the states the game itself creates.
+
+- **Two instructions on screen at once is a bug, even when both are correct.**
+  `CLIMB TO 2,500 FT` above `REDUCE TO BELOW 90 M/S` is not dense UI, it is
+  contradictory UI. The objective strip, the coach ticker, the warning banner and
+  the contact tags need one arbiter, not four independent ones.
+
+- **A safety flag has to be honoured everywhere the danger lives.**
+  `combatShielded` was checked in four places, all protecting the player's
+  aircraft, and nowhere in the deck's own damage path — so the "zero hostiles"
+  tutorial took 15% of the player's carrier. When adding a flag that means
+  "nothing here can hurt anything", grep every site that reduces a health value.
+
+- **A scenario's prose is a contract the code must keep.** "Zero combat
+  hostiles", "Running out of fuel is the only way to end this badly", "the blast
+  doors close in four minutes" — a test should assert each of these against
+  behaviour. Prose that the simulation contradicts is worse than no prose,
+  because the player trusts it.
+
+- **A test must cover the state the game actually produces.**
+  `BankToTurn.test.ts` asserts bank-and-pull out-turns bank alone, using 0.6
+  stick for 6 s from 220 m/s. True there; the game gives full deflection from a
+  nose-high state at decaying speed, where heading change falls to ~0.25 deg/s.
+  When a test encodes a player-facing promise, pin it at the input the player
+  actually uses, from the state the game actually starts them in.
+
+- **If the phone build is clearer than the desktop build, the desktop build is
+  wrong.** The deck screen renders as 8 panels and ~35 numbers on desktop and as
+  4 panels and one LAUNCH button on a phone, from the same code. Constraints
+  produced the better design. Ship it everywhere and gate the dense version on
+  player experience, not on viewport width.
+
+- **Every beginner feature that adds to the screen must name what it removes.**
+  Thirteen consecutive accessibility features all added a HUD element. The screen
+  ran out of room and elements began to overlap. A new pill, ticker or banner
+  needs a deletion attached to it in the same pull request.
+
+- **A release that changes a documented limitation updates the limitation in the
+  same commit.** `KNOWN_ISSUES.md` claimed pitch was clamped at +-88 degrees for
+  two releases after v1.7.0 removed the clamp. Stale docs are read by humans and
+  by AI agents, and both act on them.
+
+## 14. Rules added in v1.10.0 (each one encodes a bug that already shipped)
+
+- **Measure a recommendation before you build it.** The v1.9.0 review said
+  "ease the roll to the cap"; the roll already reached it in 0.45 s. The real
+  cause was a physics defect no review had looked for. A recommendation is a
+  hypothesis about a cause - check the cause, then build.
+- **A stability or damping term acts about a body axis, not a world axis.** The
+  weathervane rotated the nose about the world vertical; banked, the restoring
+  moment is mostly nose-down, and nothing supplied it. Write rates in the body
+  frame and map them through the Euler kinematics.
+- **A controller chasing a moving target needs a feed-forward.** A proportional
+  altitude law on a glideslope always lags it; one damped toward zero attitude
+  settles below any slope that needs nose-up. Damp the flight-path angle, and
+  feed the target's own path angle forward.
+- **An integral-only controller cannot anticipate.** The autothrottle held idle
+  until the jet was already slow. Feed the rate of change back.
+- **A number that should be derived must be derived.** A fixed 70 m/s approach
+  speed was only flyable on one airframe. Derive targets from the physics
+  (`onSpeedApproachSpeed`), and bound them by what the rules accept.
+- **One solver per rectangle, used by the drawer AND the hit-tester.** Three
+  separate click-vs-draw drifts shipped (the ARCADE pill bar, the PRO chips, the
+  corner buttons). If a click can land on it, its geometry lives in `HudLayout`
+  and both sides call the same function - and a test asserts the rects are equal.
+- **Deleting a drawn element means deleting its click areas.** The keycap strip
+  was removed and its shortcuts stayed clickable as invisible traps.
+- **Any "the game promises X" flag must be honoured at every site.** A launch
+  that clamped the ship's stock but not the jet's load produced free bombs. Grep
+  every place the promised quantity is consumed.
+- **A warning announces a threat, not an assistance.** A protection that quietly
+  helps (the terrain floor on a climb) must not paint a red alarm.
+- **A frame must not be able to end the game silently.** Catch per frame, log,
+  continue; stop only on a persistent failure, and then say so on screen with a
+  way back.
+- **Screen budgets are tests.** `HudDensity.test.ts` holds FIRST_FLIGHT to 3
+  optional regions and ARCADE to 8. Raise one only on purpose, in review.
+- **Run `npm run playtest` before every release.** It is not in the deploy gate
+  (its turn-rate check is wall-clock based), so it is on the release checklist
+  instead. A release whose harness has not been run has not been looked at.

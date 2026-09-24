@@ -5,6 +5,222 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] — 2026-09-23
+
+**"Built, Measured, Launch-Ready."** Implements the v1.9.0 review — after
+measuring each recommendation first, which changed four of them — and prepares
+the game for pilot customers. The headline is a physics defect no review had
+found: directional stability acted about the world axis instead of the
+airframe's, so a banked nose drifted up to 43° above a descending flight path.
+That, not the roll, was *"I bank, I pull, nothing happens"*.
+
+Evidence and the full story: [`docs/reviews/v1.10.0/`](docs/reviews/v1.10.0/README.md).
+
+### Flight
+
+- **Directional stability acts on sideslip about the body yaw axis** (#71).
+  Identical wings-level; banked, the nose now tracks the flight path.
+- **ARCADE flies a bigger wing** (`PacingSpec.liftScale` 1.7, lift and drag both
+  scaled - no free energy). A held bank on default settings turns at **12.3 °/s
+  with the nose at +6°** (was 7.2 °/s, nose climbing to 29°). The value is not a
+  taste call: it is where the game's existing 70 m/s approach and 8.1° AoA
+  indexer finally agree. SIM keeps the original airframe.
+- **The recovery assist works** (#72). Rate-damped autothrottle; flight-path
+  damping wings-level; a glideslope feed-forward; an approach speed derived from
+  the airframe's on-speed AoA. It hands over **within 1 m of the slope** on both
+  airframes - it rode 34 m low on SIM and flew into the sea on ARCADE.
+- **Afterburner is a held boost in ASSIST** (#66): released above 180 m/s, it
+  returns to military power. A throttle the pilot set is never touched.
+- **One instruction at a time** (`Tutorial.arbitrateHint`): safety always speaks;
+  routine coaching is silent while the objective is a non-attack order.
+- **No TERRAIN alarm on a normal climb-out** (#77); **no "get astern of the
+  boat" on take-off** (#78).
+- **WASD by physical position** (#41): AZERTY, QWERTZ and Dvorak players get the
+  stick keys under the same fingers. Mnemonic shortcuts keep their labels.
+- **"Stick feels backwards?"** (#40, #48): four quick opposing pitch stabs offer
+  the stick flip once, in context.
+
+### HUD and deck
+
+- **FIRST_FLIGHT HUD** (`core/HudDensity.ts`): a new pilot sees three optional
+  regions - horizon, one armed-weapon chip, one hint line - instead of nine. A
+  **steering cue** on a ring round the boresight (`BOAT 4.2 KM · TURN LEFT`)
+  replaces the compass and radar (#54). Graduates to ARCADE after the first
+  completed mission; `U` cycles FIRST FLIGHT / ARCADE / PRO and is remembered.
+  Budgets are enforced by tests.
+- **Missile carets** (#42): each missile in flight is a red chevron on the same
+  ring - `MISSILE LEFT`.
+- **Guns-tracking tone** (#59).
+- **Brief deck** (#69): four panels for a new pilot, following the HUD density;
+  the crew panel is folded into one line; the turnaround's stores rows are
+  visible at last (#74).
+- The ten-key cheat strip is gone; REWIND shows while it has charges, PADLOCK
+  only with a designation.
+
+### Fixed
+
+- **Free ordnance** (#73): an empty magazine still produced bombs. The jet now
+  launches with what the ship holds; the payload panel says `NONE ABOARD`.
+- **Clicks landed on the wrong thing** (#75, #76): ARCADE pill clicks were 104 px
+  off; PRO corner buttons and chips were hit-tested where they were not drawn;
+  the deleted strip left invisible click traps. One solver per rectangle now,
+  shared by renderer and hit-tester, and tested.
+- **The training target is a drone everywhere** (#68): `DRONE` in the cockpit,
+  `TRAINING RANGE · TARGET DRONE` on the deck.
+- **Returning pilots open on the recommended mission** (#80).
+- **Touch readouts drifted into the objective strip** (#81).
+
+### Pilot-customer readiness
+
+- **Touch chaff and HARM** (#44), in the thumb-layout test matrix for 7 handsets.
+- **The loop survives a bad frame** (#79); a persistent failure shows a crash
+  screen with Reload and a pre-filled report instead of a frozen image.
+- **Versioned feedback link** on menu screens (pre-filled GitHub issue with
+  build, browser and screen size - the player reviews it before sending); the
+  build number on the briefing.
+- **`WINGS EARNED`** on completing the training sortie (#55).
+- Page metadata points at the live game; no broken large-image card.
+
+### Tooling and docs
+
+- **`npm run playtest`** (`scripts/playtest.mjs`, `playwright-core` dev
+  dependency): 28 browser checks across desktop, laptop, two phones, portrait and
+  a forced crash. Not in the deploy gate (wall-clock timing); run before release.
+- Tests: **933 → 989**. Bundle: 79.6 kB gzip (+3.8 kB). Zero runtime deps.
+- `KNOWN_ISSUES.md`: status summary; 17 closed; #71–#82 added (11 fixed, #82
+  open). `GUIDELINES.md` §14, `APPROACH_AND_METHOD.md` §12, `KNOWLEDGE.md` §21.
+
+### Still open, deliberately
+
+#53 (1-D fjord - new content), #41's remap screen (P2), #82 (SIM approach speed
+clamped), and the deck loop's depth (owner decision). **No new human has played
+this build** - the next step is a pilot-customer feedback round, not a feature.
+
+---
+
+## [1.9.0] — 2026-09-21
+
+**"Look at the Pixels."** The first release driven by an *instrumented browser
+playtest* rather than a source review. A playtester said *"there are a lot of
+info on the screen, I do not know what to do"* and *"it is hard to understand how
+to control the jet"*. Running the live build in headless Chromium and looking at
+actual rendered frames found that they were being generous: **four pairs of HUD
+elements were being drawn into the same rectangle**, the default HUD had no
+artificial horizon, the game's most-seen coaching hint was wrong on every launch,
+and the "zero combat hostiles" tutorial was taking 15% off the player's own
+carrier. 921 tests were green throughout — none of them looked at pixels.
+
+Full evidence, with measurements: [`docs/reviews/v1.9.0/`](docs/reviews/v1.9.0/README.md).
+
+### Fixed
+
+- **Four HUD collisions, all unconditional at the default desktop size.**
+  - The **objective strip** (54–108 px) and the **compass tape** (76–108 px) were
+    the same pixels. The mission order and the heading numerals printed through
+    each other character by character, on every frame, at every resolution.
+  - The **arcade pill bar** (848–882), the **assist annunciator** (848–870) and
+    the **keycap cheat strip** (~873–883) shared one 35 px band across the bottom
+    of the screen.
+  - The **score chip** (18–44) was drawn underneath the **DECK / HUD / STICK
+    button row** (16–44), so the player's score and rank were never visible on
+    desktop.
+  - **Help-overlay labels** used an unbounded `fillText` and ran into the next
+    column's keycaps (`…you do not need it to[O]urn)`).
+
+  `HUD.BAND` and `HudLayout.BOTTOM_STACK` are now **derived** — each band's top is
+  its predecessor's bottom plus a gap — and exported as `bandRects()` /
+  `bottomStackRects()`. Six new tests assert both stacks are pairwise disjoint at
+  every viewport height and every touch reserve, so the class of bug cannot come
+  back silently.
+
+- **The default HUD had no attitude reference.** `drawPitchLadder` returned
+  immediately in `ARCADE` (the default) to "keep the center clean" — which also
+  deleted the ladder's zero rung, i.e. the artificial horizon. A jet in a 75°
+  bank with the real horizon off-screen had nothing on the glass to fly by.
+  `drawArcadeHorizon` restores the horizon bar and a signed pitch number, using
+  the same exact `fov · tan(δ)` projection so it sits on the true horizon, pinned
+  and dimmed when the horizon leaves the screen. Nothing else from the ladder.
+
+- **`TOO FAST FOR THE TRAP` fired on every launch.** The rule was
+  `distanceToCarrier < 2500 && airSpeed > 95` — true by construction for the
+  first seconds of every catapult shot ever taken. Measured 4 s after the
+  training cat shot at 201 m: the objective strip read `CLIMB TO 2,500 FT` and
+  the hint 60 px below it read `REDUCE TO BELOW 90 M/S`. Obeying it stalls the
+  jet. The rule now also requires closing on the carrier, low altitude, and a
+  non-climbing vertical speed.
+
+- **The training sortie was shooting the player's carrier.** `TRAINING SORTIE`
+  declares `combatShielded: true`, a tagline of *"Zero combat hostiles"* and a
+  loss condition of *"Running out of fuel or ditching in the fjord"* — and took
+  CV-68 from 100% to 85% hull at T+20s while a first-time pilot read the deck
+  screen. `combatShielded` was checked in four places in `GameLoop`, all
+  protecting the player's *aircraft*; `DeckManager`'s own damage path never
+  consulted it. It does now, and a shielded contact logs a completed drone pass
+  instead.
+
+### Changed
+
+- **Every control label shortened** at the single source of truth
+  (`src/core/Controls.ts`). The longest was 57 characters and did not fit its own
+  column in the help overlay. This propagates to the overlay, the briefing and
+  anything else derived from the schema.
+- **The review framework cut from 25 dimensions to 12.** It had grown
+  10 → 12 → 15 → 21 → 25 across five reviews, in direct violation of the repo's
+  own standing rule #8. Breadth had been purchased with depth: 3,438 lines of
+  review across 20 files, and not one of them noticed the compass tape was being
+  printed inside the objective strip. See
+  [`REVIEW_TEMPLATE.md`](docs/reviews/REVIEW_TEMPLATE.md).
+- Three new standing rules for reviews (#12–#14): a review without a rendered
+  frame is not a review; every review must propose more deletions than additions;
+  fix count beats finding count.
+
+### Documentation
+
+- New review suite [`docs/reviews/v1.9.0/`](docs/reviews/v1.9.0/README.md):
+  suite index, **`PLAYTEST_EVIDENCE.md`** (measurements only, zero opinions),
+  the 12-dimension review, a roadmap ranked by impact ÷ LOC, and a frank
+  critique — including of the review prompt itself.
+- `KNOWN_ISSUES.md`: issues **#61–#70** added with measurements. Two existing
+  defects corrected — two different sections were both numbered `## 1.`, and §2
+  had claimed since v1.7.0 that *"pitch is clamped to ±88°"* when that clamp had
+  been replaced by `foldPastVertical()` two releases earlier.
+- `GUIDELINES.md` §9 strengthened (vertical bands are derived, a reservation only
+  one consumer honours is not a layout) and §13 added — ten rules, each encoding
+  a bug that shipped.
+- `APPROACH_AND_METHOD.md` §10–§11: the instrumented playtest method, and layout
+  as a testable invariant revisited.
+- `KNOWLEDGE.md` §20: measured flight and HUD constants — turn rates by assist
+  law, the degenerate vertical-plane turn, roll onset, both band stacks, and the
+  screen inventory.
+- `README.md`: the control table's claim that it *"cannot drift from the code"*
+  was never true (the prose is hand-written) and is now stated accurately.
+
+### Measured, and deliberately NOT changed
+
+- **Turn rate: 7.2–10.3 °/s**, a 180° reversal in 17–25 s, with the roll snapping
+  to its 75° cap in ~0.45 s and pinning there. This is the mechanical root of
+  *"hard to control the jet"* — and it is the number every mission's timing
+  budget is built on, so changing it is the owner's call, not a reviewer's.
+  Three options in Known Issues #65; the recommended one (ease the roll to the
+  cap over ~0.4 s) changes no mission timing.
+- **The anti-stall throttle floor never retards**, so a pilot who touches no
+  throttle key flies the whole sortie at 150% afterburner (#66).
+- **Bank-and-pull genuinely does out-turn bank alone** (7.2 → 9.5 °/s). This was
+  investigated as a suspected bug and the measurement cleared it; the control
+  reference is correct.
+
+### Not fixed — the actual remaining problem
+
+The screen still draws ~27 regions, 33 labelled values and 29 key bindings. The
+fix is **R1, the `FIRST FLIGHT` HUD**: horizon, speed, altitude, one objective
+line, one key hint, nothing else, on by default until the first sortie is
+complete. Every component already exists and is already conditional somewhere;
+it is a visibility predicate, roughly 150 lines. Thirteen consecutive
+"make it easier for beginners" features have all *added* something to the
+screen. The next one has to subtract.
+
+---
+
 ## [1.8.0] — 2026-09-21
 
 **"Entertainment, Visceral Impact & Beginner Accessibility."** Directly responds to comprehensive playtest reviews highlighting beginner cognitive overload, lack of kinetic reward on hits, and targeting friction. Bridges authentic 6-DOF physics with intuitive feedback:

@@ -35,7 +35,12 @@ import type { TargetSolution } from '../tactics/TargetDesignation';
 import type { ControlDemand } from '../flight/FlightAssist';
 import type { Callout } from '../core/Callouts';
 import { angleDelta } from '../flight/FlightAssist';
-import { HUD_METRICS, solveHudLayout, solveArcadeBar } from './HudLayout';
+import {
+    BOTTOM_STACK, CORNER_BUTTONS, HUD_METRICS, arcadeBarFlags, bottomAnchor, cornerButtonRects,
+    proChipRects, proPanelRect, solveArcadeBar, solveHudLayout
+} from './HudLayout';
+import { HUD_DENSITY_LABEL, hudVisibility, nextHudDensity } from '../core/HudDensity';
+import type { HudDensity } from '../core/HudDensity';
 import type { HudLayout, HudReserve, ArcadeBarSlotId } from './HudLayout';
 import { motionSettings, blinkVisible } from '../core/Accessibility';
 import { timeToImpact } from '../tactics/MissileGuidance';
@@ -141,7 +146,14 @@ export interface HudContext {
     /** True when padlock camera is slaved to designated target */
     isPadlocked?: boolean;
     padlockActive?: boolean;
-    hudDensity?: 'ARCADE' | 'PRO';
+    hudDensity?: HudDensity;
+    /**
+     * Where the mission wants the jet to go next, when that is somewhere the
+     * target brackets do not already point: the boat on the way home, a
+     * hardened target on the way in. Drawn as one steering cue round the
+     * boresight - the FIRST_FLIGHT replacement for the compass and the radar.
+     */
+    goHere?: { bearing: number; rangeMetres: number; label: string } | null;
     pitchInverted?: boolean;
     /** Remaining arcade 5-second time rewinds */
     rewindsRemaining?: number;
@@ -200,19 +212,93 @@ const ASSIST_BAND_HALF_W = 210;
  */
 const TOUCH_TOP_RIGHT_RESERVE = 104;
 
-/** Vertical instrument bands, in CSS px from top of screen. */
-const BAND = {
-    top: 20,
+/**
+ * The top-right corner stack: the DECK / HUD / STICK button row, and the score
+ * chip on the row beneath it.
+ *
+ * They used to be drawn at y=16 (h 28) and y=18 (h 26), both flush to the right
+ * edge - the same rectangle. The chip was drawn first, so on every desktop
+ * frame the player's score and rank were printed underneath the DECK button.
+ */
+const TOP_RIGHT = {
+    buttonsY: CORNER_BUTTONS.y,
+    buttonsH: CORNER_BUTTONS.h,
+    gap: CORNER_BUTTONS.gap
+} as const;
+const SCORE_CHIP_Y = TOP_RIGHT.buttonsY + TOP_RIGHT.buttonsH + TOP_RIGHT.gap;
+
+/**
+ * Touch mode's bottom-centre stack, measured up from `bottomAnchor`: the
+ * systems line (20 px tall) at the bottom, the assist annunciator just above.
+ * No pill bar or keycap strip exists in touch mode, so this stack is short.
+ */
+const TOUCH_SYSTEMS_LINE_TOP = 24;
+const TOUCH_ANNUNCIATOR_TOP = TOUCH_SYSTEMS_LINE_TOP + 8 + 22;
+
+/**
+ * Vertical instrument bands, in CSS px from the top of the screen.
+ *
+ * DERIVED, never hand-tuned. The previous table was five hand-picked numbers
+ * and two of them were wrong: the objective strip is 54 px tall and started at
+ * 54, so it ran to 108, while the compass tape's plate started at
+ * `compass - 20` = 76. The heading tape was drawn *inside* the objective strip
+ * on every frame, at every resolution - which is why the mission order and the
+ * heading numerals were both unreadable in the default view.
+ *
+ * Each band's top is now its predecessor's bottom plus a gap, so the class of
+ * bug cannot come back. `HudLayout.test.ts` asserts the whole stack is disjoint.
+ */
+export const BAND_H = {
     objective: 54,
-    compass: 96,
-    warning: 132,
-    coach: 168
+    /** The tape's plate; `drawCompassTape` draws it at `BAND.compass - 20`. */
+    compass: 32,
+    warning: 28,
+    coach: 26
+} as const;
+
+/** Clearance between two stacked bands. */
+export const BAND_GAP = 8;
+
+const OBJECTIVE_TOP = 54;
+const COMPASS_TOP = OBJECTIVE_TOP + BAND_H.objective + BAND_GAP;
+const WARNING_TOP = COMPASS_TOP + BAND_H.compass + BAND_GAP;
+const COACH_TOP = WARNING_TOP + BAND_H.warning + BAND_GAP;
+
+export const BAND = {
+    top: 20,
+    objective: OBJECTIVE_TOP,
+    /** `drawCompassTape` subtracts 20 to get its plate's top edge. */
+    compass: COMPASS_TOP + 20,
+    warning: WARNING_TOP,
+    coach: COACH_TOP
 };
+
+/**
+ * Top edge of each band, as drawn. Exported so the overlap test reads the same
+ * numbers the draw calls do rather than restating them.
+ */
+export function bandRects(): { id: string; top: number; bottom: number }[] {
+    return [
+        { id: 'objective', top: BAND.objective, bottom: BAND.objective + BAND_H.objective },
+        { id: 'compass', top: BAND.compass - 20, bottom: BAND.compass - 20 + BAND_H.compass },
+        { id: 'warning', top: BAND.warning, bottom: BAND.warning + BAND_H.warning },
+        { id: 'coach', top: BAND.coach, bottom: BAND.coach + BAND_H.coach }
+    ];
+}
+
+/**
+ * Bearing of a goal relative to the nose, radians in (-pi, pi]: 0 dead ahead,
+ * positive to the right. Pure, for the go-here cue and its tests.
+ */
+export function goHereRelativeBearing(yaw: number, goalBearing: number): number {
+    const d = goalBearing - yaw;
+    return Math.atan2(Math.sin(d), Math.cos(d));
+}
 
 export class HUD {
     public width: number;
     public height: number;
-    public hudDensity: 'ARCADE' | 'PRO' = 'ARCADE';
+    public hudDensity: HudDensity = 'ARCADE';
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
     /** Flash and motion limits for this frame. */
@@ -223,8 +309,8 @@ export class HUD {
         this.height = height;
     }
 
-    public toggleHudDensity(): 'ARCADE' | 'PRO' {
-        this.hudDensity = this.hudDensity === 'ARCADE' ? 'PRO' : 'ARCADE';
+    public toggleHudDensity(): HudDensity {
+        this.hudDensity = nextHudDensity(this.hudDensity);
         return this.hudDensity;
     }
 
@@ -254,9 +340,13 @@ export class HUD {
         ctx.textBaseline = 'alphabetic';
         noGlow(ctx);
 
+        // What this density shows - one table, see core/HudDensity.ts.
+        const vis = hudVisibility(this.hudDensity);
+
         // --- Flight symbology (centre of the screen, drawn in the beam colour) ---
-        this.drawPitchLadder(ctx, physics, renderer, layout);
-        this.drawFlightPathMarker(ctx, physics, renderer);
+        if (vis.horizon) this.drawArcadeHorizon(ctx, physics, renderer, layout);
+        if (vis.pitchLadder) this.drawPitchLadder(ctx, physics, renderer, layout);
+        if (vis.flightPathMarker) this.drawFlightPathMarker(ctx, physics, renderer);
         this.drawWaterline(ctx, layout.cx, layout.cy);
         this.drawCombatReticles(ctx, physics, targets, renderer, layout, context.visibleContacts);
         this.drawStrikeTargets(ctx, physics, context.strikeTargets ?? [], renderer);
@@ -267,12 +357,12 @@ export class HUD {
 
         // --- Instruments (all on backplates, all outside the centre box) ---
         this.drawObjectiveStrip(ctx, context.objective, layout.cx, layout.touchMode);
-        if (layout.showCompass) this.drawCompassTape(ctx, physics, layout.cx);
+        if (layout.showCompass && vis.compass) this.drawCompassTape(ctx, physics, layout.cx);
         this.drawSpeedBlock(ctx, physics, layout);
         this.drawAltitudeBlock(ctx, physics, sensors, layout);
         this.touchScore = layout.touchMode ? context.score : undefined;
         this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
-        if (layout.showRwr) {
+        if (layout.showRwr && vis.radar) {
             this.drawRWR(
                 ctx, physics, sensors, targets, context.strikeTargets ?? [],
                 context.designated?.target.id ?? null, layout
@@ -292,13 +382,19 @@ export class HUD {
         if (context.hitMarker) this.drawHitMarker(ctx, layout, context.hitMarker);
         this.drawCallouts(ctx, context.callouts ?? [], layout);
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
-        if (!layout.touchMode) this.drawScoreChip(ctx, context.score, layout);
+        if (context.goHere) this.drawGoHereCue(ctx, physics, context.goHere, layout);
+        this.drawMissileCarets(ctx, physics, sensors, layout);
+        if (!layout.touchMode && vis.scoreChip) this.drawScoreChip(ctx, context.score, layout);
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
-            context.terrainFollowing ?? false, context.recovery ?? null
+            context.terrainFollowing ?? false, context.recovery ?? null, layout,
+            vis.routineAnnunciator
         );
-        if (!layout.touchMode) this.drawKeyBar(ctx, context.assistLabel);
-        this.drawTopRightControls(ctx, layout, context);
+        // The ten-key cheat strip that used to sit here is gone (v1.10.0): it
+        // duplicated the help overlay and the pill labels, and was half of the
+        // bottom-band collision. FIRST_FLIGHT shows one line pointing at both.
+        if (!layout.touchMode && vis.graduationHint) this.drawGraduationHint(ctx);
+        if (vis.cornerButtons) this.drawTopRightControls(ctx, layout, context);
 
         ctx.restore();
     }
@@ -353,9 +449,10 @@ export class HUD {
          */
         boxes.push({
             x: layout.cx - ASSIST_BAND_HALF_W,
-            y: this.height - 56,
+            y: this.height - bottomAnchor(layout.reserve)
+                - (layout.touchMode ? TOUCH_ANNUNCIATOR_TOP : BOTTOM_STACK.annunciatorTop) - 4,
             w: ASSIST_BAND_HALF_W * 2,
-            h: 30
+            h: BOTTOM_STACK.annunciatorH + 8
         });
 
         if (layout.touchMode) {
@@ -363,7 +460,7 @@ export class HUD {
             // happily land on a short screen.
             boxes.push({
                 x: HUD_METRICS.edge + layout.reserve.left,
-                y: this.height - layout.reserve.bottom - 26,
+                y: this.height - bottomAnchor(layout.reserve) - TOUCH_SYSTEMS_LINE_TOP - 2,
                 w: this.width - layout.reserve.left - layout.reserve.right,
                 h: 24
             });
@@ -443,7 +540,7 @@ export class HUD {
             this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
-        const h = 54;
+        const h = BAND_H.objective;
         const x = cx - w / 2;
         const y = BAND.objective;
 
@@ -502,11 +599,11 @@ export class HUD {
         const w = ctx.measureText(text).width + 26;
         const x = cx - w / 2;
 
-        plate(ctx, { x, y: BAND.coach, w, h: 26 }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
+        plate(ctx, { x, y: BAND.coach, w, h: BAND_H.coach }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, cx, BAND.coach + 14);
+        ctx.fillText(text, cx, BAND.coach + BAND_H.coach / 2);
         ctx.restore();
     }
 
@@ -650,8 +747,13 @@ export class HUD {
             this.drawTouchSystemsLine(ctx, physics, layout, this.touchScore);
             return;
         }
-        if (this.hudDensity === 'ARCADE') {
+        const vis = hudVisibility(this.hudDensity);
+        if (vis.pillBar) {
             this.drawArcadeBottomBar(ctx, physics, selectedWeapon, context, sensors);
+            return;
+        }
+        if (vis.armedWeaponChip) {
+            this.drawArmedWeaponChip(ctx, physics, selectedWeapon, sensors);
             return;
         }
         if (layout.compactSystems) {
@@ -659,10 +761,7 @@ export class HUD {
             return;
         }
 
-        const w = HUD_METRICS.systemsW;
-        const h = 150;
-        const x = HUD_METRICS.edge;
-        const y = this.height - h - 54;
+        const { x, y, w, h } = proPanelRect(this.height);
 
         plate(ctx, { x, y, w, h }, { border: THEME.edgeSoft });
 
@@ -708,20 +807,19 @@ export class HUD {
         label('WEAPONS BAY', physics.bayOpen ? 'OPEN · RCS x4' : 'CLOSED', y + 108,
             physics.bayOpen ? THEME.caution : THEME.muted);
 
-        // Weapon selector: three chips make it obvious that 1/2/3 switch stores.
-        const chips: [string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM', string][] = [
-            [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN', '1'],
-            [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9', '2'],
-            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB', '3'],
-            [`4 HARM ${physics.loadout.harms}`, 'HARM', '4']
+        // Weapon selector: four fixed-width chips from the shared solver, so
+        // the hit-tester clicks exactly what is drawn (Known Issues #45).
+        const chips: [string, 'GUN' | 'AIM9' | 'BOMB' | 'HARM'][] = [
+            [`1 GUN ${physics.loadout.vulcanAmmo}`, 'GUN'],
+            [`2 AIM9 ${physics.loadout.sidewinders}`, 'AIM9'],
+            [`3 MK82 ${physics.loadout.ironBombs}`, 'BOMB'],
+            [`4 HARM ${physics.loadout.harms}`, 'HARM']
         ];
-        let chipX = x + 12;
-        const chipY = y + h - 18;
-        for (const [text, id] of chips) {
-            ctx.font = font(10, 600);
-            const cw = ctx.measureText(text).width + 12;
+        proChipRects(this.height).forEach((rect, i) => {
+            const [text, id] = chips[i];
             const selected = selectedWeapon === id;
-            roundRect(ctx, chipX, chipY - 9, cw, 18, 3);
+            ctx.font = font(10, 600);
+            roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 3);
             ctx.fillStyle = selected ? 'rgba(95,216,255,0.2)' : 'rgba(255,255,255,0.04)';
             ctx.fill();
             ctx.strokeStyle = selected ? THEME.key : THEME.edgeSoft;
@@ -729,9 +827,8 @@ export class HUD {
             ctx.stroke();
             ctx.fillStyle = selected ? THEME.ink : THEME.muted;
             ctx.textAlign = 'center';
-            ctx.fillText(text, chipX + cw / 2, chipY);
-            chipX += cw + 6;
-        }
+            ctx.fillText(fitText(ctx, text, rect.w - 6), rect.x + rect.w / 2, rect.y + rect.h / 2);
+        });
         ctx.restore();
     }
 
@@ -765,8 +862,11 @@ export class HUD {
         const text = `FUEL ${Math.round(physics.fuel)}L   HULL ${Math.round(100 - physics.damage)}%   ${physics.gLoad.toFixed(1)}G`
             + (score ? `   ${score.totalScore} PTS` : '');
         const w = ctx.measureText(text).width + 20;
-        const x = HUD_METRICS.edge + layout.reserve.left;
-        const y = this.height - layout.reserve.bottom - 24;
+        // Centred in the free gap between the thumb clusters, at the bottom.
+        const gapLeft = layout.reserve.left;
+        const gapRight = this.width - layout.reserve.right;
+        const x = Math.max(gapLeft, (gapLeft + gapRight) / 2 - w / 2);
+        const y = this.height - bottomAnchor(layout.reserve) - TOUCH_SYSTEMS_LINE_TOP;
 
         plate(ctx, { x, y, w, h: 20 }, { fill: 'rgba(6,13,17,0.7)', border: THEME.edgeSoft, radius: 4 });
         ctx.fillStyle = fuelLow || hurt ? THEME.caution : THEME.muted;
@@ -845,9 +945,11 @@ export class HUD {
             width: this.width,
             height: this.height,
             weaponCount: 4,
-            showCountermeasure: true,
-            showRewind: true,
-            showPadlock: true,
+            ...arcadeBarFlags({
+                rewindsRemaining: context.rewindsRemaining ?? 0,
+                hasDesignation: Boolean(context.designated),
+                padlockActive: context.padlockActive === true || context.isPadlocked === true
+            }),
             statusTextWidth
         });
         const slot = (id: ArcadeBarSlotId) => bar.find(s => s.id === id)?.rect;
@@ -966,84 +1068,207 @@ export class HUD {
         noGlow(ctx);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
+        const r = cornerButtonRects(this.width);
 
-        const btnW = 100;
-        const btnH = 28;
-        const y = 16;
-
-        // [DECK (TAB)]
-        const deckX = this.width - btnW - 20;
-        plate(ctx, { x: deckX, y, w: btnW, h: btnH }, {
-            fill: 'rgba(9,19,25,0.75)',
-            border: THEME.edgeSoft,
-            radius: 4
-        });
+        plate(ctx, r.deck, { fill: 'rgba(9,19,25,0.75)', border: THEME.edgeSoft, radius: 4 });
         ctx.font = font(10, 600);
         ctx.fillStyle = THEME.ink;
-        ctx.fillText('DECK (TAB)', deckX + btnW / 2, y + btnH / 2);
+        ctx.fillText('DECK (TAB)', r.deck.x + r.deck.w / 2, r.deck.y + r.deck.h / 2);
 
-        // [HUD: ARCADE / PRO]
-        const modeX = deckX - btnW - 8;
-        const isArcade = this.hudDensity === 'ARCADE';
-        plate(ctx, { x: modeX, y, w: btnW, h: btnH }, {
-            fill: isArcade ? 'rgba(95,216,255,0.18)' : 'rgba(255,180,50,0.18)',
-            border: isArcade ? THEME.key : THEME.caution,
+        const isPro = this.hudDensity === 'PRO';
+        plate(ctx, r.hud, {
+            fill: isPro ? 'rgba(255,180,50,0.18)' : 'rgba(95,216,255,0.18)',
+            border: isPro ? THEME.caution : THEME.key,
             radius: 4
         });
         ctx.font = font(10, 700);
-        ctx.fillStyle = isArcade ? THEME.key : THEME.caution;
-        ctx.fillText(isArcade ? 'HUD: ARCADE' : 'HUD: PRO', modeX + btnW / 2, y + btnH / 2);
+        ctx.fillStyle = isPro ? THEME.caution : THEME.key;
+        ctx.fillText(`HUD: ${HUD_DENSITY_LABEL[this.hudDensity]}`, r.hud.x + r.hud.w / 2, r.hud.y + r.hud.h / 2);
 
-        // [STICK: REAL (I) / STICK: DIR (I)]
-        const stickBtnW = 104;
-        const stickX = modeX - stickBtnW - 8;
         const isInverted = context?.pitchInverted ?? false;
-        plate(ctx, { x: stickX, y, w: stickBtnW, h: btnH }, {
+        plate(ctx, r.stick, {
             fill: isInverted ? 'rgba(95,216,255,0.18)' : 'rgba(9,19,25,0.75)',
             border: isInverted ? THEME.key : THEME.edgeSoft,
             radius: 4
         });
         ctx.font = font(10, 600);
         ctx.fillStyle = isInverted ? THEME.key : THEME.ink;
-        ctx.fillText(isInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)', stickX + stickBtnW / 2, y + btnH / 2);
+        ctx.fillText(isInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)', r.stick.x + r.stick.w / 2, r.stick.y + r.stick.h / 2);
 
         ctx.restore();
     }
 
-    /** Bottom key bar so the flight controls are never more than a glance away. */
-    private drawKeyBar(ctx: CanvasRenderingContext2D, assistLabel?: string) {
+    /**
+     * FIRST_FLIGHT's only bottom line: where the rest of the instruments are,
+     * and where the rest of the controls are. Replaces the ten-key cheat strip.
+     */
+    private drawGraduationHint(ctx: CanvasRenderingContext2D) {
         ctx.save();
         noGlow(ctx);
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
-        const y = this.height - 22;
-        const pairs: [string, string][] = [
-            ['WASD', 'fly'],
-            ['SHIFT', 'power'],
-            ['T', 'target'],
-            ['V', 'padlock'],
-            ['SPACE', 'fire'],
-            ['F', assistLabel ?? 'assist'],
-            ['U', 'hud density'],
-            ['I', 'invert pitch'],
-            ['TAB', 'deck'],
-            ['H', 'controls']
-        ];
-
-        let x = 24;
-        const limit = this.width - 24;
-        for (const [key, text] of pairs) {
-            ctx.font = font(10);
-            const cap = keycapWidth(ctx, key, 10);
-            const width = cap + 5 + ctx.measureText(text).width + 14;
-            if (x + width > limit) break;
-
+        const y = this.height - BOTTOM_STACK.keyBarCentre;
+        const parts: [string, string][] = [['U', 'more instruments'], ['H', 'all controls']];
+        ctx.font = font(10);
+        let total = 0;
+        for (const [key, text] of parts) {
+            total += keycapWidth(ctx, key, 10) + 5 + ctx.measureText(text).width + 18;
+        }
+        let x = this.width / 2 - total / 2;
+        for (const [key, text] of parts) {
             x += keycap(ctx, x, y, key, { size: 10 }) + 5;
             ctx.font = font(10);
             ctx.fillStyle = THEME.muted;
             ctx.fillText(text, x, y);
-            x += ctx.measureText(text).width + 14;
+            x += ctx.measureText(text).width + 18;
         }
+        ctx.restore();
+    }
+
+    /**
+     * FIRST_FLIGHT's weapon readout: the one weapon that SPACE will fire, and
+     * how many are left. Four weapon pills and a chaff pill are a choice the
+     * first sortie does not ask for; the chaff pill appears here only at the
+     * moment it is the answer - a seeker is looking.
+     */
+    private drawArmedWeaponChip(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM',
+        sensors: SensorTacticsManager
+    ) {
+        const names: Record<typeof selectedWeapon, [string, number]> = {
+            GUN: ['GUN', physics.loadout.vulcanAmmo],
+            AIM9: ['AIM-9', physics.loadout.sidewinders],
+            BOMB: ['MK82', physics.loadout.ironBombs],
+            HARM: ['HARM', physics.loadout.harms]
+        };
+        const [name, rounds] = names[selectedWeapon];
+        ctx.save();
+        noGlow(ctx);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        const y = this.height - BOTTOM_STACK.pillsTop;
+        const h = BOTTOM_STACK.pillsH;
+        let x = HUD_METRICS.arcadeBar.startX;
+
+        ctx.font = font(12, 700);
+        const label = `${name} ${rounds}`;
+        const capW = keycapWidth(ctx, 'SPACE', 10);
+        const w = capW + 10 + ctx.measureText(label).width + 24;
+        plate(ctx, { x, y, w, h }, { fill: 'rgba(95,216,255,0.16)', border: THEME.key, radius: 4 });
+        keycap(ctx, x + 10, y + h / 2, 'SPACE', { size: 10 });
+        ctx.font = font(12, 700);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText(label, x + 10 + capW + 10, y + h / 2);
+        x += w + HUD_METRICS.arcadeBar.gap;
+
+        if (sensors.masterRwrState === 'LAUNCH' && physics.loadout.chaff > 0) {
+            ctx.font = font(12, 700);
+            const cmLabel = `CHAFF ${physics.loadout.chaff}`;
+            const xCap = keycapWidth(ctx, 'X', 10);
+            const cw = xCap + 10 + ctx.measureText(cmLabel).width + 24;
+            plate(ctx, { x, y, w: cw, h }, { fill: 'rgba(255,176,32,0.18)', border: THEME.caution, radius: 4 });
+            keycap(ctx, x + 10, y + h / 2, 'X', { size: 10 });
+            ctx.font = font(12, 700);
+            ctx.fillStyle = THEME.caution;
+            ctx.fillText(cmLabel, x + 10 + xCap + 10, y + h / 2);
+        }
+        ctx.restore();
+    }
+
+    /**
+     * One steering cue: where the mission wants the jet to go.
+     *
+     * A chevron on a ring round the boresight, at the goal's bearing relative
+     * to the nose (straight up = dead ahead), with its name and range. Readable
+     * at any bank angle, needs no compass and no radar - which is why the
+     * FIRST_FLIGHT HUD can drop both. It is also the "go here" arrow the v1.6
+     * playtest asked for (Known Issues #54).
+     */
+    private drawGoHereCue(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        goal: { bearing: number; rangeMetres: number; label: string },
+        layout: HudLayout
+    ) {
+        const rel = goHereRelativeBearing(physics.yaw, goal.bearing);
+        const km = goal.rangeMetres / 1000;
+        const turn = Math.abs(rel) < 0.35 ? 'AHEAD' : rel > 0 ? 'TURN RIGHT' : 'TURN LEFT';
+        this.drawRingChevron(
+            ctx, layout, rel, THEME.key,
+            `${goal.label} ${km < 10 ? km.toFixed(1) : Math.round(km)} KM · ${turn}`
+        );
+    }
+
+    /**
+     * Where each missile in flight is coming from (Known Issues #42).
+     *
+     * The banner already gave time to impact; nothing said WHERE, and the only
+     * directional cue - the red arc on the radar rim - is hidden on the
+     * FIRST_FLIGHT HUD. A red chevron on the steering ring, at the missile's
+     * bearing relative to the nose, answers "which way do I break?".
+     */
+    private drawMissileCarets(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        sensors: SensorTacticsManager,
+        layout: HudLayout
+    ) {
+        for (const threat of sensors.activeThreats) {
+            if (!threat.missileActive || !threat.missilePos) continue;
+            const dx = threat.missilePos.x - physics.position.x;
+            const dz = threat.missilePos.z - physics.position.z;
+            const rel = goHereRelativeBearing(physics.yaw, Math.atan2(dx, dz));
+            const where = Math.abs(rel) < 0.5 ? 'AHEAD' : Math.abs(rel) > 2.4 ? 'BEHIND' : rel > 0 ? 'RIGHT' : 'LEFT';
+            this.drawRingChevron(ctx, layout, rel, THEME.alert, `MISSILE ${where}`);
+        }
+    }
+
+    /**
+     * One chevron on a ring round the boresight, at `rel` radians from the nose
+     * (0 = straight up = dead ahead, positive to the right), with a label on
+     * the far side from the boresight so it never covers the waterline.
+     * Readable at any bank angle, and needs no compass or radar.
+     */
+    private drawRingChevron(
+        ctx: CanvasRenderingContext2D,
+        layout: HudLayout,
+        rel: number,
+        color: string,
+        text: string
+    ) {
+        const radius = Math.min(118, layout.symHalf * 0.75 + 30);
+        const cx = layout.cx;
+        const cy = layout.cy;
+        const px = cx + Math.sin(rel) * radius;
+        const py = cy - Math.cos(rel) * radius;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.fillStyle = color;
+        ctx.translate(px, py);
+        ctx.rotate(rel);
+        ctx.beginPath();
+        ctx.moveTo(0, -9);
+        ctx.lineTo(8, 5);
+        ctx.lineTo(0, 1);
+        ctx.lineTo(-8, 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.font = font(11, 700);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const w = ctx.measureText(text).width + 16;
+        const lx = cx + Math.sin(rel) * (radius + 30);
+        const ly = cy - Math.cos(rel) * (radius + 22);
+        plate(ctx, { x: lx - w / 2, y: ly - 10, w, h: 20 }, { fill: 'rgba(6,13,17,0.78)', border: color, radius: 3 });
+        ctx.fillStyle = color;
+        ctx.fillText(text, lx, ly);
         ctx.restore();
     }
 
@@ -1153,12 +1378,18 @@ export class HUD {
         hasDesignation: boolean,
         cx: number,
         terrainFollowing: boolean,
-        recovery: { text: string; handover: boolean } | null
+        recovery: { text: string; handover: boolean } | null,
+        layout: HudLayout,
+        showRoutine = true
     ) {
         const caption = recovery
             ? { text: recovery.text, tone: recovery.handover ? 'CAUTION' as const : 'INFO' as const }
             : assistCaption(override, hasDesignation, terrainFollowing);
         if (!caption) return;
+        // A protection taking authority (ALERT / CAUTION) is always announced;
+        // only the routine "the assist is doing its job" INFO captions are
+        // optional, and FIRST_FLIGHT drops them.
+        if (!recovery && !showRoutine && caption.tone === 'INFO') return;
 
         const color = caption.tone === 'ALERT' ? THEME.alert
             : caption.tone === 'CAUTION' ? THEME.caution
@@ -1168,12 +1399,17 @@ export class HUD {
         noGlow(ctx);
         ctx.font = font(11, 700);
         const w = ctx.measureText(caption.text).width + 24;
-        const y = this.height - 52;
-        plate(ctx, { x: cx - w / 2, y, w, h: 22 }, { border: color, radius: 11 });
+        // Above the pill bar, not through it. In touch mode the thumb controls
+        // own the bottom of the screen, so the stack is measured up from what
+        // they reserved rather than from the viewport edge.
+        const y = this.height - bottomAnchor(layout.reserve)
+            - (layout.touchMode ? TOUCH_ANNUNCIATOR_TOP : BOTTOM_STACK.annunciatorTop);
+        plate(ctx, { x: cx - w / 2, y, w, h: BOTTOM_STACK.annunciatorH },
+            { border: color, radius: BOTTOM_STACK.annunciatorH / 2 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(caption.text, cx, y + 11);
+        ctx.fillText(caption.text, cx, y + BOTTOM_STACK.annunciatorH / 2);
         ctx.restore();
     }
 
@@ -1275,11 +1511,13 @@ export class HUD {
         // The menu button lives in the top-right corner in touch mode; the
         // chip has to clear it rather than sit underneath it.
         const x = this.width - w - 20 - (layout.touchMode ? 58 : 0);
-        plate(ctx, { x, y: 18, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
+        // Below the button row, never under it.
+        const y = layout.touchMode ? 18 : SCORE_CHIP_Y;
+        plate(ctx, { x, y, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
         ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, x + w / 2, 31);
+        ctx.fillText(text, x + w / 2, y + 13);
         ctx.restore();
     }
 
@@ -1403,7 +1641,7 @@ export class HUD {
             ctx.font = font(16, 700);
             const w = ctx.measureText(text).width + 30;
             const x = cx - w / 2;
-            plate(ctx, { x, y: BAND.warning, w, h: 28 }, { fill: 'rgba(24,6,8,0.8)', border: color, radius: 4 });
+            plate(ctx, { x, y: BAND.warning, w, h: BAND_H.warning }, { fill: 'rgba(24,6,8,0.8)', border: color, radius: 4 });
             ctx.fillStyle = color;
             glow(ctx, color, 8);
             ctx.textAlign = 'center';
@@ -1941,14 +2179,74 @@ export class HUD {
         ctx.restore();
     }
 
+    /**
+     * ARCADE's attitude reference: a horizon bar and nothing else.
+     *
+     * ARCADE suppressed the whole pitch ladder to keep the centre clean, which
+     * also deleted the only instrument that says which way the jet is pointing.
+     * A new pilot in a 75-degree bank with the real horizon off-screen had a
+     * three-stroke waterline and no other attitude cue anywhere on the glass -
+     * so "I bank, I pull, nothing happens" had no on-screen explanation, even
+     * though the explanation was a 40-degree nose-up attitude.
+     *
+     * This is the ladder's zero rung and its pitch number, and nothing else:
+     * one line, drawn with the same exact `fov * tan(delta)` projection, so it
+     * sits on the true horizon rather than approximating it.
+     */
+    private drawArcadeHorizon(
+        ctx: CanvasRenderingContext2D,
+        physics: AircraftPhysics,
+        renderer: VectorRenderer,
+        layout: HudLayout
+    ) {
+        const { cx, cy, symScale } = layout;
+        const pitchDeg = physics.pitch * (180 / Math.PI);
+        const deltaRad = physics.pitch;
+        if (Math.abs(deltaRad) > 1.45) return;
+
+        const yOffset = renderer.fov * Math.tan(deltaRad);
+        // Off the glass entirely: pin the bar to the edge it left through and
+        // dim it, so a steep attitude still reads as "the horizon is that way"
+        // instead of as an empty screen.
+        const limit = this.height * 0.34;
+        const clamped = Math.max(-limit, Math.min(limit, yOffset));
+        const pinned = Math.abs(yOffset) > limit;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.translate(cx, cy);
+        ctx.rotate(-physics.roll);
+        ctx.globalAlpha = pinned ? 0.45 : 0.85;
+        ctx.strokeStyle = THEME.phosphor;
+        ctx.fillStyle = THEME.phosphor;
+        ctx.lineWidth = 2;
+
+        const far = 170 * symScale;
+        const near = 46 * symScale;
+        ctx.beginPath();
+        ctx.moveTo(-far, clamped);
+        ctx.lineTo(-near, clamped);
+        ctx.moveTo(near, clamped);
+        ctx.lineTo(far, clamped);
+        ctx.stroke();
+
+        // Nose-high or nose-low, in degrees, next to the bar. The single number
+        // that answers "why is my turn not coming round?".
+        if (Math.abs(pitchDeg) >= 5) {
+            ctx.font = font(11, 700);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${pitchDeg > 0 ? '+' : ''}${Math.round(pitchDeg)}\u00B0`, far + 8, clamped);
+        }
+        ctx.restore();
+    }
+
     private drawPitchLadder(
         ctx: CanvasRenderingContext2D,
         physics: AircraftPhysics,
         renderer: VectorRenderer,
         layout: HudLayout
     ) {
-        // In Arcade mode, keep the center of the screen clean and uncluttered!
-        if (this.hudDensity === 'ARCADE') return;
 
         const { cx, cy, symScale } = layout;
 
@@ -2048,7 +2346,7 @@ export class HUD {
 
         plate(
             ctx,
-            { x: cx - tapeWidth / 2 - 8, y: topY - 20, w: tapeWidth + 16, h: 32 },
+            { x: cx - tapeWidth / 2 - 8, y: topY - 20, w: tapeWidth + 16, h: BAND_H.compass },
             { border: THEME.edgeSoft, radius: 4 }
         );
 

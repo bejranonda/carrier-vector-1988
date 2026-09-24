@@ -32,6 +32,12 @@ export interface CoachSnapshot {
     distanceToCarrier: number;// metres
     isAirborne: boolean;
     bayOpen: boolean;
+    /**
+     * The jet is flying toward the carrier, not away from it. Undefined is
+     * treated as "not approaching", so a caller that has not measured closure
+     * cannot accidentally re-enable the launch-time false positive.
+     */
+    closingOnCarrier?: boolean;
     /** A fighter has held a guns solution on the player within the last few seconds. */
     gunsTracking?: boolean;
     /** The nearest live hostile aircraft, or null when the sky is empty. */
@@ -83,7 +89,23 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
         hint: { text: 'BAY DOORS OPEN - RCS x4.0, CLOSE THEM [B]', severity: 'WARNING' }
     },
     {
-        match: (s) => s.distanceToCarrier < 2500 && s.airSpeed > 95,
+        /**
+         * Only when the pilot is actually recovering.
+         *
+         * `distanceToCarrier < 2500 && airSpeed > 95` is true BY CONSTRUCTION
+         * for the first several seconds of every catapult shot in the game -
+         * you leave the boat fast and you leave it from nought metres away. So
+         * the single most-seen hint in the game fired on every launch, told a
+         * brand-new pilot to decelerate below 90 m/s while the objective strip
+         * directly above it said CLIMB, and would have stalled them if obeyed.
+         * Requiring a descent toward the deck confines it to the one phase of
+         * flight it was written for.
+         */
+        match: (s) => s.distanceToCarrier < 2500
+            && s.airSpeed > 95
+            && s.closingOnCarrier === true
+            && s.altitudeAgl < 400
+            && s.verticalSpeed < 2,
         hint: { text: 'TOO FAST FOR THE TRAP - REDUCE TO BELOW 90 M/S [CTRL]', severity: 'WARNING' }
     },
     {
@@ -125,6 +147,52 @@ export function getContextualHint(snapshot: CoachSnapshot): Hint | null {
         if (rule.match(snapshot)) return rule.hint;
     }
     return null;
+}
+
+/**
+ * What the objective strip is currently asking for, as far as arbitration
+ * cares. A structural subset of `ObjectiveStep`, kept here so this module
+ * stays free of imports.
+ */
+export interface ObjectiveSummary {
+    urgency: 'NORMAL' | 'ACTION' | 'URGENT';
+    key?: string;
+}
+
+/** Objective keys that mean "fight now" - attack coaching agrees with these. */
+const ATTACK_KEYS = new Set(['SPACE', 'T', '1', '2', '3', '4']);
+
+/**
+ * One instruction at a time.
+ *
+ * The objective strip, the coach ticker and the contact tags used to issue
+ * orders independently. Measured on v1.9.0, 4 s after the training cat shot:
+ * `CLIMB TO 2,500 FT` on the strip and `LOCKED - TURN TOWARD THE BANDIT` on the
+ * ticker directly below it. Each was correct on its own; together they were
+ * two different orders, and a beginner cannot obey both.
+ *
+ * Policy, in order:
+ *  1. Safety always speaks - any CRITICAL or WARNING hint.
+ *  2. An active training checkout step speaks next.
+ *  3. Routine INFO coaching speaks only if it does not compete with the
+ *     objective: when the objective is itself an order (ACTION / URGENT) that
+ *     is not an attack, the objective IS the instruction and the ticker is
+ *     silent. Attack coaching ("IN RANGE - FIRE") still speaks during an
+ *     attack objective, because there it is the same instruction, sharper.
+ */
+export function arbitrateHint(
+    contextual: Hint | null,
+    trainingPrompt: string | null,
+    objective: ObjectiveSummary | null
+): Hint | null {
+    if (contextual && contextual.severity !== 'INFO') return contextual;
+    if (trainingPrompt) return { text: trainingPrompt, severity: 'INFO' };
+    if (!contextual) return null;
+
+    const objectiveIsAnOrder = objective !== null && objective.urgency !== 'NORMAL';
+    const objectiveIsAttack = objective?.key !== undefined && ATTACK_KEYS.has(objective.key);
+    if (objectiveIsAnOrder && !objectiveIsAttack) return null;
+    return contextual;
 }
 
 // ---------------------------------------------------------------------

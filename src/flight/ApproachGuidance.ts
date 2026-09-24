@@ -61,6 +61,12 @@ export const APPROACH_TUNING = {
      * it and still well clear of the stall.
      */
     approachSpeed: 70,
+    /**
+     * Ceiling on the derived approach speed (see `approachSpeedFor`). The
+     * wires take a jet only below 95 m/s; 88 leaves margin for a gust of
+     * throttle on short final.
+     */
+    maxApproachSpeed: 88,
     /** Speed to fly the join, m/s - brisker, since it can be a long way. */
     joinSpeed: 200,
     /**
@@ -183,7 +189,19 @@ export interface ApproachGuidance {
 }
 
 /** Altitude the glideslope wants at a given range from the wires. */
-export function glideslopeAltitude(rangeToWires: number, tuning = APPROACH_TUNING): number {
+/** Approach tuning with numeric fields widened, so values can be derived at runtime. */
+export type ApproachTuning = { readonly [K in keyof typeof APPROACH_TUNING]: number };
+
+/**
+ * The approach speed to fly: the airframe's on-speed speed, bounded by what the
+ * guidance can use. The floor is the historical 70 m/s; the ceiling keeps the
+ * jet slow enough for the wires, which reject anything at or above 95 m/s.
+ */
+export function approachSpeedFor(onSpeed: number, tuning: ApproachTuning = APPROACH_TUNING): number {
+    return Math.max(tuning.approachSpeed, Math.min(tuning.maxApproachSpeed, onSpeed));
+}
+
+export function glideslopeAltitude(rangeToWires: number, tuning: ApproachTuning = APPROACH_TUNING): number {
     const slope = Math.tan(tuning.glideslopeDegrees * (Math.PI / 180));
     return tuning.deckHeight + slope * Math.max(0, rangeToWires);
 }
@@ -197,7 +215,7 @@ export function glideslopeAltitude(rangeToWires: number, tuning = APPROACH_TUNIN
  */
 export function inApproachCorridor(
     position: ApproachPosition,
-    tuning: typeof APPROACH_TUNING = APPROACH_TUNING
+    tuning: ApproachTuning = APPROACH_TUNING
 ): boolean {
     const rangeToWires = tuning.touchdownZ - position.z;
     return rangeToWires > 0
@@ -224,7 +242,7 @@ export interface ApproachMotion {
 export function approachGuidance(
     position: ApproachPosition,
     motion: ApproachMotion = {},
-    tuning = APPROACH_TUNING
+    tuning: ApproachTuning = APPROACH_TUNING
 ): ApproachGuidance {
     const bank = motion.bank ?? 0;
     const lateralSpeed = motion.lateralSpeed ?? 0;

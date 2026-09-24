@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { HUD_METRICS, NO_RESERVE, solveHudLayout, solveArcadeBar } from './HudLayout';
+import { HUD_METRICS, NO_RESERVE, bottomStackRects, solveHudLayout, solveArcadeBar } from './HudLayout';
+import { bandRects } from './HUD';
 import type { HudLayout, ArcadeBarSlot } from './HudLayout';
 
 const WIDTHS = [800, 900, 1024, 1100, 1150, 1280, 1440, 1600, 1920, 2560];
@@ -349,5 +350,73 @@ describe('solveArcadeBar', () => {
             showRewind: true, showPadlock: true, statusTextWidth: 220
         };
         expect(solveArcadeBar(input)).toEqual(solveArcadeBar(input));
+    });
+});
+
+/**
+ * The HUD's vertical bands must be disjoint.
+ *
+ * v1.8.0 shipped with three separate collisions at the default desktop size,
+ * and they are the literal reason a playtester reported "a lot of info on the
+ * screen, I do not know what to do": the information was not merely dense, it
+ * was printed on top of itself.
+ *
+ *  - objective strip 54..108 vs. compass tape plate 76..108  (top stack)
+ *  - arcade pill bar 848..882 vs. assist annunciator 848..870
+ *    vs. keycap cheat strip ~873..883                        (bottom stack)
+ *
+ * Both stacks are derived from shared constants now, and these tests fail the
+ * moment anybody hand-tunes one of them back into its neighbour.
+ */
+describe('HUD band stacking', () => {
+    const disjoint = (rects: { id: string; top: number; bottom: number }[]) => {
+        const sorted = [...rects].sort((a, b) => a.top - b.top);
+        const collisions: string[] = [];
+        for (let i = 1; i < sorted.length; i++) {
+            const prev = sorted[i - 1];
+            const cur = sorted[i];
+            if (cur.top < prev.bottom) {
+                collisions.push(
+                    `${prev.id}(${prev.top}..${prev.bottom}) overlaps ${cur.id}(${cur.top}..${cur.bottom})`
+                );
+            }
+        }
+        return collisions;
+    };
+
+    it('never overlaps two top bands', () => {
+        expect(disjoint(bandRects())).toEqual([]);
+    });
+
+    it('orders the top bands objective -> compass -> warning -> coach', () => {
+        expect(bandRects().map(b => b.id)).toEqual(['objective', 'compass', 'warning', 'coach']);
+    });
+
+    it('never overlaps two bottom bands, at any viewport height', () => {
+        for (const height of [420, 568, 720, 800, 900, 1080, 1440]) {
+            expect(disjoint(bottomStackRects(height))).toEqual([]);
+        }
+    });
+
+    it('never overlaps two bottom bands when the thumb controls reserve space', () => {
+        for (const reserve of [0, 60, 120, 180]) {
+            expect(disjoint(bottomStackRects(800, reserve))).toEqual([]);
+        }
+    });
+
+    it('keeps the whole bottom stack on screen', () => {
+        for (const height of [420, 720, 900]) {
+            for (const r of bottomStackRects(height)) {
+                expect(r.top).toBeGreaterThan(0);
+                expect(r.bottom).toBeLessThanOrEqual(height);
+            }
+        }
+    });
+
+    it('keeps the assist annunciator clear of the arcade pill bar it used to print through', () => {
+        const rects = bottomStackRects(900);
+        const ann = rects.find(r => r.id === 'annunciator')!;
+        const pills = rects.find(r => r.id === 'pills')!;
+        expect(ann.bottom).toBeLessThanOrEqual(pills.top);
     });
 });

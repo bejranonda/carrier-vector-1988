@@ -628,7 +628,7 @@ const TRAINING_SORTIE: ScenarioDef = {
         {
             n: '3',
             title: 'RECOVERY TRAP',
-            body: 'Turn to heading 180 and intercept the glideslope. Trap aboard CV-68 under 90 m/s at 18-28 m.',
+            body: 'Follow the BOAT cue home and fly down the glideslope. Trap aboard CV-68 under 90 m/s at 18-28 m.',
             keys: [['L', 'recovery assist'], ['SHIFT/CTRL', 'throttle']]
         }
     ],
@@ -671,20 +671,26 @@ const TRAINING_SORTIE: ScenarioDef = {
             id: 'DRONE_SPLASH',
             title: 'SPLASH THE DRONE',
             detail: (s) => s.contactsAlive > 0
-                ? 'Ghost-Lead: "Target drone bearing 045. Press [T] to lock it, [2] for the AIM-9, then [SPACE]."'
+                // No bearing numbers: the FIRST_FLIGHT HUD has no compass. The
+                // bracket and the off-screen arrow already point at the drone.
+                ? 'Ghost-Lead: "Drone is up - follow the bracket. [T] locks it, [2] arms the AIM-9, [SPACE] fires."'
                 : 'Ghost-Lead: "Clean hit! Splash one target drone."',
             key: 'SPACE',
             urgency: 'ACTION',
             // Requires a real kill. The drone now genuinely spawns, so this no
             // longer completes for a pilot who never fired.
             isComplete: (s) => s.hasLaunched && s.contactsAlive === 0,
-            callout: 'GHOST-LEAD: DRONE SPLASHED! TURN TO 180 AND HEAD FOR THE BOAT.'
+            callout: 'GHOST-LEAD: DRONE SPLASHED! FOLLOW THE BOAT CUE HOME.'
         },
         recoverPhase()
     ],
     failure: (s) => (s.airframesLost > 0 ? 'Aircraft lost during training sortie.' : null),
-    victoryTitle: 'TRAINING COMPLETE',
-    victoryDetail: 'Ghost-Lead: "Outstanding stick work, 201. You are cleared for combat operations."'
+    // The first win a new pilot ever sees, so it is a moment, not a status
+    // line (Known Issues #55). It is also the graduation from the FIRST_FLIGHT
+    // HUD, and it says so - a player who suddenly sees twice the instruments
+    // should know that was earned, not a bug.
+    victoryTitle: 'WINGS EARNED',
+    victoryDetail: 'Ghost-Lead: "Outstanding stick work, 201. Welcome to the squadron." Full instruments unlocked - U switches back any time.'
 };
 
 export const SCENARIOS: readonly ScenarioDef[] = [

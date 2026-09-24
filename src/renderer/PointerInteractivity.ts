@@ -8,7 +8,8 @@
 
 import type { Rect } from './DeckLayout';
 import type { HudLayout, ArcadeBarSlotId } from './HudLayout';
-import { HUD_METRICS, solveArcadeBar } from './HudLayout';
+import { HUD_METRICS, arcadeBarFlags, cornerButtonRects, proChipRects, solveArcadeBar } from './HudLayout';
+import type { HudDensity } from '../core/HudDensity';
 
 export type DeckAction =
     | 'LAUNCH'
@@ -179,7 +180,11 @@ export function hitTestDeck(
 export interface HudStateSnapshot {
     selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM';
     assistLabel: string;
-    hudDensity: 'ARCADE' | 'PRO';
+    hudDensity: HudDensity;
+    /** Rewind charges left - the REWIND pill is only there while this is > 0. */
+    rewindsRemaining?: number;
+    /** A target is designated - the PADLOCK pill is only there when it is. */
+    hasDesignation?: boolean;
     padlockActive: boolean;
     pitchInverted?: boolean;
 }
@@ -198,6 +203,10 @@ export function solveHudClickableAreas(
     // When touch mode is active, touch controls handle input.
     if (layout.touchMode) return areas;
 
+    // FIRST_FLIGHT draws no buttons, so a click falls through to
+    // click-to-designate - the one thing a mouse is obviously for in flight.
+    if (state.hudDensity === 'FIRST_FLIGHT') return areas;
+
     const isArcade = state.hudDensity === 'ARCADE';
 
     if (isArcade) {
@@ -210,9 +219,15 @@ export function solveHudClickableAreas(
             width,
             height,
             weaponCount: 4,
-            showCountermeasure: false,
-            showRewind: true,
-            showPadlock: true
+            // The SAME flags the renderer uses. This passed its own
+            // (showCountermeasure: false) while the renderer drew the chaff
+            // pill, so every click on ASSIST / REWIND / PADLOCK landed 104 px
+            // left of the pill on screen.
+            ...arcadeBarFlags({
+                rewindsRemaining: state.rewindsRemaining ?? 0,
+                hasDesignation: state.hasDesignation ?? false,
+                padlockActive: state.padlockActive
+            })
         });
         const slotActions: Partial<Record<ArcadeBarSlotId, HudAction>> = {
             WEAPON_0: 'WEAPON_GUN',
@@ -238,86 +253,33 @@ export function solveHudClickableAreas(
             areas.push({ id, rect: s.rect, label: slotLabels[s.id] ?? '' });
         }
 
-        // Top right controls: Deck View, HUD Mode, and Flight Stick Mode
-        const rightBtnW = 100;
-        areas.push({
-            id: 'SWITCH_DECK',
-            rect: { x: width - rightBtnW - 20, y: 16, w: rightBtnW, h: 30 },
-            label: 'DECK (TAB)'
-        });
-        areas.push({
-            id: 'HUD_MODE',
-            rect: { x: width - rightBtnW * 2 - 28, y: 16, w: rightBtnW, h: 30 },
-            label: 'HUD: ARCADE'
-        });
-        const stickBtnW = 104;
-        areas.push({
-            id: 'PITCH_INVERT',
-            rect: { x: width - rightBtnW * 2 - stickBtnW - 36, y: 16, w: stickBtnW, h: 30 },
-            label: state.pitchInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)'
-        });
+        pushCornerButtons(areas, width, state);
     } else {
-        // --- PRO HUD SYSTEMS PANEL WEAPONS ---
-        const sysH = 150;
-        const sysX = HUD_METRICS.edge;
-        const sysY = height - sysH - 54;
-
-        // In Pro HUD, the weapon chips sit at bottom of systems panel:
-        const chipY = sysY + sysH - 28;
-        const chipW = 68;
-        const chipH = 22;
-
-        areas.push({
-            id: 'WEAPON_GUN',
-            rect: { x: sysX + 12, y: chipY, w: chipW, h: chipH },
-            label: '1 GUN'
-        });
-        areas.push({
-            id: 'WEAPON_AIM9',
-            rect: { x: sysX + 12 + chipW + 6, y: chipY, w: chipW, h: chipH },
-            label: '2 AIM9'
-        });
-        areas.push({
-            id: 'WEAPON_BOMB',
-            rect: { x: sysX + 12 + (chipW + 6) * 2, y: chipY, w: chipW, h: chipH },
-            label: '3 MK82'
-        });
-        areas.push({
-            id: 'WEAPON_HARM',
-            rect: { x: sysX + 12 + (chipW + 6) * 3, y: chipY, w: chipW, h: chipH },
-            label: '4 HARM'
-        });
-
-        // Bottom keybar clickable shortcuts
-        const y = height - 34;
-        areas.push({
-            id: 'ASSIST_CYCLE',
-            rect: { x: 280, y, w: 90, h: 24 },
-            label: 'ASSIST (F)'
-        });
-        areas.push({
-            id: 'PADLOCK',
-            rect: { x: 380, y, w: 90, h: 24 },
-            label: 'PADLOCK (V)'
-        });
-        areas.push({
-            id: 'SWITCH_DECK',
-            rect: { x: 480, y, w: 90, h: 24 },
-            label: 'DECK (TAB)'
-        });
-        areas.push({
-            id: 'HUD_MODE',
-            rect: { x: width - 130, y: 16, w: 110, h: 28 },
-            label: 'HUD: PRO'
-        });
-        areas.push({
-            id: 'PITCH_INVERT',
-            rect: { x: width - 245, y: 16, w: 105, h: 28 },
-            label: state.pitchInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)'
-        });
+        // --- PRO: the systems panel's weapon chips, from the renderer's solver.
+        // Nothing else along the bottom is clickable: the keycap strip whose
+        // shortcuts used to be registered here was removed in v1.10.0, and
+        // leaving its click areas behind made them invisible traps.
+        if (height >= HUD_METRICS.compactSystemsHeight) {
+            const ids: HudAction[] = ['WEAPON_GUN', 'WEAPON_AIM9', 'WEAPON_BOMB', 'WEAPON_HARM'];
+            const labels = ['1 GUN', '2 AIM9', '3 MK82', '4 HARM'];
+            proChipRects(height).forEach((rect, i) => areas.push({ id: ids[i], rect, label: labels[i] }));
+        }
+        pushCornerButtons(areas, width, state);
     }
 
     return areas;
+}
+
+/** The top-right buttons, from the same solver the renderer uses. */
+function pushCornerButtons(areas: ClickableArea<HudAction>[], width: number, state: HudStateSnapshot) {
+    const r = cornerButtonRects(width);
+    areas.push({ id: 'SWITCH_DECK', rect: r.deck, label: 'DECK (TAB)' });
+    areas.push({ id: 'HUD_MODE', rect: r.hud, label: `HUD: ${state.hudDensity}` });
+    areas.push({
+        id: 'PITCH_INVERT',
+        rect: r.stick,
+        label: state.pitchInverted ? 'STICK: REAL (I)' : 'STICK: DIR (I)'
+    });
 }
 
 /**

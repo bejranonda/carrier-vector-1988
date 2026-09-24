@@ -54,13 +54,26 @@ export interface PacingSpec extends DeckTiming {
     openingEtaScale: number;
     /** Multiplier on how far out airborne contacts are spawned. */
     spawnDistanceScale: number;
+    /**
+     * Multiplier on the wing's lift - the airframe the tempo flies.
+     *
+     * SIM keeps the original 1.0. ARCADE flies 1.7, and that number is not a
+     * feel knob picked by taste. The recovery assist flies the approach at
+     * 70 m/s and the AoA indexer's on-speed band is 8.1 deg +- 1.2 (the real
+     * F-14 figure). At 1.0 the jet needs 15.5 deg of AoA for 1 g at 70 m/s -
+     * 2.5 deg from the stall, with the indexer reading SLOW all the way down.
+     * At 1.7 the same approach needs 9.3 deg, inside the band. It also turns a
+     * held 75-degree bank into a LEVEL 12 deg/s turn (was 8 deg/s and
+     * descending 280 m in 16 s). Measured - see KNOWLEDGE.md section 21.
+     */
+    liftScale: number;
 }
 
 export const PACING_SPECS: readonly PacingSpec[] = [
     {
         id: 'ARCADE',
         label: 'ARCADE',
-        blurb: 'fast deck, early contacts, seconds back in the air',
+        blurb: 'fast deck, early contacts, an agile jet',
         maintenanceSeconds: 4,
         armingSeconds: 5,
         repairSeconds: 8,
@@ -70,7 +83,8 @@ export const PACING_SPECS: readonly PacingSpec[] = [
         // fifty seconds instead of every two and a half minutes.
         openingEtaScale: 0.35,
         // 8.3 km becomes 4.6 km: about twenty seconds of transit at 230 m/s.
-        spawnDistanceScale: 0.55
+        spawnDistanceScale: 0.55,
+        liftScale: 1.7
     },
     {
         id: 'SIM',
@@ -82,7 +96,8 @@ export const PACING_SPECS: readonly PacingSpec[] = [
         derigSeconds: 3,
         respawnSeconds: 0,
         openingEtaScale: 1,
-        spawnDistanceScale: 1
+        spawnDistanceScale: 1,
+        liftScale: 1
     }
 ];
 

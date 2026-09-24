@@ -56,6 +56,52 @@ export interface DeckViewContext {
     touchReserveBottom?: number;
     /** Width reserved at the top right for the menu button. */
     touchReserveTopRight?: number;
+    /**
+     * How much of the deck to show. BRIEF is what a first-time pilot sees on
+     * any screen: the orders, the turnaround, the contact picture and a short
+     * log. It is the phone layout's idea - the phone build was the clearest
+     * version of this screen that shipped, because a phone forced the choice.
+     * FULL adds payload planning, strike-group stocks and the deck plan.
+     * Follows the HUD density: FIRST_FLIGHT -> BRIEF.
+     */
+    detail?: 'BRIEF' | 'FULL';
+}
+
+/**
+ * The deck's panel list for a context. Pure and exported, so which panels a
+ * first-time pilot sees is a tested fact rather than a draw-order accident.
+ */
+export function deckPanelSpecs(context: Pick<DeckViewContext, 'touchMode' | 'detail'>): PanelSpec[] {
+    /**
+     * A phone shows what it can act on: the orders, and how close the jet is
+     * to being ready. One row each - the solver will not drop an essential
+     * panel, so on a 320 px screen the row counts are what has to fit.
+     */
+    if (context.touchMode) {
+        return [
+            { id: 'ORDERS', minW: 220, rows: 1, pin: 'top', essential: true },
+            { id: 'TURNAROUND', minW: 220, rows: 1, priority: 9, essential: true },
+            { id: 'THREATS', minW: 220, rows: 3, priority: 7 }
+        ];
+    }
+    if (context.detail === 'BRIEF') {
+        return [
+            { id: 'ORDERS', minW: 420, rows: 2, pin: 'top', essential: true },
+            { id: 'TURNAROUND', minW: 300, rows: 7, priority: 9, essential: true },
+            { id: 'THREATS', minW: 300, rows: 7, priority: 7, minH: 190 },
+            { id: 'LOG', minW: 400, rows: 3, pin: 'bottom', priority: 4 }
+        ];
+    }
+    // FULL. The CREW panel is folded into one TURNAROUND line (v1.10.0).
+    return [
+        { id: 'ORDERS', minW: 420, rows: 2, pin: 'top', essential: true },
+        { id: 'TURNAROUND', minW: 300, rows: 8, priority: 9, essential: true },
+        { id: 'PAYLOAD', minW: 300, rows: 5, priority: 8 },
+        { id: 'THREATS', minW: 300, rows: 7, priority: 7, minH: 190 },
+        { id: 'STATUS', minW: 300, rows: 7, priority: 6 },
+        { id: 'DECK_PLAN', minW: 280, rows: 0, aspect: 0.34, priority: 2, maxH: 190, minH: 120 },
+        { id: 'LOG', minW: 400, rows: 5, pin: 'bottom', priority: 4 }
+    ];
 }
 
 export class DeckView {
@@ -78,23 +124,7 @@ export class DeckView {
          * are wonderful and do not fit on a 320 px screen alongside a button
          * big enough to press.
          */
-        const specs: PanelSpec[] = context.touchMode ? [
-            // One row each. The solver will not drop an essential panel, so on
-            // a 320 px screen the row counts are what has to fit - asking for
-            // three rows of turnaround simply overflowed the content box.
-            { id: 'ORDERS', minW: 220, rows: 1, pin: 'top', essential: true },
-            { id: 'TURNAROUND', minW: 220, rows: 1, priority: 9, essential: true },
-            { id: 'THREATS', minW: 220, rows: 3, priority: 7 }
-        ] : [
-            { id: 'ORDERS', minW: 420, rows: 2, pin: 'top', essential: true },
-            { id: 'TURNAROUND', minW: 300, rows: 7, priority: 9, essential: true },
-            { id: 'PAYLOAD', minW: 300, rows: 5, priority: 8 },
-            { id: 'THREATS', minW: 300, rows: 7, priority: 7, minH: 190 },
-            { id: 'STATUS', minW: 300, rows: 7, priority: 6 },
-            { id: 'CREW', minW: 290, rows: 5, priority: 3 },
-            { id: 'DECK_PLAN', minW: 280, rows: 0, aspect: 0.34, priority: 2, maxH: 190, minH: 120 },
-            { id: 'LOG', minW: 400, rows: 5, pin: 'bottom', priority: 4 }
-        ];
+        const specs = deckPanelSpecs(context);
 
         const layout = computeDeckLayout(specs, {
             width,
@@ -126,7 +156,6 @@ export class DeckView {
         if (p['PAYLOAD']) this.drawPayload(ctx, p['PAYLOAD'], deck);
         if (p['THREATS']) this.drawThreatRose(ctx, p['THREATS'], deck, timeSec);
         if (p['STATUS']) this.drawStatus(ctx, p['STATUS'], deck);
-        if (p['CREW']) this.drawCrew(ctx, p['CREW'], deck);
         if (p['DECK_PLAN']) this.drawDeckPlan(ctx, p['DECK_PLAN'], deck);
         if (p['LOG']) this.drawLog(ctx, p['LOG'], deck);
 
@@ -317,10 +346,17 @@ export class DeckView {
             ctx.fillText(STATE_BLURB[deck.aircraftState], inner.x, inner.y + 32);
         }
 
-        const barY = Math.max(
-            inner.y + (roomForBlurb ? 46 : 26),
-            inner.y + inner.h - 12
-        );
+        /**
+         * Directly under the status text when the panel is tall enough to hold
+         * the stores list beneath it; pinned to the bottom edge only when it is
+         * not. It used to be pinned to the bottom unconditionally, which put
+         * the LOADED rows below the panel on every desktop size - they had
+         * never once been visible.
+         */
+        const storesRoom = inner.h - (roomForBlurb ? 46 : 26) - 46;
+        const barY = !touchMode && storesRoom >= 3 * 16
+            ? inner.y + (roomForBlurb ? 46 : 26)
+            : Math.max(inner.y + (roomForBlurb ? 46 : 26), inner.y + inner.h - 12);
         bar(ctx, { x: inner.x, y: barY, w: inner.w, h: 8 }, deck.currentTaskProgress / 100, accent);
         if (barY + 22 <= inner.y + inner.h) {
             ctx.font = font(11, 600);
@@ -342,13 +378,26 @@ export class DeckView {
         // What is actually hanging on the jet right now, as opposed to the
         // PAYLOAD panel's plan for the next sortie.
         const loadBase = barY + 46;
-        const loadStep = Math.max(16, Math.min(24, (inner.y + inner.h - loadBase) / 3));
+        const loadStep = Math.max(16, Math.min(24, (inner.y + inner.h - loadBase) / 4));
         // On a phone this panel is two rows tall and the stores list would
         // run out of the bottom of it.
         if (loadStep > 12 && !touchMode) {
+            // What the magazine can actually supply - see loadableLoadout().
+            const loaded = deck.loadableLoadout();
             row(ctx, inner, loadBase, 'LOADED FUEL', `${deck.plannedFuel} L`);
-            row(ctx, inner, loadBase + loadStep, 'LOADED AIM-9', `${deck.plannedLoadout.sidewinders}`);
-            row(ctx, inner, loadBase + loadStep * 2, 'LOADED MK.82', `${deck.plannedLoadout.ironBombs}`);
+            row(ctx, inner, loadBase + loadStep, 'LOADED AIM-9', `${loaded.sidewinders}`);
+            row(ctx, inner, loadBase + loadStep * 2, 'LOADED MK.82', `${loaded.ironBombs}`);
+            // The deck crew, folded to one line. It was a whole panel of four
+            // stamina bars a beginner could do nothing about; what matters is
+            // whether the crew is fresh enough to rush.
+            const crewY = loadBase + loadStep * 3;
+            if (crewY <= inner.y + inner.h) {
+                const stamina = deck.crews.length
+                    ? Math.round(deck.crews.reduce((sum, c) => sum + c.stamina, 0) / deck.crews.length)
+                    : 100;
+                const color = stamina > 50 ? THEME.phosphor : stamina > 25 ? THEME.caution : THEME.alert;
+                row(ctx, inner, crewY, 'DECK CREW', `${stamina}%${stamina <= 50 ? ' · TIRED' : ''}`, color);
+            }
         }
         ctx.restore();
     }
@@ -380,8 +429,17 @@ export class DeckView {
             );
         }
 
-        this.adjustable(ctx, inner, line(1), ['3'], 'AIM-9 SIDEWINDER', `${deck.plannedLoadout.sidewinders} / 6`);
-        this.adjustable(ctx, inner, line(2), ['4'], 'MK.82 IRON BOMB', `${deck.plannedLoadout.ironBombs} / 4`);
+        // Planned against what the magazine holds. A plan the ship cannot
+        // supply says so, in caution, instead of promising stores it lacks.
+        const loaded = deck.loadableLoadout();
+        const store = (planned: number, got: number, max: number): [string, string | undefined] =>
+            got < planned
+                ? [`${got} / ${max} · ${got === 0 ? 'NONE ABOARD' : 'MAGAZINE SHORT'}`, THEME.caution]
+                : [`${planned} / ${max}`, undefined];
+        const [aimText, aimColor] = store(deck.plannedLoadout.sidewinders, loaded.sidewinders, 6);
+        const [bombText, bombColor] = store(deck.plannedLoadout.ironBombs, loaded.ironBombs, 4);
+        this.adjustable(ctx, inner, line(1), ['3'], 'AIM-9 SIDEWINDER', aimText, aimColor);
+        this.adjustable(ctx, inner, line(2), ['4'], 'MK.82 IRON BOMB', bombText, bombColor);
         row(ctx, inner, line(3) + 4, '20MM VULCAN', `${deck.plannedLoadout.vulcanAmmo} RDS`);
 
         ctx.restore();
@@ -394,7 +452,8 @@ export class DeckView {
         y: number,
         keys: string[],
         label: string,
-        value: string
+        value: string,
+        valueColor: string = THEME.ink
     ) {
         if (y > inner.y + inner.h + 6) return;
         let x = inner.x;
@@ -409,7 +468,7 @@ export class DeckView {
         ctx.textAlign = 'left';
         ctx.fillText(label, x + 4, y);
         ctx.font = font(12, 600);
-        ctx.fillStyle = THEME.ink;
+        ctx.fillStyle = valueColor;
         ctx.textAlign = 'right';
         ctx.fillText(value, inner.x + inner.w, y);
         ctx.restore();
@@ -449,44 +508,6 @@ export class DeckView {
         ctx.restore();
     }
 
-    private drawCrew(ctx: CanvasRenderingContext2D, r: Rect, deck: DeckManager) {
-        const inner = panel(ctx, r, 'DECK CREW STAMINA');
-        ctx.save();
-        noGlow(ctx);
-        ctx.font = font(11);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText('Tired crews turn aircraft around more slowly.', inner.x, inner.y + 8);
-
-        const step = Math.max(17, Math.min(32, (inner.h - 30) / Math.max(1, deck.crews.length)));
-        deck.crews.forEach((crew, i) => {
-            const y = inner.y + 26 + i * step;
-            if (y > inner.y + inner.h + 6) return;
-            const color = crew.stamina > 50 ? THEME.phosphor : crew.stamina > 25 ? THEME.caution : THEME.alert;
-
-            ctx.textBaseline = 'middle';
-            ctx.font = font(11);
-            ctx.fillStyle = THEME.muted;
-            ctx.textAlign = 'left';
-            ctx.fillText(crew.role, inner.x, y);
-
-            const barX = inner.x + 76;
-            const barW = Math.max(30, inner.w - 76 - 44);
-            bar(ctx, { x: barX, y: y - 4, w: barW, h: 7 }, crew.stamina / 100, color, 12);
-
-            ctx.font = font(11, 600);
-            ctx.fillStyle = color;
-            ctx.textAlign = 'right';
-            ctx.fillText(`${Math.floor(crew.stamina)}%`, inner.x + inner.w, y);
-        });
-        ctx.restore();
-    }
-
-    /**
-     * Top-down plan of the deck, drawn along the panel's LONG axis (bow to
-     * the right) so a wide panel is actually used, with the aircraft glyph
-     * positioned by the deck state machine. Turns an opaque status string
-     * into something you can watch happen.
-     */
     private drawDeckPlan(ctx: CanvasRenderingContext2D, r: Rect, deck: DeckManager) {
         const inner = panel(ctx, r, 'DECK PLAN');
         ctx.save();
@@ -556,9 +577,14 @@ export class DeckView {
             .filter(p => !p.isIntercepted && !p.hasAttacked)
             .sort((a, b) => a.etaSeconds - b.etaSeconds);
         const soonest = live.length ? live[0].etaSeconds : null;
-        const urgent = soonest !== null && soonest <= 120;
+        // A training drone is not a threat, whatever its ETA: no red panel, no
+        // red pip, and it is called what it is. "1 INBOUND / FIGHTER 0:18" in
+        // red on the mission that promised zero hostiles was a contradiction a
+        // first-time pilot read as "I am about to be attacked".
+        const drones = deck.combatShielded;
+        const urgent = !drones && soonest !== null && soonest <= 120;
 
-        const inner = panel(ctx, r, 'EARLY WARNING RADAR', {
+        const inner = panel(ctx, r, drones ? 'TRAINING RANGE' : 'EARLY WARNING RADAR', {
             accent: urgent ? THEME.alert : THEME.phosphor,
             emphasis: urgent
         });
@@ -609,7 +635,7 @@ export class DeckView {
             const etaRatio = Math.max(0.08, Math.min(1, pkg.etaSeconds / 480));
             const px = cx + Math.sin(rad) * radius * etaRatio;
             const py = cy - Math.cos(rad) * radius * etaRatio;
-            const hot = pkg.etaSeconds <= 120;
+            const hot = !drones && pkg.etaSeconds <= 120;
             const color = hot ? THEME.alert : pkg.aircraftType === 'Tu-22' ? THEME.caution : THEME.phosphor;
 
             ctx.fillStyle = color;
@@ -633,19 +659,22 @@ export class DeckView {
             ctx.textAlign = 'left';
             ctx.font = font(10, 600);
             ctx.fillStyle = THEME.muted;
-            ctx.fillText(live.length ? `${live.length} INBOUND` : 'NO CONTACTS', tx, inner.y + 8);
+            ctx.fillText(
+                live.length ? `${live.length} ${drones ? 'ON THE RANGE' : 'INBOUND'}` : 'NO CONTACTS',
+                tx, inner.y + 8
+            );
 
             const rowsToShow = Math.min(live.length, Math.max(1, Math.floor((inner.h - 20) / 18)));
             for (let i = 0; i < rowsToShow; i++) {
                 const pkg = live[i];
                 const y = inner.y + 26 + i * 18;
-                const hot = pkg.etaSeconds <= 120;
+                const hot = !drones && pkg.etaSeconds <= 120;
                 const color = hot ? THEME.alert : pkg.aircraftType === 'Tu-22' ? THEME.caution : THEME.phosphor;
                 ctx.font = font(11);
                 ctx.fillStyle = THEME.muted;
                 ctx.textAlign = 'left';
                 ctx.fillText(
-                    `${pkg.aircraftType === 'Tu-22' ? 'BOMBER' : 'FIGHTER'}${pkg.count > 1 ? ` x${pkg.count}` : ''}`,
+                    `${drones ? 'TARGET DRONE' : pkg.aircraftType === 'Tu-22' ? 'BOMBER' : 'FIGHTER'}${pkg.count > 1 ? ` x${pkg.count}` : ''}`,
                     tx,
                     y
                 );
@@ -700,10 +729,12 @@ export class DeckView {
         }
 
         if (!context.touchMode) {
+            const brief = context.detail === 'BRIEF';
             const segs: Segment[] = [
                 { key: 'TAB' }, { text: 'cockpit' },
                 { key: 'ENTER' }, { text: 'cat shot' },
-                { key: '1-4' }, { text: 'payload' },
+                ...(brief ? [] : [{ key: '1-4' }, { text: 'payload' }] as Segment[]),
+                { key: 'U' }, { text: brief ? 'full deck' : 'less detail' },
                 { key: 'H' }, { text: 'all controls' }
             ];
             drawSegments(ctx, r.x, r.y + 32, segs, 11);

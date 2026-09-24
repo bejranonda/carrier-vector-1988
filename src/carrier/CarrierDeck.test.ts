@@ -364,3 +364,101 @@ describe('rushing a turnaround', () => {
         for (const crew of deck.crews) expect(crew.stamina).toBeGreaterThanOrEqual(0);
     });
 });
+
+/**
+ * A shielded (training) scenario's contacts are target drones.
+ *
+ * REGRESSION, v1.9.0: `combatShielded` ghosted every round the training MiG
+ * fired at the player, but `updateDeckOperations` ran the package-reaches-the-
+ * carrier damage path without consulting it. Measured on the live v1.8.0
+ * build: a first-time pilot who pressed ENTER once and then read the deck
+ * screen watched CV-68 go from 100% to 85% hull at T+20s - on the sortie whose
+ * own tagline reads "Zero combat hostiles" and whose stated loss condition is
+ * "Running out of fuel or ditching in the fjord".
+ */
+describe('combat-shielded scenarios', () => {
+    /** Run the deck long enough for every opening package to reach ETA 0. */
+    const runUntilPackagesLand = (d: DeckManager) => {
+        for (let i = 0; i < 400; i++) d.update(1);
+    };
+
+    it('lets a drone complete its pass without damaging the carrier', () => {
+        const shielded = new DeckManager();
+        shielded.combatShielded = true;
+        runUntilPackagesLand(shielded);
+
+        expect(shielded.inventory.carrierHealth).toBe(100);
+        expect(shielded.missionState).not.toBe('FAILED');
+    });
+
+    it('still damages the carrier in an ordinary combat scenario', () => {
+        const live = new DeckManager();
+        expect(live.combatShielded).toBe(false);
+        runUntilPackagesLand(live);
+
+        expect(live.inventory.carrierHealth).toBeLessThan(100);
+    });
+
+    /**
+     * A shielded drone must stay on the board.
+     *
+     * `GameLoop.buildTargetsFromTimeline` skips any package with `hasAttacked`
+     * set, and the tutorial's SPLASH THE DRONE phase completes on
+     * `contactsAlive === 0` - so retiring the drone when its ETA expired would
+     * let that phase satisfy itself for a pilot who never fired a shot.
+     */
+    it('keeps a shielded drone in the timeline instead of retiring it', () => {
+        const shielded = new DeckManager();
+        shielded.combatShielded = true;
+        runUntilPackagesLand(shielded);
+
+        const live = shielded.strikeTimeline.filter(p => !p.hasAttacked && !p.isIntercepted);
+        expect(live.length).toBeGreaterThan(0);
+        expect(shielded.strikeTimeline.every(p => !p.hasAttacked)).toBe(true);
+        for (const p of live) expect(p.etaSeconds).toBeGreaterThan(0);
+    });
+
+    it('does not lose spare airframes to a shielded pass', () => {
+        const shielded = new DeckManager();
+        shielded.combatShielded = true;
+        const before = shielded.inventory.spareAirframes;
+        runUntilPackagesLand(shielded);
+
+        expect(shielded.inventory.spareAirframes).toBe(before);
+    });
+});
+
+/**
+ * REGRESSION, v1.10.0: launch clamped the SHIP's stock at zero but handed the
+ * jet its full PLANNED loadout - so an empty magazine still produced bombs.
+ */
+describe('the jet launches with what the magazine holds', () => {
+    it('caps the loadout at the ship stock', () => {
+        const deck = new DeckManager();
+        deck.inventory.ironBombs = 0;
+        deck.inventory.sidewinders = 1;
+        deck.plannedLoadout.ironBombs = 2;
+        deck.plannedLoadout.sidewinders = 4;
+        const loaded = deck.loadableLoadout();
+        expect(loaded.ironBombs).toBe(0);
+        expect(loaded.sidewinders).toBe(1);
+    });
+
+    it('deducts exactly what was loaded, and records it for the sortie', () => {
+        const deck = new DeckManager();
+        deck.inventory.ironBombs = 1;
+        deck.plannedLoadout.ironBombs = 3;
+        expect(deck.triggerCatapultLaunch()).toBe(true);
+        expect(deck.lastLaunchLoadout?.ironBombs).toBe(1);
+        expect(deck.inventory.ironBombs).toBe(0);
+        expect(deck.alertLog.some(l => l.includes('MAGAZINE SHORT'))).toBe(true);
+    });
+
+    it('never touches a plan the magazine can fully supply', () => {
+        const deck = new DeckManager();
+        const before = deck.inventory.sidewinders;
+        expect(deck.triggerCatapultLaunch()).toBe(true);
+        expect(deck.lastLaunchLoadout?.sidewinders).toBe(deck.plannedLoadout.sidewinders);
+        expect(deck.inventory.sidewinders).toBe(before - deck.plannedLoadout.sidewinders);
+    });
+});

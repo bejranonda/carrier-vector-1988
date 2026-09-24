@@ -174,6 +174,13 @@ export function generateWave(waveNumber: number, rng: () => number): InboundStri
     return packages;
 }
 
+/**
+ * How long a shielded scenario's target drone takes to re-fly its pattern after
+ * completing a pass. Long enough that the deck's threat panel is not churning,
+ * short enough that a pilot who dawdles still has something to shoot at.
+ */
+const TRAINING_PATTERN_SECONDS = 90;
+
 export class DeckManager {
     public inventory: CarrierInventory = {
         fuelLiters: 180000,
@@ -187,6 +194,19 @@ export class DeckManager {
     public aircraftState: AircraftDeckState = 'CATAPULT_READY';
     public currentTaskProgress: number = 100; // 0 to 100%
     public currentTaskDuration: number = 0;
+
+    /**
+     * This scenario's contacts are target drones and cannot hurt anything.
+     *
+     * Set from `ScenarioSetup.combatShielded`. The flag already existed and
+     * already ghosted the rounds a shielded contact fired at the player - but
+     * the deck's own damage path never consulted it, so a training drone could
+     * still strafe CV-68 for 15% of its hull.
+     */
+    public combatShielded = false;
+
+    /** The loadout the last catapult shot actually carried (see `loadableLoadout`). */
+    public lastLaunchLoadout: AircraftLoadout | null = null;
 
     // Next sortie planned loadout
     public plannedLoadout: AircraftLoadout = {
@@ -398,6 +418,30 @@ export class DeckManager {
 
             // Consequence accounting: Bomber arrives and strikes carrier!
             if (pkg.etaSeconds <= 0) {
+                /**
+                 * A shielded scenario's contacts are target drones.
+                 *
+                 * `combatShielded` ghosted every round the training MiG fired
+                 * at the PLAYER, but nothing stopped the same contact running
+                 * the deck-damage path here - so the sortie whose own tagline
+                 * reads "Zero combat hostiles" took 15% off CV-68's hull at
+                 * T+20s while a first-time pilot was still reading the deck
+                 * screen.
+                 *
+                 * The drone re-flies its pattern rather than being marked
+                 * `hasAttacked`. That matters beyond the hull: a package with
+                 * `hasAttacked` set is skipped by
+                 * `GameLoop.buildTargetsFromTimeline`, so retiring the drone
+                 * here would let the tutorial's SPLASH THE DRONE phase - which
+                 * completes on `contactsAlive === 0` - satisfy itself for a
+                 * pilot who never fired a shot. The drone stays on the board
+                 * until the player actually kills it.
+                 */
+                if (this.combatShielded) {
+                    pkg.etaSeconds = TRAINING_PATTERN_SECONDS;
+                    this.log('GHOST-LEAD: DRONE COMPLETED ITS PASS. RE-ENTERING THE PATTERN.');
+                    continue;
+                }
                 pkg.hasAttacked = true;
                 if (pkg.aircraftType === 'Tu-22') {
                     const dmg = 35;
@@ -434,6 +478,25 @@ export class DeckManager {
     }
 
     /**
+     * What the jet can actually be loaded with: the plan, capped by what the
+     * magazine holds. Chaff and HARMs are per-sortie issue, not ship's stock.
+     *
+     * Launch used to clamp the SHIP's stock at zero while handing the jet the
+     * full PLAN - so with no bombs left aboard, the jet still flew with two.
+     * Free ordnance quietly broke the loop the whole game is built on (what you
+     * fly with comes out of what the carrier has), and the payload panel showed
+     * "MK.82 2 / 4" beside a magazine reading 0.
+     */
+    public loadableLoadout(): AircraftLoadout {
+        return {
+            ...this.plannedLoadout,
+            vulcanAmmo: Math.min(this.plannedLoadout.vulcanAmmo, this.inventory.vulcanRounds),
+            sidewinders: Math.min(this.plannedLoadout.sidewinders, this.inventory.sidewinders),
+            ironBombs: Math.min(this.plannedLoadout.ironBombs, this.inventory.ironBombs)
+        };
+    }
+
+    /**
      * Start catapult launch sequence, deducting loaded munitions from carrier inventory
      */
     public triggerCatapultLaunch(): boolean {
@@ -449,9 +512,14 @@ export class DeckManager {
         }
         this.inventory.fuelLiters -= this.plannedFuel;
 
-        this.inventory.vulcanRounds = Math.max(0, this.inventory.vulcanRounds - this.plannedLoadout.vulcanAmmo);
-        this.inventory.sidewinders = Math.max(0, this.inventory.sidewinders - this.plannedLoadout.sidewinders);
-        this.inventory.ironBombs = Math.max(0, this.inventory.ironBombs - this.plannedLoadout.ironBombs);
+        const loaded = this.loadableLoadout();
+        if (loaded.sidewinders < this.plannedLoadout.sidewinders || loaded.ironBombs < this.plannedLoadout.ironBombs) {
+            this.log(`MAGAZINE SHORT: LAUNCHING WITH ${loaded.sidewinders} AIM-9, ${loaded.ironBombs} MK.82.`);
+        }
+        this.inventory.vulcanRounds -= loaded.vulcanAmmo;
+        this.inventory.sidewinders -= loaded.sidewinders;
+        this.inventory.ironBombs -= loaded.ironBombs;
+        this.lastLaunchLoadout = loaded;
 
         this.aircraftState = 'CATAPULT_LAUNCHING';
         this.catapultTimer = 0;

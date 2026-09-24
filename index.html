@@ -18,15 +18,16 @@
     <meta name="keywords" content="vector flight simulator, retro game, CRT phosphor, wireframe 3D, TypeScript game, HTML5 canvas game, carrier deck management, 6-DOF flight dynamics, radar terrain masking, browser game, 1980s arcade, no game engine, linear algebra 3D, air combat simulator" />
     <meta name="author" content="bejranonda" />
     <meta name="theme-color" content="#070d11" />
-    <link rel="canonical" href="https://github.com/bejranonda/carrier-vector-1988" />
+    <link rel="canonical" href="https://bejranonda.github.io/carrier-vector-1988/" />
 
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Carrier Vector: 1988 — Retro CRT Vector Flight Simulator" />
     <meta property="og:description" content="A dual-loop browser game: manage an aircraft carrier flight deck, then fly 6-DOF wireframe sorties through canyons to break SAM radar locks. Zero 3D engine dependencies." />
     <meta property="og:site_name" content="Carrier Vector: 1988" />
+    <meta property="og:url" content="https://bejranonda.github.io/carrier-vector-1988/" />
 
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="Carrier Vector: 1988 — Retro CRT Vector Flight Simulator" />
     <meta name="twitter:description" content="Dual-loop retro flight sim: carrier deck logistics + 3D wireframe air combat. Pure TypeScript, no 3D engines." />
 
@@ -58,6 +59,24 @@
       <!-- Zero-size probe whose padding resolves the safe-area insets, which
            JavaScript cannot read from env() any other way. -->
       <div id="safe-area-probe" aria-hidden="true"></div>
+
+      <!-- Menu screens only: a way to tell us what happened, pre-filled with
+           the build and the browser. Hidden in flight. -->
+      <a id="feedback-link" class="shell-link" target="_blank" rel="noopener" hidden>FEEDBACK</a>
+
+      <!-- Shown only if the frame loop stops for good (GameLoop.onFatalError).
+           A frozen canvas with no message is the worst way to lose a player. -->
+      <div id="crash" class="crash" role="alertdialog" aria-labelledby="crash-title" hidden>
+        <div class="crash-panel">
+          <h2 id="crash-title">DISPLAY LOST SIGNAL</h2>
+          <p>Something went wrong and the game stopped. Your missions, scores and settings are saved.</p>
+          <div class="crash-actions">
+            <button id="crash-reload" type="button">RELOAD</button>
+            <a id="crash-report" target="_blank" rel="noopener">REPORT THIS</a>
+          </div>
+          <pre id="crash-detail"></pre>
+        </div>
+      </div>
     </div>
 
     <!-- Crawler/agent-readable summary. Hidden visually; the game itself is canvas-rendered. -->

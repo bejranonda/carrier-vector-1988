@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUD, assistCaption } from './HUD';
+import { HUD, assistCaption, goHereRelativeBearing } from './HUD';
 import type { AircraftPhysics } from '../flight/AircraftPhysics';
 
 /** isOnApproach only reads position and velocity. */
@@ -83,5 +83,15 @@ describe('assistCaption', () => {
     it('does not put TF on a caption that is not the autopilot', () => {
         expect(assistCaption('TERRAIN', true, true)!.text).not.toContain('TF');
         expect(assistCaption('STALL', true, true)!.text).not.toContain('TF');
+    });
+});
+
+describe('goHereRelativeBearing', () => {
+    it('is zero dead ahead, positive to the right, and wraps', () => {
+        expect(goHereRelativeBearing(0, 0)).toBeCloseTo(0, 9);
+        expect(goHereRelativeBearing(0, Math.PI / 2)).toBeCloseTo(Math.PI / 2, 9);
+        expect(goHereRelativeBearing(0, -Math.PI / 2)).toBeCloseTo(-Math.PI / 2, 9);
+        expect(goHereRelativeBearing(0.1, 2 * Math.PI + 0.3)).toBeCloseTo(0.2, 9);
+        expect(Math.abs(goHereRelativeBearing(0, Math.PI))).toBeCloseTo(Math.PI, 9);
     });
 });

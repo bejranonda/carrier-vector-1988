@@ -295,6 +295,15 @@ export class BriefingScreen {
         if (bestScore > 0) sub += `   ·   PERSONAL BEST ${bestScore} PTS`;
         ctx.fillText(fitText(ctx, sub, w - 60), cx, compact ? 66 : 90);
 
+        // Build stamp, top-right and quiet: a pilot's screenshot or report
+        // should always say which build it came from.
+        ctx.save();
+        ctx.font = font(10, 600);
+        ctx.fillStyle = THEME.muted;
+        ctx.textAlign = 'right';
+        ctx.fillText(`v${__APP_VERSION__}`, w - 16, 20);
+        ctx.restore();
+
         // --- Daily sortie ---
         if (daily && areas.daily) this.dailyPanel(ctx, cx, areas.daily.y, w, daily, timeSec);
 
@@ -745,7 +754,10 @@ export class BriefingScreen {
                 ctx.font = font(12);
                 ctx.fillStyle = THEME.muted;
                 ctx.textAlign = 'left';
-                ctx.fillText(b.label, x + 124, y);
+                // Clipped to the column. Unbounded, the longest label ("Rudder
+                // left (fine aim only - you do not need it to turn)") ran past
+                // colW and printed through the SYSTEM column's keycaps.
+                ctx.fillText(fitText(ctx, b.label, colW - 124 - 8), x + 124, y);
                 y += ROW_H;
             }
             y += GROUP_GAP;

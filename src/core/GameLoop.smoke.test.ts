@@ -16,7 +16,7 @@ import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { storedPalette } from '../renderer/Theme';
-import { SCENARIOS } from './Scenarios';
+import { SCENARIOS, recommendScenario } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
 
 /**
@@ -95,8 +95,11 @@ describe('GameLoop integration smoke test', () => {
      * at all, silently.
      */
     function runFrames(game: InstanceType<typeof GameLoop>, frames: number, msPerFrame = 16.7) {
-        const inner = game as unknown as { step: (t: number) => void; lastTimestamp: number };
-        const step = inner.step.bind(game);
+        // Drives frame(), not step(): step() now survives an exception by
+        // logging it, which is right for players and wrong for a test - a
+        // crashing frame must still fail the suite.
+        const inner = game as unknown as { frame: (t: number) => void; lastTimestamp: number };
+        const step = inner.frame.bind(game);
         let t = inner.lastTimestamp || 0;
         for (let i = 0; i < frames; i++) {
             t += msPerFrame;
@@ -385,6 +388,20 @@ describe('GameLoop integration smoke test', () => {
         } finally {
             window.requestAnimationFrame = originalRaf;
         }
+    });
+
+    it('opens a returning pilot on the recommended mission, not a fixed default', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.missionRecords = { TRAINING_SORTIE: { best: 900, completions: 1, attempts: 1 } };
+        const originalRaf = window.requestAnimationFrame;
+        try {
+            window.requestAnimationFrame = () => 0;
+            game.start();
+        } finally {
+            window.requestAnimationFrame = originalRaf;
+        }
+        expect(game.scenario.id).not.toBe('TRAINING_SORTIE');
+        expect(game.scenario.id).toBe(recommendScenario(game.missionRecords).id);
     });
 
     it('rebuilds the world when a scenario is selected', () => {
@@ -1535,40 +1552,158 @@ describe('GameLoop integration smoke test', () => {
      * has to keep it lined up. Asserted, because "it seemed to work" is not
      * something a player can rely on at the end of a good sortie.
      */
-    it('flies the ball and the speed from the approach entry to short final', () => {
+    it('survives a bad frame, and reports a persistent failure instead of freezing', () => {
+        const game = new GameLoop(makeCanvasStub());
+        const inner = game as unknown as { step: (t: number) => void; frame: (t: number) => void };
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        let fatal: unknown = null;
+        game.onFatalError = (e) => { fatal = e; };
+
+        // One bad frame: logged, and the next frame is still scheduled.
+        const realFrame = inner.frame;
+        let failures = 1;
+        inner.frame = (t: number) => {
+            if (failures-- > 0) throw new Error('boom');
+            realFrame.call(game, t);
+        };
+        inner.step(16);
+        expect(raf).toHaveBeenCalledTimes(1);
+        expect(fatal).toBeNull();
+
+        // A persistent failure: reported once, and the loop stops.
+        failures = Infinity;
+        for (let i = 0; i < GameLoop.FATAL_FRAME_ERRORS; i++) inner.step(32 + i * 16);
+        expect(fatal).toBeInstanceOf(Error);
+        const scheduled = raf.mock.calls.length;
+        expect(scheduled).toBeLessThan(1 + GameLoop.FATAL_FRAME_ERRORS);
+        errorSpy.mockRestore();
+    });
+
+    it('starts a new pilot on FIRST_FLIGHT and graduates them after a completed mission', () => {
+        const game = new GameLoop(makeCanvasStub());
+        expect(game.hud.hudDensity).toBe('FIRST_FLIGHT');
+
+        runFrames(game, 150);
+        game.missionRecords = { TRAINING_SORTIE: { best: 500, completions: 1, attempts: 1 } };
+        game.confirmBriefing();
+        expect(game.hud.hudDensity).toBe('ARCADE');
+    });
+
+    it('names the training target a drone, not a MiG', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('TRAINING_SORTIE');
+        game.confirmBriefing();
+        expect(game.airborneTargets.length).toBeGreaterThan(0);
+        for (const t of game.airborneTargets) expect(t.name.startsWith('DRONE')).toBe(true);
+    });
+
+    it('points the go-here cue at the boat when the jet has to come home', () => {
         const game = new GameLoop(makeCanvasStub());
         airborne(game);
-        game.assistLevel = 'AUTO';
-        game.approachAssist = true;
+        game.strikeTargets = [];
+        // East of the boat, heading north: the boat is to the west.
+        game.physics.position = { x: 8000, y: 1500, z: 0 };
+        expect(game.goHereGoal()).toBeNull();
+        game.physics.fuel = 500; // bingo
+        const goal = game.goHereGoal();
+        expect(goal?.label).toBe('BOAT');
+        expect(goal!.rangeMetres).toBeCloseTo(8000, 0);
+        expect(Math.abs(angleDelta(goal!.bearing, -Math.PI / 2))).toBeLessThan(1e-6);
+    });
+
+    /**
+     * The turn a beginner actually gets: hold A, touch nothing else, default
+     * assists, default tempo. v1.9.0 measured 7.2 deg/s with the nose climbing
+     * to 29 deg and the throttle parked in afterburner. The body-axis sideslip
+     * fix, the ARCADE airframe and the burner cancel together are what this
+     * pins down.
+     */
+    it('a held bank on the default settings is a brisk turn that keeps the nose on the horizon', () => {
+        const game = new GameLoop(makeCanvasStub());
+        game.pacing = 'ARCADE';
+        airborne(game);
         game.airborneTargets = [];
         game.sensors.samSites = [];
-        game.strikeTargets = [];
         game.tracker.clear();
-        // Astern, on the centreline, high and fast - the state a pilot who has
-        // pointed themselves at the boat is actually in.
-        game.physics.position = { x: 0, y: 900, z: APPROACH.touchdownZ - 9000 };
-        game.physics.velocity = { x: 0, y: 0, z: 150 };
+        game.physics.position = { x: 0, y: 2500, z: 0 };
+        game.physics.velocity = { x: 0, y: 0, z: 220 };
+        game.physics.throttle = 1.5;
 
-        let handover = null as null | { y: number; z: number; speed: number };
-        for (let i = 0; i < 600 && handover === null; i++) {
-            runFrames(game, 10);
-            if (game.approachPhase === 'HANDOVER') {
-                handover = {
-                    y: game.physics.position.y,
-                    z: game.physics.position.z,
-                    speed: game.physics.airSpeed
-                };
-            }
+        let turned = 0;
+        let prev = game.physics.yaw;
+        game.inputState['a'] = true;
+        for (let i = 0; i < 48; i++) {
+            runFrames(game, 10); // 8 s at 60 fps
+            turned += angleDelta(prev, game.physics.yaw);
+            prev = game.physics.yaw;
         }
+        game.inputState['a'] = false;
 
-        expect(handover).not.toBeNull();
-        const h = handover!;
-        // On the slope, and slow enough for the arresting gear to take it.
-        const wanted = glideslopeAltitude(APPROACH.touchdownZ - h.z);
-        expect(Math.abs(h.y - wanted)).toBeLessThan(60);
-        expect(h.speed).toBeLessThan(95);
-        expect(game.deck.aircraftState).toBe('AIRBORNE');
+        expect(Math.abs(turned) * 180 / Math.PI).toBeGreaterThan(80);
+        expect(Math.abs(game.physics.pitch) * 180 / Math.PI).toBeLessThan(15);
+
+        // Burner is kept while a hard turn is draining energy, but a hands-off
+        // jet flying straight comes back to military power by itself.
+        runFrames(game, 60 * 12);
+        expect(game.physics.throttle).toBeLessThanOrEqual(1.0 + 1e-6);
     });
+
+    /**
+     * The recovery assist flies the slope and the speed, on BOTH airframes.
+     *
+     * Tightened in v1.10.0 from 60 m / 95 m/s. Those limits were loose enough to
+     * pass an assist that rode ~34 m below the glideslope at idle and never
+     * reached its own speed target - and on the ARCADE airframe that same law
+     * flew into the sea 900 m short. The assist now derives its speed from the
+     * airframe's on-speed AoA, damps flight path rather than attitude, and flies
+     * the slope with a feed-forward; measured, it hands over within ~1 m.
+     */
+    for (const pacing of ['ARCADE', 'SIM'] as const) {
+        it(`flies the ball and the speed from the approach entry to short final (${pacing})`, () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.pacing = pacing;
+            airborne(game);
+            expect(game.physics.liftScale).toBe(pacing === 'ARCADE' ? 1.7 : 1);
+            game.assistLevel = 'AUTO';
+            game.approachAssist = true;
+            game.airborneTargets = [];
+            game.sensors.samSites = [];
+            game.strikeTargets = [];
+            game.tracker.clear();
+            // Astern, on the centreline, high and fast - the state a pilot who has
+            // pointed themselves at the boat is actually in.
+            game.physics.position = { x: 0, y: 900, z: APPROACH.touchdownZ - 9000 };
+            game.physics.velocity = { x: 0, y: 0, z: 150 };
+
+            let handover = null as null | { y: number; z: number; speed: number; alphaDeg: number };
+            let lowest = Infinity;
+            for (let i = 0; i < 600 && handover === null; i++) {
+                runFrames(game, 10);
+                lowest = Math.min(lowest, game.physics.position.y);
+                if (game.approachPhase === 'HANDOVER') {
+                    handover = {
+                        y: game.physics.position.y,
+                        z: game.physics.position.z,
+                        speed: game.physics.airSpeed,
+                        alphaDeg: game.physics.alpha * 180 / Math.PI
+                    };
+                }
+            }
+
+            expect(handover).not.toBeNull();
+            const h = handover!;
+            const wanted = glideslopeAltitude(APPROACH.touchdownZ - h.z);
+            expect(Math.abs(h.y - wanted)).toBeLessThan(20);
+            expect(h.speed).toBeLessThan(90);
+            expect(lowest).toBeGreaterThan(30);
+            expect(game.deck.aircraftState).toBe('AIRBORNE');
+            // ARCADE flies on-speed per the AoA indexer (8.1 +- 1.2 deg).
+            if (pacing === 'ARCADE') expect(Math.abs(h.alphaDeg - 8.1)).toBeLessThan(1.2);
+        });
+    }
 
     /**
      * Lineup is the player's, so the assist must not be quietly steering
@@ -1856,6 +1991,38 @@ describe('GameLoop integration smoke test', () => {
         for (let i = 0; i < 300 && game.weapons.harms.length > 0; i++) {
             runFrames(game, 1);
         }
+        expect(game.sensors.samSites.some(s => s.id === sam.id)).toBe(false);
+    });
+
+    /**
+     * Known Issues #47: the HARM's range and kill radius had only ever been
+     * checked from a hover directly over the site. This is the shot a player
+     * actually takes - stand-off, inbound, from several kilometres - run
+     * through the real fixed-update loop.
+     */
+    it('kills a radiating SAM with a stand-off HARM shot from 7 km', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        game.physics.loadout.harms = 2;
+        game.airborneTargets = [];
+
+        const sam = game.sensors.samSites[0];
+        const standoff = 7000;
+        game.physics.position = { x: sam.position.x, y: sam.position.y + 1800, z: sam.position.z - standoff };
+        game.physics.velocity = { x: 0, y: 0, z: 220 };
+        game.physics.yaw = 0;
+        game.physics.pitch = 0;
+        runFrames(game, 10);
+        const radiating = game.sensors.activeThreats.some(t => t.id === sam.id && t.state !== 'SILENT');
+        expect(radiating).toBe(true);
+
+        game.selectedWeapon = 'HARM';
+        game.fireSelectedWeapon();
+        expect(game.weapons.harms.length).toBe(1);
+
+        for (let i = 0; i < 60 * 30 && game.weapons.harms.length > 0; i++) runFrames(game, 1);
         expect(game.sensors.samSites.some(s => s.id === sam.id)).toBe(false);
     });
 

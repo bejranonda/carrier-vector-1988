@@ -54,7 +54,7 @@ if (this.airSpeed > 20) {
 
 ### 3.1. P0-C: Replace Cryptic RWR with an Integrated Tactical Radar / Minimap
 * **The Problem:** The current bottom-right scope only displays military warning letters (`S`, `T`, `M`, `X`) for radiating SAMs. It does not show the aircraft carrier, enemy fighters, waypoints, or terrain.
-* **The Redesign:** Upgrade the circular scope in [HUD.ts:1454](file:///d:/Git/Werapol/Game/Flight/src/renderer/HUD.ts#L1454) into a **Unified Tactical Radar**:
+* **The Redesign:** Upgrade the circular scope in [HUD.ts:1454](../../../src/renderer/HUD.ts#L1454) into a **Unified Tactical Radar**:
   1. **Carrier Homeplate:** Solid white box/triangle with bearing line and distance (e.g. `CV-68 8.4NM`).
   2. **Bandits:** Red triangles/chevrons pointing in their flight direction.
   3. **Target Waypoint:** Yellow diamond for the active mission objective.

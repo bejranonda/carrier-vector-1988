@@ -6,7 +6,7 @@ import {
     solveHudClickableAreas,
     hitTestHud
 } from './PointerInteractivity';
-import { solveHudLayout } from './HudLayout';
+import { solveHudLayout, solveArcadeBar, arcadeBarFlags, cornerButtonRects, proChipRects } from './HudLayout';
 
 describe('PointerInteractivity', () => {
     describe('pointInRect', () => {
@@ -126,7 +126,8 @@ describe('PointerInteractivity', () => {
                 selectedWeapon: 'GUN' as const,
                 assistLabel: 'assist',
                 hudDensity: 'ARCADE' as const,
-                padlockActive: false
+                padlockActive: false,
+                rewindsRemaining: 2
             };
             const areas = solveHudClickableAreas(1280, 720, layout, state);
             const gunPill = areas.find(a => a.id === 'WEAPON_GUN');
@@ -143,6 +144,73 @@ describe('PointerInteractivity', () => {
 
             expect(hitTestHud(aim9Pill!.rect.x + 5, aim9Pill!.rect.y + 5, 1280, 720, layout, state)).toBe('WEAPON_AIM9');
             expect(hitTestHud(assistPill!.rect.x + 5, assistPill!.rect.y + 5, 1280, 720, layout, state)).toBe('ASSIST_CYCLE');
+        });
+
+        /**
+         * Regression, v1.10.0: the hit-tester passed its own pill flags
+         * (no chaff pill) while the renderer drew the chaff pill, so every click
+         * on ASSIST / REWIND / PADLOCK landed 104 px left of the visible pill.
+         * Both now read `arcadeBarFlags`; this pins them to the same rects.
+         */
+        it('puts every clickable pill exactly where the renderer draws it', () => {
+            for (const ctxState of [
+                { rewindsRemaining: 2, hasDesignation: true, padlockActive: false },
+                { rewindsRemaining: 0, hasDesignation: false, padlockActive: false },
+                { rewindsRemaining: 1, hasDesignation: false, padlockActive: true }
+            ]) {
+                const state = {
+                    selectedWeapon: 'GUN' as const,
+                    assistLabel: 'assist',
+                    hudDensity: 'ARCADE' as const,
+                    ...ctxState
+                };
+                const drawn = solveArcadeBar({ width: 1280, height: 720, weaponCount: 4, ...arcadeBarFlags(ctxState) });
+                const clickable = solveHudClickableAreas(1280, 720, layout, state);
+                const pairs: [string, string][] = [
+                    ['WEAPON_0', 'WEAPON_GUN'], ['ASSIST', 'ASSIST_CYCLE'],
+                    ['REWIND', 'TIME_REWIND'], ['PADLOCK', 'PADLOCK']
+                ];
+                for (const [slotId, actionId] of pairs) {
+                    const slot = drawn.find(d => d.id === slotId);
+                    const area = clickable.find(a => a.id === actionId);
+                    expect(Boolean(area), `${actionId} clickable iff drawn`).toBe(Boolean(slot));
+                    if (slot && area) expect(area.rect).toEqual(slot.rect);
+                }
+            }
+        });
+
+        it('clicks the PRO chips and corner buttons exactly where they are drawn (#45)', () => {
+            const state = { selectedWeapon: 'GUN' as const, assistLabel: 'assist', hudDensity: 'PRO' as const, padlockActive: false };
+            const areas = solveHudClickableAreas(1440, 900, layout, state);
+            const chips = proChipRects(900);
+            expect(areas.find(a => a.id === 'WEAPON_GUN')?.rect).toEqual(chips[0]);
+            expect(areas.find(a => a.id === 'WEAPON_HARM')?.rect).toEqual(chips[3]);
+            const corner = cornerButtonRects(1440);
+            expect(areas.find(a => a.id === 'HUD_MODE')?.rect).toEqual(corner.hud);
+            expect(areas.find(a => a.id === 'SWITCH_DECK')?.rect).toEqual(corner.deck);
+            expect(areas.find(a => a.id === 'PITCH_INVERT')?.rect).toEqual(corner.stick);
+        });
+
+        it('leaves no invisible click traps where the removed keycap strip was', () => {
+            const state = { selectedWeapon: 'GUN' as const, assistLabel: 'assist', hudDensity: 'PRO' as const, padlockActive: false };
+            // The old strip's ASSIST / PADLOCK / DECK shortcuts were registered here.
+            for (const x of [300, 400, 500]) {
+                expect(hitTestHud(x, 900 - 30, 1440, 900, layout, state)).toBeNull();
+            }
+        });
+
+        it('offers no HUD buttons in FIRST_FLIGHT, so a click designates instead', () => {
+            const areas = solveHudClickableAreas(1280, 720, layout, {
+                selectedWeapon: 'GUN', assistLabel: 'assist', hudDensity: 'FIRST_FLIGHT', padlockActive: false
+            });
+            expect(areas).toEqual([]);
+        });
+
+        it('shows REWIND only while charges remain, and PADLOCK only with a designation', () => {
+            expect(arcadeBarFlags({ rewindsRemaining: 0, hasDesignation: false, padlockActive: false }))
+                .toEqual({ showCountermeasure: true, showRewind: false, showPadlock: false });
+            expect(arcadeBarFlags({ rewindsRemaining: 2, hasDesignation: true, padlockActive: false }))
+                .toEqual({ showCountermeasure: true, showRewind: true, showPadlock: true });
         });
 
         it('detects deck switch button and hud mode toggle', () => {

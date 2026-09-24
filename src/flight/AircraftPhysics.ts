@@ -33,6 +33,12 @@ export class AircraftPhysics {
      * model untouched (the physics tests rely on that); the game loop sets 1.
      */
     public turnAssist: number = 0;
+    /**
+     * Multiplier on wing lift, set by the ops tempo (`PacingSpec.liftScale`).
+     * 1.0 is the original airframe and the raw-model default, so every physics
+     * test keeps exercising the honest numbers; the game loop opts in.
+     */
+    public liftScale: number = 1;
     public yaw: number = 0;   // radians (positive = nose right / heading clockwise)
 
     // Mass & Propulsion
@@ -74,6 +80,10 @@ export class AircraftPhysics {
     public static readonly MAX_AB_THRUST = 145000; // N (~32,500 lbf)
     public static readonly WING_AREA = 38.0; // m^2
     public static readonly SEA_LEVEL_DENSITY = 1.225; // kg/m^3
+    /** Lift-curve slope below the stall, per degree of AoA. */
+    public static readonly LIFT_SLOPE_PER_DEG = 0.085;
+    /** On-speed approach AoA - the AoA indexer's centre, degrees (F-14). */
+    public static readonly ON_SPEED_ALPHA_DEG = 8.1;
     public static readonly BASE_FUEL_BURN_RATE = 1.6; // L/s at 100% military power
     public static readonly AB_FUEL_BURN_MULT = 3.5;
     /** 1/s: how firmly the nose is drawn onto the velocity heading. */
@@ -90,6 +100,26 @@ export class AircraftPhysics {
 
     public get airSpeed(): number {
         return Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2 + this.velocity.z ** 2);
+    }
+
+    /**
+     * The airspeed at which this airframe, at its current weight, flies 1 g
+     * at `alphaDeg` of AoA near sea level - i.e. the "on-speed" approach speed
+     * the AoA indexer is built around (8.1 deg, the F-14 figure).
+     *
+     * The recovery assist used to fly a fixed 70 m/s. On the original airframe
+     * that needs 15.5 deg of AoA - past the stall limiter's own 14.9 deg limit -
+     * so the assist could never actually reach its target; it only ever passed
+     * its test because it arrived at the wires still decelerating at 95 m/s.
+     * Deriving the speed from the airframe makes the target flyable for every
+     * ops tempo and keeps the indexer honest.
+     */
+    public onSpeedApproachSpeed(alphaDeg = AircraftPhysics.ON_SPEED_ALPHA_DEG): number {
+        const liftCoeff = Math.max(0.05, alphaDeg * AircraftPhysics.LIFT_SLOPE_PER_DEG);
+        const weight = this.totalMass * AircraftPhysics.GRAVITY;
+        return Math.sqrt(
+            (2 * weight) / (AircraftPhysics.SEA_LEVEL_DENSITY * AircraftPhysics.WING_AREA * this.liftScale * liftCoeff)
+        );
     }
 
     public get forwardVector(): Vector3 {
@@ -340,13 +370,13 @@ export class AircraftPhysics {
         const alphaDeg = this.alpha * (180 / Math.PI);
         let liftCoeff = 0;
         if (!this.isStalled) {
-            liftCoeff = Math.min(1.6, Math.max(-1.0, alphaDeg * 0.085));
+            liftCoeff = Math.min(1.6, Math.max(-1.0, alphaDeg * AircraftPhysics.LIFT_SLOPE_PER_DEG));
         } else {
             // Post-stall lift cliff
             liftCoeff = Math.sign(alphaDeg) * 0.25;
         }
 
-        const liftForceMagnitude = dynamicPressure * AircraftPhysics.WING_AREA * liftCoeff;
+        const liftForceMagnitude = dynamicPressure * AircraftPhysics.WING_AREA * liftCoeff * this.liftScale;
 
         // Parasitic drag base + bay doors open penalty
         let cd0 = 0.024;
@@ -369,7 +399,7 @@ export class AircraftPhysics {
         }
 
         const totalDragCoeff = cd0 + inducedDragCoeff + (this.isStalled ? 0.25 : 0);
-        const totalDragForceMagnitude = dynamicPressure * AircraftPhysics.WING_AREA * totalDragCoeff;
+        const totalDragForceMagnitude = dynamicPressure * AircraftPhysics.WING_AREA * totalDragCoeff * this.liftScale;
 
         // 6. Force Decomposition
         // Thrust acts in forward direction
@@ -427,18 +457,30 @@ export class AircraftPhysics {
         // Directional stability: a real airframe weathervanes, so the nose is
         // drawn round toward where the jet is actually going. This is what
         // turns a held bank into a turn even with no back-stick - the tilted
-        // lift curves the velocity (above), and the nose follows it. Weighted
-        // by how horizontal the flight path is, so it never fights a loop, and
-        // weak enough that the rudder can still hold the nose off-axis for
-        // gunnery.
-        const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-        if (horizSpeed > 30 && !this.isStalled) {
-            const velHeading = Math.atan2(this.velocity.x, this.velocity.z);
-            let diff = velHeading - this.yaw;
-            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-            const horizontality = (horizSpeed / Math.max(1, this.airSpeed)) ** 2;
-            const authority = Math.min(1, this.airSpeed / 150);
-            this.yaw += diff * AircraftPhysics.WEATHERVANE_GAIN * horizontality * authority * dt;
+        // lift curves the velocity (above), and the nose follows it.
+        //
+        // It acts about the BODY yaw axis, on the sideslip angle beta. It used
+        // to act about the WORLD vertical, on the heading error - identical
+        // wings-level, and badly wrong in a bank: at 75 degrees the body yaw
+        // axis is nearly horizontal, so the real restoring moment is mostly a
+        // nose-DOWN rotation, and the old term could not produce one. Measured
+        // before the fix, 16 s of held bank left the nose 43 degrees above the
+        // horizon while the jet descended 146 m - a sideslip nothing corrected,
+        // which is what turned every held bank into a slow climbing spiral.
+        // Sideslip is zero in a loop, so this never fights one.
+        const speedNow = this.airSpeed;
+        if (speedNow > 30 && !this.isStalled) {
+            const right = this.rightVector;
+            const slip = (this.velocity.x * right.x + this.velocity.y * right.y + this.velocity.z * right.z) / speedNow;
+            const beta = Math.asin(Math.max(-1, Math.min(1, slip)));
+            const authority = Math.min(1, speedNow / 150);
+            const r = beta * AircraftPhysics.WEATHERVANE_GAIN * authority;
+            // Euler kinematics for a body yaw rate r (roll > 0 is right wing
+            // down): pitch' = -r sin(roll), heading' = r cos(roll) / cos(pitch).
+            const cosPitch = Math.max(0.2, Math.cos(this.pitch));
+            this.pitch -= r * Math.sin(this.roll) * dt;
+            this.yaw += (r * Math.cos(this.roll) / cosPitch) * dt;
+            this.foldPastVertical();
             this.normalizeAngles();
         }
 

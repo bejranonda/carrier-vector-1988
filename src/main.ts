@@ -14,6 +14,8 @@ import './style.css';
 import { GameLoop } from './core/GameLoop';
 import { soundFX } from './audio/SoundFX';
 import { SCENARIOS } from './core/Scenarios';
+import { normalizeKey } from './core/Controls';
+import { feedbackUrl } from './core/Feedback';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -71,7 +73,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('pointerdown', unlockAudio);
 
     window.addEventListener('keydown', (e) => {
-        const key = e.key.toLowerCase();
+        // The stick cluster by physical position, everything else by label -
+        // see Controls.normalizeKey. Keyup below MUST use the same mapping, or
+        // a key pressed on one layout could be released under another name
+        // and stick down.
+        const key = normalizeKey(e.key, e.code);
         game.inputState[key] = true;
 
         // --- Global overlay / system keys ---
@@ -276,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('keyup', (e) => {
-        game.inputState[e.key.toLowerCase()] = false;
+        game.inputState[normalizeKey(e.key, e.code)] = false;
     });
 
     /**
@@ -375,6 +381,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // An orientation change fires before the viewport settles on some
     // browsers, so re-solve once it has.
     window.addEventListener('orientationchange', () => setTimeout(handleResize, 120));
+
+    // --- Shell: feedback link and crash screen -------------------------
+    const reportContext = (error?: string) => ({
+        version: __APP_VERSION__,
+        userAgent: navigator.userAgent,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        scenario: game.scenario.id,
+        error
+    });
+
+    const feedback = document.getElementById('feedback-link') as HTMLAnchorElement | null;
+    if (feedback) {
+        // Refreshed on hover/focus so the report carries the current screen
+        // size and mission, not the ones from page load.
+        const refresh = () => { feedback.href = feedbackUrl('feedback', reportContext()); };
+        refresh();
+        feedback.addEventListener('pointerenter', refresh);
+        feedback.addEventListener('focus', refresh);
+        // Menus only: in flight a corner link is a thing to mis-tap.
+        window.setInterval(() => {
+            feedback.hidden = game.phase === 'ACTIVE' || game.phase === 'BOOT';
+        }, 400);
+    }
+
+    game.onFatalError = (error) => {
+        const detail = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ''}` : String(error);
+        const crash = document.getElementById('crash');
+        const text = document.getElementById('crash-detail');
+        const report = document.getElementById('crash-report') as HTMLAnchorElement | null;
+        const reload = document.getElementById('crash-reload');
+        if (text) text.textContent = `v${__APP_VERSION__}\n${detail}`;
+        if (report) report.href = feedbackUrl('crash', reportContext(detail));
+        reload?.addEventListener('click', () => window.location.reload());
+        if (crash) crash.hidden = false;
+        reload?.focus();
+    };
 
     game.start();
 });
