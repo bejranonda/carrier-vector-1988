@@ -70,6 +70,20 @@ export const APPROACH_TUNING = {
     /** Speed to fly the join, m/s - brisker, since it can be a long way. */
     joinSpeed: 200,
     /**
+     * Speed to fly the short, tight reversal when the aeroplane is already
+     * astern but pointed the wrong way, m/s.
+     *
+     * `joinSpeed` and `joinMaxBank` are tuned for a long transit that can
+     * afford a wide, gentle turn; here the aeroplane may be only a few
+     * hundred metres from the boat, so the turn has to close in a radius far
+     * smaller than that transit turn's ~11 km. Slower and tighter (see
+     * `homeTurnMaxBank`) keeps the turn radius under a kilometre, so the
+     * reversal finishes without ever leaving the corridor it started in.
+     */
+    homeTurnSpeed: 110,
+    /** Bank for the close-in reversal above - steeper than the transit join. */
+    homeTurnMaxBank: 0.7,
+    /**
      * Altitude to fly the join at, metres.
      *
      * A transit altitude, not a pattern altitude. The way home from a canyon
@@ -125,6 +139,19 @@ export const APPROACH_TUNING = {
     corridorHalfWidth: 3000,
     /** Furthest out the glideslope is flown rather than joined, metres. */
     captureRange: 14000,
+    /**
+     * Heading error, radians, beyond which the corridor is not flyable even
+     * from a good position - see `inApproachCorridor`.
+     *
+     * Regression, v1.11.0: a jet 265 m astern of the wires but pointed 194
+     * degrees off the final course (heading was never checked, only position)
+     * was classified FINAL and, under the autopilot, simply held that heading
+     * forever - "take me home" flew the aeroplane away from the carrier for
+     * good. Sixty degrees is inside what `finalMaxBank` and the lineup
+     * correction can actually turn out of; anything wider is a job for JOIN,
+     * which turns the aeroplane around first.
+     */
+    finalHeadingTolerance: Math.PI / 3,
     /** Radians of lineup correction per metre of lateral error. */
     lineupGain: 0.0006,
     /**
@@ -206,21 +233,35 @@ export function glideslopeAltitude(rangeToWires: number, tuning: ApproachTuning 
     return tuning.deckHeight + slope * Math.max(0, rangeToWires);
 }
 
+/** Smallest signed angle from `a` to `b`, radians, wrapped to [-pi, pi]. */
+function headingDelta(a: number, b: number): number {
+    let d = (b - a) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+}
+
 /**
  * Is the aeroplane somewhere the glideslope can be flown from - astern of the
- * wires, inside the corridor and inside capture range?
+ * wires, inside the corridor, inside capture range, and (when a heading is
+ * given) actually pointed somewhere near the final course?
  *
  * Anywhere else and the answer is to go and get behind the boat first, which
- * is what the JOIN phase is for.
+ * is what the JOIN phase is for. `headingRadians` is optional and omitting it
+ * keeps the pre-v1.11.0 position-only test, which every existing caller that
+ * does not track heading still gets.
  */
 export function inApproachCorridor(
     position: ApproachPosition,
-    tuning: ApproachTuning = APPROACH_TUNING
+    tuning: ApproachTuning = APPROACH_TUNING,
+    headingRadians?: number
 ): boolean {
     const rangeToWires = tuning.touchdownZ - position.z;
-    return rangeToWires > 0
+    const inPosition = rangeToWires > 0
         && rangeToWires <= tuning.captureRange
         && Math.abs(position.x) <= tuning.corridorHalfWidth;
+    if (!inPosition || headingRadians === undefined) return inPosition;
+    return Math.abs(headingDelta(headingRadians, tuning.finalCourse)) <= tuning.finalHeadingTolerance;
 }
 
 /**
@@ -237,6 +278,11 @@ export interface ApproachMotion {
     bank?: number;
     /** Speed across the centreline, m/s. Positive is drifting right. */
     lateralSpeed?: number;
+    /**
+     * Current heading, radians. Omitting it keeps the pre-v1.11.0 corridor
+     * test (position only) - see `inApproachCorridor`.
+     */
+    heading?: number;
 }
 
 export function approachGuidance(
@@ -277,6 +323,29 @@ export function approachGuidance(
             altitudeMsl: stepped(tuning.joinAltitude),
             airSpeed: tuning.joinSpeed,
             maxBank: tuning.joinMaxBank,
+            rangeToWires,
+            glideslopeError,
+            lineupError
+        };
+    }
+
+    /**
+     * Regression, v1.11.0: a jet already in a good POSITION but pointed the
+     * wrong way used to be handed the join-point bearing above anyway, which
+     * for a close-in aeroplane points to a spot even further astern - the
+     * assist chased a receding point and never actually turned around. Here
+     * there is nothing to route to: the aeroplane is already where it needs
+     * to be, so the fix is simply to turn and face the boat.
+     */
+    const headingOk = motion.heading === undefined
+        || Math.abs(headingDelta(motion.heading, tuning.finalCourse)) <= tuning.finalHeadingTolerance;
+    if (!headingOk) {
+        return {
+            phase: 'JOIN',
+            bearing: tuning.finalCourse,
+            altitudeMsl: stepped(tuning.patternAltitude),
+            airSpeed: tuning.homeTurnSpeed,
+            maxBank: tuning.homeTurnMaxBank,
             rangeToWires,
             glideslopeError,
             lineupError

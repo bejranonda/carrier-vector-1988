@@ -1739,22 +1739,63 @@ describe('GameLoop integration smoke test', () => {
     });
 
     /**
-     * The assist does not ferry the aeroplane home. Out of the corridor it is
-     * a cue - which way to go - and the player flies it, because a transit is
-     * the part of a sortie that touch controls are already good at.
+     * v1.11.0: under AUTO, JOIN now actually steers toward the join point
+     * astern of the boat, rather than leaving the aeroplane on whatever
+     * heading it already had - see the "take me home from anywhere" test
+     * below for why. Under ASSIST/MANUAL the HUD's JOIN cue is still the only
+     * guidance, because there the pilot is hand-flying and an autopilot
+     * quietly steering underneath them would fight every correction.
      */
-    it('cues rather than flies when the jet is not astern of the boat', () => {
+    it('steers toward the join point under AUTO when not yet astern of the boat', () => {
         const game = new GameLoop(makeCanvasStub());
         airborne(game);
         game.assistLevel = 'AUTO';
         game.approachAssist = true;
         game.physics.position = { x: 7000, y: 1400, z: 3000 };
-        runFrames(game, 2);
+        game.physics.yaw = 0;
+        runFrames(game, 600);
 
         expect(game.approachPhase).toBe('JOIN');
-        // Still flying under the ordinary autopilot, not the approach: the
-        // recovery has no say in where the jet goes until it is astern.
+        // A join point behind the boat, off to the jet's left: the assist
+        // must actually turn it, not hold the heading it launched with.
+        expect(game.physics.yaw).not.toBeCloseTo(0, 1);
         expect(game.physics.position.y).toBeGreaterThan(1000);
+    });
+
+    /**
+     * Regression, v1.11.0: a beginner playtest killed the training drone,
+     * pressed L, and the jet flew from 643 m astern of the carrier to 7.9 km
+     * away over 80 seconds and never turned back - "TAKE ME HOME" took the
+     * player further from home, forever. The state below is the measured
+     * one: close astern, but pointed almost directly away from the boat.
+     */
+    it('takes the jet home even when it starts pointed away from the boat', () => {
+        const game = new GameLoop(makeCanvasStub());
+        airborne(game);
+        game.assistLevel = 'AUTO';
+        game.approachAssist = true;
+        game.airborneTargets = [];
+        game.sensors.samSites = [];
+        game.strikeTargets = [];
+        game.tracker.clear();
+        game.physics.position = { x: 40, y: 1170, z: APPROACH.touchdownZ - 640 };
+        game.physics.velocity = { x: 0, y: 0, z: -70 }; // moving away, not toward
+        game.physics.yaw = Math.PI + 0.3; // ~197 degrees - pointed almost dead away
+
+        let handover = null as null | { z: number };
+        let farthest = 0;
+        for (let i = 0; i < 1200 && handover === null; i++) {
+            runFrames(game, 10);
+            const rangeToWires = APPROACH.touchdownZ - game.physics.position.z;
+            farthest = Math.max(farthest, -rangeToWires);
+            if (game.approachPhase === 'HANDOVER') handover = { z: game.physics.position.z };
+        }
+
+        expect(handover).not.toBeNull();
+        // It may fly further out before turning around, but nothing like the
+        // 7.9 km measured with the bug: this bounds a regression back to it.
+        expect(farthest).toBeLessThan(3000);
+        expect(game.deck.aircraftState).toBe('AIRBORNE');
     });
 
     it('turns the autopilot on when the recovery assist is asked for', () => {
@@ -2163,5 +2204,92 @@ describe('GameLoop integration smoke test', () => {
         runFrames(game, 200); // well past the reload timer
         expect(game.releaseChaff()).toBe(false);
         expect(game.physics.loadout.chaff).toBe(0);
+    });
+
+    /**
+     * The pilot menu (v1.11.0) - a beginner playtest asked plainly for
+     * "menu to click and select what to do". See PilotMenu.ts.
+     */
+    describe('pilot menu', () => {
+        it('opens with ESC-equivalent toggleMenu and pauses the simulation', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            const before = { ...game.physics.position };
+            game.toggleMenu();
+            expect(game.menuOpen).toBe(true);
+            expect(game.paused).toBe(true);
+            runFrames(game, 60);
+            // Nothing moves while paused.
+            expect(game.physics.position).toEqual(before);
+        });
+
+        it('does nothing before a sortie has started', () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.toggleMenu();
+            expect(game.menuOpen).toBe(false);
+        });
+
+        it('RESUME closes the menu and changes nothing else', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            game.toggleMenu();
+            game.activateMenuItem('RESUME');
+            expect(game.menuOpen).toBe(false);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('LET THE AUTOPILOT FLY switches to AUTO', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            game.assistLevel = 'MANUAL';
+            game.toggleMenu();
+            game.activateMenuItem('FLY_FOR_ME');
+            expect(game.assistLevel).toBe('AUTO');
+            expect(game.menuOpen).toBe(false);
+        });
+
+        it('TAKE ME HOME turns the recovery assist on without a second press', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            game.approachAssist = false;
+            game.toggleMenu();
+            game.activateMenuItem('TAKE_ME_HOME');
+            expect(game.approachAssist).toBe(true);
+        });
+
+        it('RESTART puts the jet back on the catapult', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            game.toggleMenu();
+            game.activateMenuItem('RESTART');
+            expect(game.phase).toBe('ACTIVE');
+            expect(game.deck.aircraftState).not.toBe('AIRBORNE');
+        });
+
+        it('MISSION_SELECT returns to the briefing', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            game.toggleMenu();
+            game.activateMenuItem('MISSION_SELECT');
+            expect(game.phase).toBe('BRIEFING');
+            expect(game.menuOpen).toBe(false);
+        });
+
+        it("restates the current objective in plain words", () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            const objective = game.menuObjective();
+            expect(objective.title.length).toBeGreaterThan(0);
+            expect(objective.plain.length).toBeGreaterThan(0);
+        });
+
+        it('a click routes through handlePilotMenuClick only while open', () => {
+            const game = new GameLoop(makeCanvasStub());
+            airborne(game);
+            expect(game.handlePilotMenuClick(10, 10)).toBe(false);
+            game.toggleMenu();
+            expect(game.handlePilotMenuClick(10, 10)).toBe(true);
+        });
     });
 });

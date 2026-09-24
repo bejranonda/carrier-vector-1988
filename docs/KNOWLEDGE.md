@@ -1435,3 +1435,66 @@ touched.
 | Non-test source | ~21,000 lines |
 | Runtime dependencies | 0 |
 | Bundle | 246.2 kB raw / 79.6 kB gzip |
+
+## 22. Pilot Menu, Climb Limiter and Recovery Fix (v1.11.0)
+
+### 22.1 ASSIST climb-attitude limiter (`FlightAssist.climbLimited`)
+
+Held nose-up demand fades out approaching a pitch-attitude limit and becomes a
+gentle push beyond it - independent of the (alpha-based) stall limiter, which
+is unloaded in a zoom climb and does not catch this case.
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `maxClimbPitch` | 0.61 rad (~35°) | Steepest ASSIST lets a held pull reach |
+| `climbPitchBlend` | 0.12 rad | Fade-out band below the limit |
+| `climbPitchGain` | 3 | Push per radian past the limit |
+
+MANUAL is untouched; loops and full aerobatics are one key (`F`) away.
+
+### 22.2 Recovery "take me home" - two JOIN cases (`ApproachGuidance.ts`)
+
+`inApproachCorridor(position, tuning, headingRadians?)` - heading optional,
+old callers unaffected. Two distinct failure modes now get two distinct fixes:
+
+| Case | Test | Guidance |
+| :-- | :-- | :-- |
+| Out of position (too far, off to one side) | `!inApproachCorridor(position, tuning)` (no heading) | Route to the join point, 9 km astern - unchanged, still a CUE under ASSIST/MANUAL |
+| In position, wrong heading | position check passes, heading check fails (`> finalHeadingTolerance`, π/3) | A short, tight reversal: `bearing = finalCourse`, `airSpeed = homeTurnSpeed` (110 m/s), `maxBank = homeTurnMaxBank` (0.7 rad) |
+
+`GameLoop.recoveryNav` distinguishes the two the same way -
+`inApproachCorridor(position, tuning)` without heading - so no new
+`ApproachPhase` value was needed. Only the in-position case is flown under
+AUTO; the out-of-position case is still left to the player as a HUD cue.
+
+Measured convergence from the reported failure state (640 m astern, heading
+197°): `HANDOVER` within ~30 s, peak divergence ~1.4 km (was 7.9 km and
+climbing, unfixed).
+
+### 22.3 Pilot menu (`PilotMenu.ts`, `PilotMenuView.ts`)
+
+Items, most useful first: `RESUME`, `LAUNCH` (deck only), `FLY_FOR_ME`
+(labelled by current autopilot state), `TAKE_ME_HOME` (airborne only),
+`CONTROLS`, `INSTRUMENTS`, `SOUND`, `RESTART`, `MISSION_SELECT`. Opened by
+`ESC`, a corner `MENU (ESC)` DOM button (desktop, hidden on touch), or the
+touch `MENU` control (repointed from the raw help overlay). `GameLoop.paused`
+now includes `menuOpen`. Layout (`pilotMenuLayout`) is the single solver both
+`drawPilotMenu` and `pilotMenuHitTest` read, matching `HudLayout` /
+`DeckLayout`'s existing discipline.
+
+### 22.4 "Step pays off" reward banner (`Scenarios.shortCallout`)
+
+Every scripted phase's existing radio `callout` string now also produces an
+on-screen PRAISE banner and a confirmation tone (`GameLoop.updateMission`),
+in addition to the tactical log line it always produced. `shortCallout` strips
+the speaker prefix and keeps the first sentence - reusing copy every scenario
+already had, rather than writing new reward text.
+
+### 22.5 Build metrics (v1.11.0)
+
+| Metric | Value |
+| :-- | --: |
+| Tests | 1,029 passing, 57 files |
+| Browser checks | 33 (`npm run playtest`) |
+| Runtime dependencies | 0 |
+| Bundle | 253.6 kB raw / 82.0 kB gzip |

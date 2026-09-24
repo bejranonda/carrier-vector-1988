@@ -181,6 +181,26 @@ export interface ScenarioDef {
 // ---------------------------------------------------------------------
 
 const KM = (m: number | null) => (m === null ? '--' : `${(m / 1000).toFixed(1)} km`);
+/**
+ * The first sentence of a phase's radio callout, stripped of its speaker
+ * prefix - short enough for the on-screen PRAISE banner `GameLoop` shows
+ * when a phase completes (v1.11.0). Every phase's `callout` field was
+ * already written as a short, satisfying line for exactly this moment; it
+ * only ever reached the tactical log before, which a player mid-manoeuvre
+ * is not reading. See "every step pays off" in the v1.11.0 review.
+ */
+export function shortCallout(text: string): string {
+    const withoutSpeaker = text.replace(/^[A-Z][A-Z0-9 -]*:\s*/, '');
+    const firstSentence = withoutSpeaker.match(/^.*?[.!]/)?.[0] ?? withoutSpeaker;
+    return firstSentence.trim();
+}
+/**
+ * Matches `HUD.ts`'s own altimeter conversion. The training card used to say
+ * "Current altitude: X m" while the altimeter it sits directly above reads
+ * feet - a beginner playtest confusion (mixed units on the one screen a new
+ * pilot is staring at) rather than a display bug, but no less real for it.
+ */
+const FT = (m: number) => Math.round(m * 3.28084);
 
 /** The canyon corridor runs up +Z from the carrier at the origin. */
 export const CANYON = {
@@ -647,7 +667,7 @@ const TRAINING_SORTIE: ScenarioDef = {
         {
             id: 'CLIMB_OUT',
             title: 'CLIMB TO 2,500 FT',
-            detail: (s) => `Climb to 2,500 ft (760 m). Current altitude: ${Math.round(s.altitudeAgl)} m.`,
+            detail: (s) => `Climb to 2,500 ft. Current altitude: ${FT(s.altitudeAgl)} ft.`,
             key: 'W',
             urgency: 'ACTION',
             isComplete: (s) => s.altitudeAgl >= 700,

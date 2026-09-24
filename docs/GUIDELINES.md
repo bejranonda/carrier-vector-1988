@@ -544,3 +544,40 @@ rendered frames. Five suites of source-reading review had missed all of them.
 - **Run `npm run playtest` before every release.** It is not in the deploy gate
   (its turn-rate check is wall-clock based), so it is on the release checklist
   instead. A release whose harness has not been run has not been looked at.
+
+## 15. Rules added in v1.11.0 (each one encodes a bug that already shipped)
+
+- **A protection needs an attitude limit, not just a rate limit, if the axis
+  it protects can be unloaded.** The stall limiter is alpha-based; a zoom
+  climb unloads the wing (alpha stays low) while pitch attitude runs away.
+  Test the thing a beginner will actually do (hold the stick), not just the
+  thing the limiter was designed to catch.
+- **A steering law tuned for a long transit is the wrong law for a short
+  reversal.** The join-point route flies a ~11 km-radius turn at 200 m/s -
+  correct for "come back from the canyon", wrong for "you are 600 m astern
+  and facing backward". Distinguish the cases by the SAME position test the
+  guidance already computes (`inApproachCorridor`, position-only), not by
+  adding a new phase or a new heuristic.
+- **A classification that depends only on position, when the fix depends on
+  heading too, will silently misclassify.** `inApproachCorridor` didn't know
+  which way the aeroplane was pointed; a jet astern but facing away was
+  called `FINAL`, where lineup is deliberately left to the player - and
+  under the autopilot, nobody was flying lineup. If a state can be entered
+  from any heading, the classifier needs heading as an input, with the old
+  call sites defaulting to the old behaviour (make the new parameter
+  optional) so nothing that already relies on position-only breaks.
+- **Test a fix against the worst input you can reproduce, not the first one
+  you tried.** The first version of the "turn to face the boat" fix passed a
+  short synthetic test and then produced an 11 km, 13,000-ft loop against the
+  actual measured bug state. Keep the reproduction as a permanent regression
+  test with a numeric bound (`GameLoop.smoke.test.ts`, "takes the jet home
+  even when it starts pointed away from the boat"), not just a pass/fail.
+- **A menu's click targets and its drawn rectangles are one solver, always.**
+  `PilotMenuView.pilotMenuLayout` is read by both `drawPilotMenu` and
+  `pilotMenuHitTest` - the same discipline as `HudLayout` and `DeckLayout`,
+  extended to the pause menu rather than reinvented for it.
+- **A feedback banner reuses the copy that already exists, rather than
+  inventing new strings.** Every scripted phase already had a short radio
+  callout written for it; the "step pays off" banner (`shortCallout`) derives
+  its text from that instead of writing separate reward copy that could drift
+  out of sync with what actually happened.

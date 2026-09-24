@@ -1,5 +1,11 @@
 # v1.10.0 — Recommendations & Roadmap
 
+> **Status: partially carried forward into v1.11.0 — read
+> [`../v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md`](../v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md)
+> first.** N1 (a FIRST_FLIGHT briefing) and N3 (a SIM airframe pass) are still
+> open. N2 (the browser harness in CI) is unaddressed. P1 (a pilot-customer
+> feedback round) is unaddressed for a third release running.
+
 Ranked by player impact ÷ lines of code. ✅ shipped · 🔨 ready to build ·
 🤔 owner decision. What happened to the v1.9.0 list is in
 [`IMPLEMENTATION_REPORT.md`](IMPLEMENTATION_REPORT.md).

@@ -1,23 +1,29 @@
 # Carrier Vector 1988: Game Design Review & Development Roadmap
 
-> ## ⚠️ Superseded — read the v1.10.0 suite first
+> ## ⚠️ Superseded — read the v1.11.0 suite first
 >
 > This document is kept as a historical snapshot. The current evaluation is
-> [**`docs/reviews/v1.10.0/`**](reviews/v1.10.0/README.md) (the implementation of
-> the v1.9.0 review), which builds on
+> [**`docs/reviews/v1.11.0/`**](reviews/v1.11.0/README.md) (a real pilot pause
+> menu, plain-language coaching, an ASSIST climb-attitude limiter, and a fixed
+> "take me home" recovery bug), which builds on
+> [`docs/reviews/v1.10.0/`](reviews/v1.10.0/README.md) (the implementation of
+> the v1.9.0 review) and
 > [`docs/reviews/v1.9.0/`](reviews/v1.9.0/README.md), the first review to run
 > the live build in a real browser and inspect rendered frames rather than
 > reasoning from source.
 >
-> It found what every source-reading review before it had missed: **four pairs of
-> HUD elements being drawn into the same rectangle**, a tutorial that damaged the
-> player's own carrier, and a coaching hint that was wrong on every launch.
-> Start with [**`PLAYTEST_EVIDENCE.md`**](reviews/v1.9.0/PLAYTEST_EVIDENCE.md) —
+> v1.9.0 found what every source-reading review before it had missed: **four
+> pairs of HUD elements being drawn into the same rectangle**, a tutorial that
+> damaged the player's own carrier, and a coaching hint that was wrong on every
+> launch. v1.11.0 found that the game's own training-card instruction stalled
+> the jet at 85° of pitch, and that the recovery assist could fly the jet away
+> from the carrier forever. Start with
+> [**`PLAYTEST_EVIDENCE.md`**](reviews/v1.11.0/PLAYTEST_EVIDENCE.md) —
 > measurements only, no opinions — then the
-> [roadmap](reviews/v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md).
+> [roadmap](reviews/v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md).
 >
-> **Scores below are stale.** Current (v1.10.0): Engineering 8.83, Player 7.44
-> (provisional - no new human playtest), Composite 7.93.
+> **Scores below are stale.** Current (v1.11.0): Engineering 9.00, Player 7.72
+> (provisional - no new human playtest), Composite 8.17.
 
 > **Note:** This review evaluates the state of *Carrier Vector: 1988* as of v1.6.0. It provides a brutally honest, unsugarcoated critique of the game's mechanics, UX, and progression, followed by actionable recommendations for future AI-assisted development. This version includes insights from a live playtest of the GitHub Pages build.
 >

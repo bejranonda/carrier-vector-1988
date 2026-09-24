@@ -6,7 +6,8 @@ import {
     clearedCount,
     recommendScenario,
     scenarioAt,
-    scenarioById
+    scenarioById,
+    shortCallout
 } from './Scenarios';
 import type { MissionRecords } from './MissionRecords';
 import type { MissionSnapshot, ScenarioDef } from './Scenarios';
@@ -603,5 +604,31 @@ describe('progression guidance', () => {
         for (const records of sets) {
             expect(SCENARIOS).toContain(recommendScenario(records));
         }
+    });
+});
+
+describe('shortCallout', () => {
+    it('strips the speaker prefix and keeps the first sentence', () => {
+        expect(shortCallout('GHOST-LEAD: GOOD LAUNCH, 201. PULL BACK GENTLY TO 2,500 FT.'))
+            .toBe('GOOD LAUNCH, 201.');
+    });
+
+    it('keeps an exclamation as its own sentence boundary', () => {
+        expect(shortCallout('GHOST-LEAD: DRONE SPLASHED! FOLLOW THE BOAT CUE HOME.'))
+            .toBe('DRONE SPLASHED!');
+    });
+
+    it('is short enough for a banner, for every scripted callout in the game', () => {
+        for (const scenario of SCENARIOS) {
+            for (const phase of scenario.phases) {
+                if (!phase.callout) continue;
+                expect(shortCallout(phase.callout).length).toBeLessThan(40);
+            }
+        }
+    });
+
+    it('never throws on a line with no speaker prefix or punctuation', () => {
+        expect(() => shortCallout('SPLASH ONE')).not.toThrow();
+        expect(shortCallout('SPLASH ONE')).toBe('SPLASH ONE');
     });
 });

@@ -9,8 +9,8 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-989%20passing-00ff66)](https://vitest.dev/)
-[![Playtest](https://img.shields.io/badge/browser%20checks-28%20passing-00ff66)](#testing)
+[![Vitest](https://img.shields.io/badge/tests-1029%20passing-00ff66)](https://vitest.dev/)
+[![Playtest](https://img.shields.io/badge/browser%20checks-33%20passing-00ff66)](#testing)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -117,6 +117,9 @@ round the gunsight that says where to go (`BOAT 4.2 KM · TURN LEFT`) - no
 compass, no radar, no row of buttons. The deck shows four panels, not eight.
 Finish the training sortie (`WINGS EARNED`) and the full instruments unlock; `U`
 switches between **FIRST FLIGHT / ARCADE / PRO** at any time and is remembered.
+Not sure what to do at any point? Press `ESC` (or click the `MENU` button) for
+a pause menu that restates the current objective in plain words and can hand
+the boring parts to the autopilot.
 
 The briefing screen lays the rest out in three cards; here it is in full.
 
@@ -327,9 +330,16 @@ automatically from a rolling frame-time average.
 | --- | --- |
 | `TAB` | Toggle cockpit ↔ flight deck view |
 | `H` / `F1` | Control reference overlay |
-| `ESC` | Close overlay |
+| `ESC` | **Pilot menu** (v1.11.0) — pause, see what to do, hand a step to the autopilot, or close the control reference if it's open |
 | `M` | Mute / unmute |
 | `C` | Cycle colour palette — classic phosphor / colour-blind |
+
+> **New in v1.11.0: the pilot menu.** Press `ESC`, click the `MENU (ESC)`
+> button in the corner, or tap the touch `MENU` control. It restates the
+> current objective in plain words ("hold W to raise the nose"), pauses the
+> sortie, and offers `LET THE AUTOPILOT FLY`, `TAKE ME HOME`, `RESTART THIS
+> SORTIE` and `MISSION SELECT` — a clickable answer to "I don't know what to
+> do" that needs no keys memorized at all.
 
 > **Every binding above is defined once** in [`src/core/Controls.ts`](src/core/Controls.ts)
 > and consumed by the input handler, the help overlay and the briefing, so a key
@@ -635,7 +645,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**989 headless tests** across 55 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**1,029 headless tests** across 57 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -648,7 +658,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ### In a real browser
 
 ```bash
-npm run playtest              # 28 checks, screenshots + report in playtest-output/
+npm run playtest              # 33 checks, screenshots + report in playtest-output/
 PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
 ```
 
@@ -670,10 +680,11 @@ turn-rate check is timed against the wall clock.
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#82, status summary at the top) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#87, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [**docs/reviews/v1.10.0/**](docs/reviews/v1.10.0/README.md) | **Current suite** — how the v1.9.0 review was implemented, measured first. Start with [IMPLEMENTATION_REPORT.md](docs/reviews/v1.10.0/IMPLEMENTATION_REPORT.md) |
+| [**docs/reviews/v1.11.0/**](docs/reviews/v1.11.0/README.md) | **Current suite** — a pilot menu, plain-language coaching, and two measured bugs (a climb that stalled the jet, a recovery that flew away) fixed and tested |
+| [docs/reviews/v1.10.0/](docs/reviews/v1.10.0/README.md) | How the v1.9.0 review was implemented, measured first |
 | [docs/reviews/v1.9.0/](docs/reviews/v1.9.0/README.md) | The first browser-instrumented playtest review |
 | [docs/reviews/](docs/reviews/README.md) | Review hub: version registry, score trend, and the standing rules every review must follow |
 | [docs/reviews/REVIEW_TEMPLATE.md](docs/reviews/REVIEW_TEMPLATE.md) | Standardized **12-dimension** evaluation protocol (cut from 25 in v1.9.0) |
@@ -682,6 +693,24 @@ turn-rate check is timed against the wall clock.
 ---
 
 ## Future Roadmap
+
+Shipped in v1.11.0 ("Click, Fly, Have Fun") - a desktop-focused fix round from
+four verbatim complaints (no menu, no idea what to do, too many keys, "let
+user have fun to play too"):
+- **A real, clickable pilot pause menu** (`ESC`, a corner button, or the touch
+  `MENU` control) that restates the objective in plain words and can hand a
+  step to the autopilot - `LET THE AUTOPILOT FLY`, `TAKE ME HOME`, `RESTART
+  THIS SORTIE`, `MISSION SELECT`.
+- **A stall fixed**: `ASSIST`'s held climb used to run away to 85° of pitch and
+  near-stall speed following the game's own training-card instruction; it now
+  caps at ~35° in the default flight mode (MANUAL is untouched).
+- **A bug fixed**: "take me home" used to fly the jet 7.9 km away and diverging
+  when astern but pointed the wrong way; it now turns around and hands over
+  within a couple of kilometres, in under a minute.
+- **Every scripted mission step now pays off** with an on-screen banner and a
+  tone, not just a tactical-log line nobody mid-manoeuvre is reading.
+
+See the [v1.11.0 suite](docs/reviews/v1.11.0/README.md).
 
 Shipped in v1.10.0 ("Built, Measured, Launch-Ready") - the v1.9.0 review,
 implemented after measuring each recommendation first:
@@ -734,15 +763,18 @@ wrong way is fixed), loops and Immelmanns work, a real tactical radar, a slow-mo
 names the killer, fairer enemy guns with a warning, attack coaching, and first-time milestones. See the
 [changelog](CHANGELOG.md) and the [review corrections](docs/reviews/v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md).
 
-Next - see the [v1.10.0 roadmap](docs/reviews/v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md):
+Next - see the [v1.11.0 roadmap](docs/reviews/v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md):
 
 1. **A pilot-customer feedback round, before any new feature.** No new human has
-   played v1.10.0. The in-game FEEDBACK link opens a pre-filled report; five new
-   players, no instructions, verbatim first-two-minute reactions.
+   played v1.10.0 or v1.11.0 — three releases running. The in-game FEEDBACK
+   link opens a pre-filled report; five new players, no instructions, verbatim
+   first-two-minute reactions.
 2. **A FIRST FLIGHT briefing** - the last dense screen a new pilot meets.
-3. **The browser harness in CI**, non-blocking, once its turn check is
+3. **A `TURN_TO_DRONE` training step**, replacing `ENGAGE AUTOPILOT` as the
+   training sortie's middle objective.
+4. **The browser harness in CI**, non-blocking, once its turn check is
    simulation-timed.
-4. **A SIM airframe pass** (#82) and a decision on the deck loop's depth.
+5. **A SIM airframe pass** (#82) and a decision on the deck loop's depth.
 
 ---
 

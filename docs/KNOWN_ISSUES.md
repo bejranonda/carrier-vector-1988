@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v1.10.0
+## Status at v1.11.0
 
 **Open, deliberately:**
 
@@ -10,11 +10,16 @@
 | 41 | No key-remapping screen (P2) | Layout independence shipped; build the screen only if feedback asks |
 | 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
 | — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
+| — | A `FIRST_FLIGHT` briefing, a `TURN_TO_DRONE` training step, a full "ghost-lead flies the whole climb" autopilot | Scoped out of v1.11.0 for time; see the v1.11.0 review's frank notes |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
 
 **Closed in v1.10.0:** #40, #41 (partly), #42, #44, #45, #47, #48, #54, #55, #56, #59, #61, #65, #66, #68, #69, #70 — and #71–#81, found and fixed during the release.
-Evidence: [`reviews/v1.10.0/`](reviews/v1.10.0/README.md).
+
+**Closed in v1.11.0:** #83–#87, found and fixed during the release — a real pause
+menu, "what do I do now" on demand, an ASSIST climb-attitude limit, the "take me
+home flies away" bug, and a mixed-units training readout.
+Evidence: [`reviews/v1.11.0/`](reviews/v1.11.0/README.md).
 
 ---
 
@@ -1003,3 +1008,49 @@ The original airframe's on-speed approach speed (1 g at 8.1° AoA) is about
 88 m/s, so on SIM a correct approach reads slightly slow on the AoA indexer
 (~9.6°). ARCADE (the default) is on-speed. The honest fix is a SIM airframe pass
 (roadmap N3).
+
+## 83. No pause menu; ESC only closed the control reference **[Fixed in 1.11.0]**
+
+Once airborne, there was no way to see the current state, pause, or get back to
+mission select without finishing or dying. A beginner playtest asked for it
+directly: *"I should have menu to click and select what to do."* `PilotMenu.ts`
+and `PilotMenuView.ts` add a real pause menu — RESUME, LET THE AUTOPILOT FLY,
+TAKE ME HOME, SHOW ALL CONTROLS, INSTRUMENTS, SOUND, RESTART THIS SORTIE and
+MISSION SELECT — opened by `ESC`, a corner `MENU (ESC)` button, or the existing
+touch `MENU` control (which used to just open the raw help overlay). It pauses
+the simulation and restates the current objective in plain words.
+
+## 84. A beginner following the training card's own instruction could not tell what to do next **[Fixed in 1.11.0]**
+
+Measured: a hands-off pilot's objective stayed on `CLIMB TO 2,500 FT` for 90
+seconds with no escalation, no menu, and no way to ask for help. The pilot menu
+above answers "what do I do now" on demand (`plainInstruction()` in
+`PilotMenu.ts`), and offers to let the autopilot fly the boring parts.
+
+## 85. ASSIST had no pitch-attitude limit; a held climb reached 85° and stalled **[Fixed in 1.11.0]**
+
+Measured in a real browser: holding `W` (exactly what the training card says
+to do) took the nose to 85° and airspeed down to 79 m/s in six seconds, because
+the stall limiter is unloaded in a zoom climb and never engaged. `ASSIST` now
+fades a held pull out approaching ~35° of pitch and gently pushes back over it
+(`FlightAssist.climbLimited`, `ASSIST_TUNING.maxClimbPitch`). MANUAL is
+untouched — loops and full aerobatics are one key away.
+
+## 86. "Take me home" could fly the jet away from the carrier forever **[Fixed in 1.11.0]**
+
+Measured: a pilot 640 m astern of the carrier, pointed almost directly away
+from it, pressed `L` under the autopilot and was flown to 7.9 km out over 80
+seconds and never turned back. Root cause: the approach corridor test
+(`inApproachCorridor`) only checked position, not heading, so a jet astern but
+facing the wrong way was classified `FINAL` — where the recovery assist
+deliberately holds the *current* heading and leaves lineup to the player — and
+under the autopilot nobody was flying lineup at all. `ApproachGuidance` now
+also checks heading; a jet in position but facing the wrong way gets a short,
+tight reversal (`homeTurnSpeed`, `homeTurnMaxBank`) back onto the final course
+instead. See `GameLoop.smoke.test.ts`'s "take me home from anywhere" test.
+
+## 87. The training card's altitude readout mixed units with the altimeter next to it **[Fixed in 1.11.0]**
+
+The `CLIMB TO 2,500 FT` card's detail line read "Current altitude: X m" in
+metres, directly beside a HUD altimeter reading feet. Cheap, real confusion;
+now both read feet.

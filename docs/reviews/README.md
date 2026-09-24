@@ -17,18 +17,21 @@ Future AI development agents and human contributors must consult this repository
 | **`v1.7.0`** | 2026-09-21 | **Released** / Under Reconsideration | **8.50 / 10** (Tech)<br>**5.50 / 10** (Beginner)<br>**7.00 / 10** (Composite) | • Enlarged Tactical Radar / RWR display (+50% area for combat readability)<br>• Beginner Onboarding & Cognitive Load Reconsideration<br>• Root Cause Analysis of Default Scenario Onboarding Trap<br>• Blueprints for Auto-Targeting, Stall Diagnosis & Visceral Combat Feedback | • [v1.7.0 Release Review](review-v1.7.0.md)<br>• [**Reconsideration & Entertainment Audit**](v1.7.0/RECONSIDERATION_AND_ENTERTAINMENT_AUDIT.md) |
 | **`v1.9.0`** | 2026-09-21 | **Released** | **8.17 / 10** (Engineering)<br>**6.67 / 10** (Player)<br>**7.20 / 10** (Composite) | • **First review to run the live build in a real browser and inspect rendered frames**<br>• Framework CUT 25 → **12 dimensions** (standing rule #8 finally honoured)<br>• **CRITICAL:** four pairs of HUD elements drawn into the same rectangle (objective strip ∩ compass tape; pill bar ∩ annunciator ∩ keycap strip; score chip ∩ buttons; help labels ∩ keycaps)<br>• **CRITICAL:** the "Zero combat hostiles" training sortie took 15% of the carrier's hull at T+20s<br>• **CRITICAL:** `TOO FAST FOR THE TRAP` fired on every launch, contradicting the objective and stalling beginners<br>• ARCADE HUD had deleted the artificial horizon — no attitude reference at all<br>• All five fixed, 11 regression tests added | • [**Suite index (read first)**](v1.9.0/README.md)<br>• [**Playtest Evidence**](v1.9.0/PLAYTEST_EVIDENCE.md)<br>• [12-Dimension Review](v1.9.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Recommendations & Roadmap](v1.9.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Suggestions & Prompt Critique](v1.9.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 | **`v1.10.0`** | 2026-09-23 | **Released** (implements v1.9.0) | **8.83 / 10** (Engineering)<br>**7.44 / 10** (Player)<br>**7.93 / 10** (Composite) | • Implemented the v1.9.0 roadmap **after measuring each recommendation first** — four changed<br>• **Physics defect found:** directional stability acted about the world axis, not the body axis (the real cause of "I pull and nothing happens")<br>• Recovery assist rebuilt: hands over **within 1 m** of the glideslope (was 34 m low, or into the sea)<br>• FIRST_FLIGHT HUD (3 optional regions), brief deck (4 panels), steering cue, missile carets<br>• Touch chaff + HARM, AZERTY-safe keys, crash screen, versioned feedback link<br>• **Browser harness checked in** (`npm run playtest`, 28 checks)<br>• ⚠ **No new human playtest** — scored by the implementer | • [**Suite index**](v1.10.0/README.md)<br>• [**Implementation Report (read first)**](v1.10.0/IMPLEMENTATION_REPORT.md)<br>• [Playtest Evidence](v1.10.0/PLAYTEST_EVIDENCE.md)<br>• [12-Dimension Review](v1.10.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap](v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Notes & Prompt Guidelines](v1.10.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
+| **`v1.11.0`** | 2026-09-24 | **Released** | **9.00 / 10** (Engineering)<br>**7.72 / 10** (Player)<br>**8.17 / 10** (Composite) | • Desktop-focused fix round from four verbatim complaints: no menu, no idea what to do, too many keys, "let user have fun"<br>• **New: a real, clickable pilot pause menu** (`ESC`, a corner button, or the touch MENU control) that restates the objective in plain words and can hand the boring parts to the autopilot<br>• **Defect found:** ASSIST's held climb ran away to 85° of pitch and near-stall speed, in the *default* flight mode, following the game's own training-card instruction<br>• **Defect found:** "take me home" flew the jet to 7.9 km and diverging instead of turning around, when astern but pointed the wrong way<br>• Every scripted phase now pays off with a banner and a tone<br>• 1,029 tests (was 989), 33/33 browser checks (was 28)<br>• ⚠ **No new human playtest** — scored by the implementer | • [**Suite index (read first)**](v1.11.0/README.md)<br>• [Playtest Evidence](v1.11.0/PLAYTEST_EVIDENCE.md)<br>• [12-Dimension Review](v1.11.0/COMPREHENSIVE_GAME_REVIEW.md)<br>• [Roadmap](v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md)<br>• [Frank Notes & Prompt Guidelines](v1.11.0/FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md) |
 
 ### Score Trend
 
 ```
-             v1.5.0   v1.6.0   v1.7.0   v1.8.0*  v1.9.0   v1.10.0†
-Engineering   9.00  →  7.67  →  8.50  →  7.00  →  8.17  →  8.83   ███████████████████▋
-Player        5.20  →  4.32  →  5.50  →  5.94  →  6.67  →  7.44   ████████████████▌
-Composite     5.76  →  4.99  →  7.00  →  6.31  →  7.20  →  7.93   █████████████████▋
+             v1.5.0   v1.6.0   v1.7.0   v1.8.0*  v1.9.0   v1.10.0  v1.11.0†
+Engineering   9.00  →  7.67  →  8.50  →  7.00  →  8.17  →  8.83  →  9.00   ████████████████████▋
+Player        5.20  →  4.32  →  5.50  →  5.94  →  6.67  →  7.44  →  7.72   █████████████████▏
+Composite     5.76  →  4.99  →  7.00  →  6.31  →  7.20  →  7.93  →  8.17   ██████████████████▎
 
 * v1.8.0 is scored as-found by the v1.9.0 review, not by a review of its own.
-† v1.10.0 is scored by the agent that implemented it, with no new human
-  playtest. Treat the player score as provisional until pilot feedback is in.
+† v1.10.0 and v1.11.0 are scored by the agent that implemented them, with no
+  new human playtest. Treat the player score as provisional until pilot
+  feedback is in — three releases running have said this is the top priority
+  and none has done it yet; see either suite's Frank Notes.
 ```
 
 > **Why v1.8.0's engineering score sits below v1.7.0's:** no code got worse. v1.9.0
@@ -82,22 +85,29 @@ docs/reviews/
 │   ├── RECOMMENDATIONS_AND_ROADMAP.md         # Ranked by impact / LOC (implemented in v1.10.0)
 │   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Blunt feedback, opposite thinking, prompt critique
 │
-└── v1.10.0/                                   # The implementation of v1.9.0, measured first
+├── v1.10.0/                                   # The implementation of v1.9.0, measured first
+│   ├── README.md                              # Suite index and headline numbers
+│   ├── IMPLEMENTATION_REPORT.md               # READ FIRST: what shipped, what changed, 11 new defects
+│   ├── PLAYTEST_EVIDENCE.md                   # 28/28 harness checks, before/after measurements
+│   ├── COMPREHENSIVE_GAME_REVIEW.md           # 12-dimension re-score (no new human playtest)
+│   ├── RECOMMENDATIONS_AND_ROADMAP.md         # Next: a pilot-customer feedback round
+│   └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Where the review and the prompt were wrong
+│
+└── v1.11.0/                                   # Desktop fix round: menu, plain instructions, climb/recovery bugs
     ├── README.md                              # Suite index and headline numbers
-    ├── IMPLEMENTATION_REPORT.md               # READ FIRST: what shipped, what changed, 11 new defects
-    ├── PLAYTEST_EVIDENCE.md                   # 28/28 harness checks, before/after measurements
+    ├── PLAYTEST_EVIDENCE.md                   # READ FIRST: the measured defects and each fix, verified
     ├── COMPREHENSIVE_GAME_REVIEW.md           # 12-dimension re-score (no new human playtest)
-    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Next: a pilot-customer feedback round
-    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Where the review and the prompt were wrong
+    ├── RECOMMENDATIONS_AND_ROADMAP.md         # Next: still a pilot-customer feedback round, then N1/N2/R1
+    └── FRANK_SUGGESTIONS_AND_PROMPT_GUIDELINES.md # Where the first recovery-bug fix attempt was wrong
 ```
 
 ### Which document do I read first?
 
 | I am... | Read this |
 | :--- | :--- |
-| **Anyone, starting now** | [`v1.10.0/README.md`](v1.10.0/README.md) — the current suite |
-| **An AI agent about to change code** | [`v1.10.0/IMPLEMENTATION_REPORT.md`](v1.10.0/IMPLEMENTATION_REPORT.md), then [`v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md) — and run `npm run playtest` before and after |
-| Wondering what to build next | [P1 — a pilot-customer feedback round](v1.10.0/RECOMMENDATIONS_AND_ROADMAP.md#tier-0--before-anything-else-put-it-in-front-of-people), before any new feature |
+| **Anyone, starting now** | [`v1.11.0/README.md`](v1.11.0/README.md) — the current suite |
+| **An AI agent about to change code** | [`v1.11.0/PLAYTEST_EVIDENCE.md`](v1.11.0/PLAYTEST_EVIDENCE.md), then [`v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md) — and run `npm run playtest` before and after |
+| Wondering what to build next | [P1 — a pilot-customer feedback round](v1.11.0/RECOMMENDATIONS_AND_ROADMAP.md#tier-0--still-before-anything-else-put-it-in-front-of-people), before any new feature |
 | Wondering why the jet feels unresponsive | [`v1.9.0/PLAYTEST_EVIDENCE.md`](v1.9.0/PLAYTEST_EVIDENCE.md) §4 and §6 |
 | Anyone about to act on the v1.6.0 review | [`v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md`](v1.6.0/IMPLEMENTATION_AND_CORRECTIONS.md) — several of its claims were stale or wrong |
 | An AI agent about to implement fixes | [`v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md`](v1.6.0/RECOMMENDATIONS_AND_ROADMAP.md) — but read the corrections first |

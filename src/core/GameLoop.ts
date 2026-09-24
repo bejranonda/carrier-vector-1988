@@ -32,6 +32,7 @@ import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper } from './ScoreKeeper';
 import { arbitrateHint, getContextualHint, TrainingSequence } from './Tutorial';
 import { HUD_DENSITY_LABEL, resolveHudDensity, saveHudDensity } from './HudDensity';
+import { pilotMenuItems, plainInstruction, wrapMenuIndex, type PilotMenuItem } from './PilotMenu';
 import { PitchStruggleDetector } from './StruggleDetector';
 import type { HudDensity } from './HudDensity';
 import type { LossCause } from './PostMortem';
@@ -42,6 +43,7 @@ import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
 import type { PostQuality } from '../renderer/PostProcess';
 import { DeckView } from '../renderer/DeckView';
+import { drawPilotMenu, pilotMenuHitTest, pilotMenuLayout } from '../renderer/PilotMenuView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
 import {
     THEME,
@@ -67,7 +69,8 @@ import {
     SCENARIOS,
     recommendScenario,
     scenarioAt,
-    scenarioById
+    scenarioById,
+    shortCallout
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
 import { loadPitchInversion, storedPitchInversion, savePitchInversion } from './Controls';
@@ -96,6 +99,7 @@ import {
     approachCaption,
     approachGuidance,
     approachSpeedFor,
+    inApproachCorridor,
     loadApproachAssist,
     saveApproachAssist,
     storedApproachAssist
@@ -217,6 +221,15 @@ export class GameLoop {
     public selectedWeapon: 'GUN' | 'AIM9' | 'BOMB' | 'HARM' = 'GUN';
     public phase: GamePhase = 'BOOT';
     public helpVisible = false;
+    /**
+     * The pilot's own pause menu (v1.11.0) - see `PilotMenu.ts`.
+     *
+     * Answers a beginner playtest directly: "I should have menu to click and
+     * select what to do." `menuSelected` is the keyboard/gamepad cursor; a
+     * mouse click bypasses it entirely via `activateMenuItem`.
+     */
+    public menuOpen = false;
+    public menuSelected = 0;
 
     /** Raw key state, written by the input layer in main.ts. */
     public inputState: Record<string, boolean> = {};
@@ -1077,7 +1090,7 @@ export class GameLoop {
     }
 
     public get paused(): boolean {
-        return this.phase !== 'ACTIVE' || this.helpVisible;
+        return this.phase !== 'ACTIVE' || this.helpVisible || this.menuOpen;
     }
 
     /**
@@ -1324,8 +1337,10 @@ export class GameLoop {
                 this.releaseChaff();
                 return;
             case 'MENU':
-                this.helpVisible = !this.helpVisible;
-                soundFX.playUiMove();
+                // v1.11.0: the thumb MENU button now opens the real pilot
+                // menu (pause, take me home, mission select, ...) instead of
+                // the raw control reference - CONTROLS is one tap inside it.
+                this.toggleMenu();
                 return;
             case 'RECOVER':
                 this.toggleApproachAssist();
@@ -1520,11 +1535,39 @@ export class GameLoop {
         };
         const guidance = approachGuidance(this.physics.position, {
             bank: this.physics.roll,
-            lateralSpeed: this.physics.velocity.x
+            lateralSpeed: this.physics.velocity.x,
+            heading: this.physics.yaw
         }, tuning);
         this.approachPhase = guidance.phase;
-        // The assist flies the APPROACH, not the transit and not the landing.
-        // JOIN is a cue, not a hand-over: see `ApproachGuidance`.
+
+        /**
+         * JOIN covers two different situations, and only one of them is this
+         * method's to fly. Genuinely out of position (too far, off to one
+         * side) is still a CUE and not a hand-over: the HUD points the way
+         * and the player flies the transit, exactly as before.
+         *
+         * Already in a good position but pointed the wrong way is different,
+         * and is new in v1.11.0. `guidance` has already computed a short,
+         * tight reversal for it (see `ApproachGuidance`'s heading check) -
+         * flying that IS this method's job, because leaving it to `navTarget`
+         * `('hold whatever heading the jet has')` is precisely the bug this
+         * fixes: a beginner killed the training drone, pressed L, and the
+         * jet held its post-kill heading - almost directly away from the
+         * carrier - for good. `inApproachCorridor` without a heading is the
+         * same position-only test `approachGuidance` used internally, so this
+         * can tell the two JOIN cases apart without it exposing a new phase.
+         */
+        if (guidance.phase === 'JOIN' && inApproachCorridor(this.physics.position, tuning)) {
+            this.terrainFollowClimbing = false;
+            const p = this.physics.position;
+            const ground = this.terrain.getElevation(p.x, p.z);
+            return this.applyTerrainFollowing({
+                bearing: guidance.bearing,
+                altitudeAgl: Math.max(0, guidance.altitudeMsl - ground),
+                airSpeed: guidance.airSpeed,
+                maxBank: guidance.maxBank
+            }, true);
+        }
         if (guidance.phase !== 'FINAL') return null;
 
         // The recovery owns the altitude; the terrain follower's 200 m floor
@@ -2350,6 +2393,16 @@ export class GameLoop {
 
         for (const callout of this.missionStatus.callouts) {
             this.deck.log(callout);
+            /**
+             * Every step already pays off in the tactical log, which nobody
+             * mid-manoeuvre is reading. v1.11.0: the same line also gets the
+             * PRAISE banner and a confirmation tone, so completing the climb,
+             * arming the autopilot, or splashing the drone actually feels
+             * like something happened - see "let user have fun to play too"
+             * in the v1.11.0 review.
+             */
+            this.callouts.push(shortCallout(callout), 'PRAISE');
+            soundFX.playUiSelect();
         }
 
         const deckFailed = this.deck.missionState === 'FAILED';
@@ -2590,7 +2643,11 @@ export class GameLoop {
             );
         }
 
-        if (this.controlScheme === 'TOUCH' && this.phase === 'ACTIVE' && !this.helpVisible) {
+        if (this.menuOpen) {
+            drawPilotMenu(this.ctx, w, h, this.menuItems(), this.menuSelected, this.menuObjective());
+        }
+
+        if (this.controlScheme === 'TOUCH' && this.phase === 'ACTIVE' && !this.helpVisible && !this.menuOpen) {
             this.drawTouchChrome();
         }
 
@@ -2855,6 +2912,17 @@ export class GameLoop {
     }
 
     public restartFromDebrief() {
+        this.returnToBriefing();
+    }
+
+    /**
+     * Back to mission select from wherever the player is - the debrief, or
+     * (v1.11.0) an abandoned sortie via the pilot menu's MISSION_SELECT.
+     * `restartFromDebrief` is kept as its own public method, unchanged, so
+     * nothing that already called it has to know this now shares a body.
+     */
+    public returnToBriefing() {
+        this.menuOpen = false;
         this.isNewBest = false;
         this.isMissionBest = false;
         this.isDailyRun = false;
@@ -2865,6 +2933,109 @@ export class GameLoop {
         this.phase = 'BRIEFING';
         this.currentView = 'MACRO_DECK';
         this.post.hardClear();
+    }
+
+    /** Fly the same sortie again from the deck, straight from the pilot menu. */
+    public restartMission() {
+        this.returnToBriefing();
+        this.confirmBriefing();
+    }
+
+    // -----------------------------------------------------------------
+    // Pilot menu (v1.11.0) - see PilotMenu.ts and PilotMenuView.ts
+    // -----------------------------------------------------------------
+
+    /** The menu's contents right now, most useful item first. */
+    public menuItems(): PilotMenuItem[] {
+        return pilotMenuItems({
+            airborne: this.deck.aircraftState === 'AIRBORNE',
+            onDeckReady: this.deck.aircraftState === 'CATAPULT_READY',
+            autopilotFlying: this.assistLevel === 'AUTO',
+            recoveryOn: this.approachAssist,
+            hudDensityLabel: HUD_DENSITY_LABEL[this.hud.hudDensity],
+            muted: soundFX.muted
+        });
+    }
+
+    /** The current objective, restated in plain words, for the menu's own panel. */
+    public menuObjective(): { title: string; plain: string } {
+        const objective = this.currentObjective();
+        return { title: objective.title, plain: plainInstruction(objective.key, objective.title) };
+    }
+
+    /** ESC, the DOM menu button, and the touch MENU button all call this. */
+    public toggleMenu() {
+        if (this.phase !== 'ACTIVE') return;
+        this.helpVisible = false;
+        this.menuOpen = !this.menuOpen;
+        this.menuSelected = 0;
+        soundFX.playUiMove();
+    }
+
+    public closeMenu() {
+        this.menuOpen = false;
+    }
+
+    /** A mouse or touch point while the menu is open. Always consumes the click. */
+    public handlePilotMenuClick(x: number, y: number): boolean {
+        if (!this.menuOpen) return false;
+        const items = this.menuItems();
+        const layout = pilotMenuLayout(this.viewWidth, this.viewHeight, items.length);
+        const hit = pilotMenuHitTest(x, y, layout);
+        if (hit !== null) {
+            this.menuSelected = hit;
+            this.activateSelectedMenuItem();
+        }
+        return true;
+    }
+
+    public moveMenuSelection(delta: number) {
+        this.menuSelected = wrapMenuIndex(this.menuSelected + delta, this.menuItems().length);
+        soundFX.playUiMove();
+    }
+
+    public activateSelectedMenuItem() {
+        const item = this.menuItems()[this.menuSelected];
+        if (item) this.activateMenuItem(item.id);
+    }
+
+    /** What a menu item, whether picked by keyboard or clicked, actually does. */
+    public activateMenuItem(id: PilotMenuItem['id']) {
+        soundFX.playUiSelect();
+        switch (id) {
+            case 'RESUME':
+                this.menuOpen = false;
+                return;
+            case 'LAUNCH':
+                this.menuOpen = false;
+                this.requestCatapultLaunch();
+                return;
+            case 'FLY_FOR_ME':
+                this.assistLevel = this.assistLevel === 'AUTO' ? 'ASSIST' : 'AUTO';
+                saveAssistLevel(this.assistLevel);
+                this.menuOpen = false;
+                return;
+            case 'TAKE_ME_HOME':
+                if (!this.approachAssist) this.toggleApproachAssist();
+                this.menuOpen = false;
+                return;
+            case 'CONTROLS':
+                this.menuOpen = false;
+                this.helpVisible = true;
+                return;
+            case 'INSTRUMENTS':
+                this.toggleHudDensity();
+                return;
+            case 'SOUND':
+                soundFX.toggleMute();
+                return;
+            case 'RESTART':
+                this.restartMission();
+                return;
+            case 'MISSION_SELECT':
+                this.returnToBriefing();
+                return;
+        }
     }
 
 }

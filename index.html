@@ -64,6 +64,14 @@
            the build and the browser. Hidden in flight. -->
       <a id="feedback-link" class="shell-link" target="_blank" rel="noopener" hidden>FEEDBACK</a>
 
+      <!-- In flight or on the deck only (the opposite of the feedback link
+           above, so the two never fight for the same corner): a real,
+           clickable way to pause and see what to do. A beginner playtest
+           said plainly "I should have menu to click and select what to do" -
+           this is that button. Hidden on touch, which has its own MENU
+           control drawn on the canvas. -->
+      <button id="menu-button" class="shell-link" type="button" hidden>MENU (ESC)</button>
+
       <!-- Shown only if the frame loop stops for good (GameLoop.onFatalError).
            A frozen canvas with no message is the worst way to lose a player. -->
       <div id="crash" class="crash" role="alertdialog" aria-labelledby="crash-title" hidden>

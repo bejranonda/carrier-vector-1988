@@ -83,12 +83,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- Global overlay / system keys ---
         if (key === 'h' || key === 'f1') {
             e.preventDefault();
+            if (game.menuOpen) game.closeMenu();
             game.helpVisible = !game.helpVisible;
             return;
         }
         if (key === 'escape') {
             e.preventDefault();
-            game.helpVisible = false;
+            if (game.helpVisible) {
+                game.helpVisible = false;
+                return;
+            }
+            // Otherwise ESC is the pilot menu's own key: open it from the
+            // cockpit or the deck, or close it again - see PilotMenu.ts.
+            game.toggleMenu();
             return;
         }
         if (key === 'm') {
@@ -117,6 +124,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (key === 'k') {
             game.cycleControlScheme();
+            return;
+        }
+
+        // --- Pilot menu (v1.11.0): while it is open it owns every key,
+        // so a beginner cannot accidentally fire a weapon or launch through
+        // it - see PilotMenu.ts and PilotMenuView.ts.
+        if (game.menuOpen) {
+            if (key === 'arrowup' || key === 'w') {
+                e.preventDefault();
+                game.moveMenuSelection(-1);
+            } else if (key === 'arrowdown' || key === 's') {
+                e.preventDefault();
+                game.moveMenuSelection(1);
+            } else if (key === 'enter' || key === ' ') {
+                e.preventDefault();
+                game.activateSelectedMenuItem();
+            } else if (key >= '1' && key <= '9') {
+                e.preventDefault();
+                const picked = game.menuItems().find(i => i.key === key);
+                if (picked) game.activateMenuItem(picked.id);
+            }
             return;
         }
 
@@ -309,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // the device is turned.
         if (game.awaitingRotation) return;
 
+        if (game.handlePilotMenuClick(x, y)) return;
         if (game.handleMenuTap(x, y)) return;
         if (game.phase !== 'ACTIVE') return;
 
@@ -402,6 +431,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Menus only: in flight a corner link is a thing to mis-tap.
         window.setInterval(() => {
             feedback.hidden = game.phase === 'ACTIVE' || game.phase === 'BOOT';
+        }, 400);
+    }
+
+    // The other corner button: the opposite visibility rule from the
+    // feedback link above, so exactly one of the two ever occupies this
+    // corner. Hidden on touch, which has its own on-canvas MENU control.
+    const menuButton = document.getElementById('menu-button') as HTMLButtonElement | null;
+    if (menuButton) {
+        menuButton.addEventListener('click', () => game.toggleMenu());
+        window.setInterval(() => {
+            menuButton.hidden = game.phase !== 'ACTIVE' || game.controlScheme === 'TOUCH';
         }, 400);
     }
 
