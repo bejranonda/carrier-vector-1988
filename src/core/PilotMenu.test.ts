@@ -110,3 +110,17 @@ describe('pilot menu music switch (v2.0.0)', () => {
         expect(pilotMenuItems({ ...base, musicOn: false }).find(i => i.id === 'MUSIC')?.label).toBe('MUSIC: OFF');
     });
 });
+
+describe('pilot menu with EASY on (v2.1.0)', () => {
+    it('shows no autopilot switch (EASY is always flying) but keeps TAKE ME HOME', () => {
+        const items = pilotMenuItems({
+            airborne: true, onDeckReady: false, autopilotFlying: true, recoveryOn: false,
+            hudDensityLabel: 'ARCADE', muted: false, easyOn: true, textSizeLabel: 'LARGE'
+        });
+        const ids = items.map(i => i.id);
+        expect(ids).not.toContain('FLY_FOR_ME');
+        expect(ids).toContain('TAKE_ME_HOME');
+        expect(ids[1]).toBe('EASY');
+        expect(ids).toContain('TEXT_SIZE');
+    });
+});

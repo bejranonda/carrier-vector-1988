@@ -689,3 +689,32 @@ than shipping thinner versions of them under the same names. `LET THE
 AUTOPILOT FLY` in the pilot menu does exactly what its own copy says
 ("Ghost-Lead holds her steady") and no more, so the feature's description and
 its behaviour cannot drift apart.
+
+## 14. Design for the Player Who Is Not a Gamer — and Measure Them (v2.0.0–v2.1.0)
+
+v2.0.0 asked "would a stranger play this twice?" and moved the fight to the
+front (SCRAMBLE). v2.1.0 asked the harder version: *what if the stranger is
+older, and not quick with their hands?* Both were answered with the same
+method, which is now the project's default for any audience question:
+
+1. **Name the profile, then script it.** Not "a player" but "slow reactions
+   (1.5 s), never steers, presses SPACE only when told" - a 60-line Playwright
+   bot. It is crude on purpose: a floor, not a ceiling.
+2. **Find the wall with the profile, not with intuition.** The relaxed bot
+   scored its first kill in 5 s, then sat for minutes on "turn toward the
+   bandit". The wall was steering - not difficulty, not damage, not speed.
+3. **Remove the wall, then re-measure the same profile.** EASY's first build
+   did *not* help the bot (5 kills vs 6). Its diagnostics showed why - targets
+   behind the wing line the standard missile cone never offered - and the
+   second build did (11-12 kills, first medal star, no jets lost).
+4. **Validate across perspectives, not just the target one.** Every release
+   now runs: brand-new standard player, veteran, EASY/older player (mouse
+   only, EXTRA LARGE text), phone, tablet, colour-blind palette, reduced
+   motion, and performance under a busy wave. A fix for one profile that
+   breaks another is not a fix.
+5. **Let the measurement overrule the reviewer.** Across v2.0.0-v2.1.0 the
+   instruments overruled four confident claims: "first kill takes 2+
+   minutes" (13.9 s), "the AIM-9 guidance misses" (80/80 hits), "a font
+   multiplier is enough for big text" (overlaps at 150%), and "EASY obviously
+   helps" (it did not, until the cone changed). Each correction is kept in the
+   review suite on purpose.

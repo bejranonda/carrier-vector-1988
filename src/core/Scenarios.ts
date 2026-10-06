@@ -79,6 +79,8 @@ export interface MissionSnapshot {
     rwrState: 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
     /** Which control law is flying the aeroplane right now. */
     flightAssistMode: AssistLevel;
+    /** Jets a SCRAMBLE run may lose before it ends (more when flying EASY). */
+    jetsAllowed?: number;
 }
 
 export interface MissionPhase {
@@ -360,7 +362,8 @@ const SCRAMBLE_MODE: ScenarioDef = {
     ],
     failure: (s) => {
         if (s.carrierHealth <= 0) return 'CV-68 was knocked out of the fight.';
-        if (s.airframesLost >= SCRAMBLE.lives) return 'All three jets shot down.';
+        const jets = s.jetsAllowed ?? SCRAMBLE.lives;
+        if (s.airframesLost >= jets) return jets === 3 ? 'All three jets shot down.' : `All ${jets} jets shot down.`;
         return null;
     },
     victoryTitle: 'SKY HELD',

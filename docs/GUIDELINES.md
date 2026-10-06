@@ -581,3 +581,33 @@ rendered frames. Five suites of source-reading review had missed all of them.
   callout written for it; the "step pays off" banner (`shortCallout`) derives
   its text from that instead of writing separate reward copy that could drift
   out of sync with what actually happened.
+
+## 16. Rules added in v2.0.0 and v2.1.0 (each one encodes a bug that already shipped)
+
+- **A harness screenshot nobody opens is not a check.** The v1.11.0 harness
+  photographed the deck title drawn under the menu button (#91) and passed.
+  Every new screen gets an assertion or a reviewer who looks at the picture.
+- **"In range" means what the round can reach.** The HUD called IN RANGE at
+  8 km for a 3.8 km missile (#90). A recommendation the weapon cannot honour
+  teaches the player to waste it.
+- **Never fire into an empty sky.** A heat-seeker with no target is a
+  thrown-away round (#93); refuse, and say why.
+- **A coach rule that matches on one condition will fire where it should not.**
+  "On approach" matched range alone and fired on every climb-out (#89). Give
+  every rule the full state it describes.
+- **Instructions in plain words; flavour in the celebrations.** "SHOOT DOWN 2
+  PLANES", "ENEMY BEHIND YOU" - not "SPLASH 2 BANDITS", "CHECK SIX". Jargon
+  is fine in a victory banner, never in an order.
+- **An assist must never ask for the skill it replaces.** EASY's coach is not
+  allowed to say "turn toward" or "press T to lock" (#99 shows how easily a
+  rewrite rule can misfire - order the rules and test them).
+- **One press, one action, for a choice.** A keycap on a card selects *and*
+  confirms (#98). Highlight-then-confirm is a gamer idiom.
+- **Text size is a zoom, not a font multiplier.** Fixed line heights overlap
+  the moment fonts grow alone; zoom the layout and stop at the smallest
+  viewport the layouts are tested at (`Theme.uiZoomFor`).
+- **A menu item that does nothing in the current state is hidden**, and a long
+  menu compresses rather than overflowing (#101, #102).
+- **Measure each player profile you design for.** EASY was not accepted until
+  a scripted relaxed player did measurably better with it (6 -> 11-12 kills
+  in 3 minutes); the first version did not, and the bot said why.

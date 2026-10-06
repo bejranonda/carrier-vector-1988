@@ -16,6 +16,7 @@ import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { debriefLayout } from '../renderer/DebriefView';
+import { flyStyleLayout } from '../renderer/FlyStyleView';
 import { storedPalette } from '../renderer/Theme';
 import { SCENARIOS, recommendScenario } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
@@ -77,6 +78,14 @@ describe('GameLoop integration smoke test', () => {
         });
         vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 1280, innerHeight: 800 });
         vi.stubGlobal('requestAnimationFrame', vi.fn());
+        // These tests model a STANDARD pilot (v2.1.0 starts a brand-new one on
+        // EASY). Only the fly-style key answers; nothing else is persisted, so
+        // one GameLoop can never leak records into the next.
+        vi.stubGlobal('localStorage', {
+            getItem: (k: string) => (k === 'carrier-vector-1988.flyStyle' ? 'STANDARD' : null),
+            setItem: () => {},
+            removeItem: () => {}
+        });
 
         GameLoop = (await import('./GameLoop')).GameLoop;
         TrainingSequence = (await import('./Tutorial')).TrainingSequence;
@@ -2360,7 +2369,7 @@ describe('GameLoop integration smoke test', () => {
             expect(live[0].passive).toBe(true);
             expect(live[0].position.z).toBeGreaterThan(game.physics.position.z + 1500);
             expect(game.tracker.designated()?.target.id).toBe(live[0].id);
-            expect(game.currentObjective().title).toBe('SPLASH 1 BANDIT');
+            expect(game.currentObjective().title).toBe('SHOOT DOWN 1 PLANE');
         });
 
         it('a first SPACE on wave 1 scores a kill within a few seconds', () => {
@@ -2564,6 +2573,183 @@ describe('GameLoop integration smoke test', () => {
             game.physics.velocity = { x: 0, y: 0, z: -40 };
             runFrames(game, 5);
             expect(game.score.breakdown.traps).toBe(0);
+        });
+    });
+
+    // -----------------------------------------------------------------
+    // EASY flying (v2.1.0) - for players who are not gamers
+    // -----------------------------------------------------------------
+    describe('EASY flying', () => {
+        const easyScramble = () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.setFlyStyle('EASY', false);
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            return game;
+        };
+
+        it('starts a brand-new pilot on EASY and asks once; a returning pilot keeps STANDARD', () => {
+            vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+            const fresh = new GameLoop(makeCanvasStub());
+            expect(fresh.easyMode).toBe(true);
+            expect(fresh.shouldAskFlyStyle()).toBe(true);
+            const veteran = new GameLoop(makeCanvasStub());
+            veteran.missionRecords = { SCRAMBLE: { best: 10, completions: 0, attempts: 1 } };
+            expect(veteran.shouldAskFlyStyle()).toBe(false);
+        });
+
+        it('lets the autopilot fly the intercept: the jet turns toward a target off the nose', () => {
+            const game = easyScramble();
+            runFrames(game, 100); // 80% world speed: wave 1 lands a little later in real time
+            const p = game.physics.position;
+            const bomber = game.airborneTargets[0];
+            bomber.position = { x: p.x + 2500, y: p.y, z: p.z + 1500 };
+            bomber.velocity = { x: 0, y: 0, z: 0 };
+            const bearing = () => {
+                const dx = bomber.position.x - game.physics.position.x;
+                const dz = bomber.position.z - game.physics.position.z;
+                let r = Math.atan2(dx, dz) - game.physics.yaw;
+                while (r > Math.PI) r -= 2 * Math.PI;
+                while (r < -Math.PI) r += 2 * Math.PI;
+                return Math.abs(r);
+            };
+            const before = bearing();
+            for (let i = 0; i < 10; i++) runFrames(game, 30);
+            expect(bearing()).toBeLessThan(before * 0.5);
+        });
+
+        it('the smart trigger fires a missile when it will land, and only one at a time', () => {
+            const game = easyScramble();
+            runFrames(game, 100);
+            const bomber = game.airborneTargets[0];
+            const p = game.physics.position;
+            bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+            runFrames(game, 3);
+            const rails = game.physics.loadout.sidewinders;
+            game.easyFire();
+            expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+            game.easyFire();
+            expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+            expect(game.callouts.active().some(c => c.text === 'NOT YET')).toBe(true);
+        });
+
+        it('says NOT YET in plain words with nothing to shoot', () => {
+            const game = easyScramble();
+            runFrames(game, 5); // before wave 1 spawns
+            game.easyFire();
+            const c = game.callouts.active().find(x => x.text === 'NOT YET');
+            expect(c?.detail).toContain('NO TARGET YET');
+            expect(game.physics.loadout.sidewinders).toBe(4);
+        });
+
+        it('a held trigger keeps firing whenever a shot is good', () => {
+            const game = easyScramble();
+            runFrames(game, 100);
+            game.inputState[' '] = true;
+            for (let i = 0; i < 40 && game.score.breakdown.bomberKills === 0; i++) runFrames(game, 15);
+            game.inputState[' '] = false;
+            expect(game.score.breakdown.bomberKills).toBe(1);
+        });
+
+        it('runs the world slower, holds messages longer, and gives SCRAMBLE five jets', () => {
+            const standard = new GameLoop(makeCanvasStub());
+            runFrames(standard, 150);
+            standard.selectScenarioById('SCRAMBLE');
+            standard.confirmBriefing(7);
+            const easy = easyScramble();
+            const t0s = standard['missionSeconds'];
+            const t0e = easy['missionSeconds'];
+            runFrames(standard, 60);
+            runFrames(easy, 60);
+            const ratio = (easy['missionSeconds'] - t0e) / (standard['missionSeconds'] - t0s);
+            expect(ratio).toBeGreaterThan(0.75);
+            expect(ratio).toBeLessThan(0.85);
+
+            easy.callouts.push('X', 'MODE', undefined, 1);
+            expect(easy.callouts.active()[0].span).toBeGreaterThan(1.5);
+
+            runFrames(easy, 75);
+            for (let jet = 0; jet < 3; jet++) {
+                easy.physics.damage = 100;
+                for (let i = 0; i < 25 && easy.phase === 'ACTIVE'; i++) runFrames(easy, 15);
+            }
+            expect(easy.phase).toBe('ACTIVE');
+            expect(easy.currentObjective().detail).toContain('JETS 2');
+        });
+
+        it('asks a brand-new pilot how to fly before the first flight, then flies what they asked for', () => {
+            const saved = new Map<string, string>();
+            vi.stubGlobal('localStorage', {
+                getItem: (k: string) => saved.get(k) ?? null,
+                setItem: (k: string, v: string) => { saved.set(k, v); },
+                removeItem: () => {}
+            });
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.requestFlight('BRIEFING');
+            expect(game.flyStyleChooserOpen).toBe(true);
+            expect(game.phase).toBe('BRIEFING');
+            game.cycleTextSize();
+            expect(game.textSize).toBe('LARGE');
+            // A click on the STANDARD card.
+            const l = flyStyleLayout(game.viewWidth, game.viewHeight);
+            game.handleMenuTap(l.standard.x + 10, l.standard.y + 10);
+            expect(game.flyStyleChooserOpen).toBe(false);
+            expect(game.easyMode).toBe(false);
+            expect(game.phase).toBe('ACTIVE');
+            expect(saved.get('carrier-vector-1988.flyStyle')).toBe('STANDARD');
+            // Never asked again.
+            game.returnToBriefing();
+            game.requestFlight('BRIEFING');
+            expect(game.flyStyleChooserOpen).toBe(false);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('the pause menu offers EASY FLYING and TEXT SIZE, and they switch', () => {
+            const game = easyScramble();
+            runFrames(game, 10);
+            const ids = game.menuItems().map(i => i.id);
+            expect(ids[1]).toBe('EASY');
+            expect(ids).toContain('TEXT_SIZE');
+            game.activateMenuItem('EASY');
+            expect(game.easyMode).toBe(false);
+            game.activateMenuItem('TEXT_SIZE');
+            expect(game.textSize).toBe('LARGE');
+            expect(game.uiZoom).toBe(1.25);
+            expect(game.viewWidth).toBe(1024);
+        });
+
+        it('offers EASY, once, to a STANDARD pilot who has lost two jets - never on EASY', () => {
+            const lose = (game: InstanceType<typeof GameLoop>, n: number) => {
+                for (let jet = 0; jet < n; jet++) {
+                    game.physics.damage = 100;
+                    for (let i = 0; i < 25 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+                }
+            };
+            const standard = new GameLoop(makeCanvasStub());
+            runFrames(standard, 150);
+            standard.selectScenarioById('SCRAMBLE');
+            standard.confirmBriefing(7);
+            runFrames(standard, 75);
+            lose(standard, 1);
+            expect(standard.easyOffered).toBe(false);
+            lose(standard, 1);
+            expect(standard.easyOffered).toBe(true);
+            expect(standard.callouts.active().some(c => c.text === 'HAVING A HARD TIME?')).toBe(true);
+
+            const easy = easyScramble();
+            runFrames(easy, 100);
+            lose(easy, 2);
+            expect(easy.easyOffered).toBe(false);
+        });
+
+        it('the coach never tells an EASY pilot to steer', () => {
+            const game = easyScramble();
+            for (let i = 0; i < 60; i++) {
+                runFrames(game, 10);
+                expect(game.currentHint?.text ?? '').not.toMatch(/TURN TOWARD|PRESS \[T\]|A \/ D/);
+            }
         });
     });
 });

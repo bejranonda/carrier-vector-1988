@@ -17,6 +17,8 @@ import { SCENARIOS } from './core/Scenarios';
 import { normalizeKey } from './core/Controls';
 import { feedbackUrl } from './core/Feedback';
 import { parseChallenge } from './core/Challenge';
+import { flyStyleLayout } from './renderer/FlyStyleView';
+import { debriefLayout } from './renderer/DebriefView';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -31,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const dev = window as unknown as Record<string, unknown>;
         dev.__game = game;
         dev.__sfx = soundFX;
+        // Layout solvers, so the browser harness can click what a player sees.
+        dev.__ui = { flyStyleLayout, debriefLayout };
     }
 
     /**
@@ -53,7 +57,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleResize = () => {
         game.resize(window.innerWidth, window.innerHeight);
-        game.applyControlScheme(readInsets());
+        // Insets are CSS px; the layouts work in zoomed layout px.
+        const insets = readInsets();
+        const z = game.uiZoom || 1;
+        game.applyControlScheme({
+            top: insets.top / z, right: insets.right / z, bottom: insets.bottom / z, left: insets.left / z
+        });
     };
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -86,6 +95,20 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (game.menuOpen) game.closeMenu();
             game.helpVisible = !game.helpVisible;
+            return;
+        }
+        // The first-run "how would you like to fly?" screen owns every key.
+        if (game.flyStyleChooserOpen) {
+            e.preventDefault();
+            // The keycap on a card means "this one, now" - one press, not
+            // highlight-then-confirm. Arrows move; ENTER takes the highlight.
+            if (key === '1') game.chooseFlyStyle('EASY');
+            else if (key === '2') game.chooseFlyStyle('STANDARD');
+            else if (key === 'arrowleft' || key === 'arrowup') game.moveFlyStyleChoice('EASY');
+            else if (key === 'arrowright' || key === 'arrowdown') game.moveFlyStyleChoice('STANDARD');
+            else if (key === 't') game.cycleTextSize();
+            else if (key === 'enter' || key === ' ') game.chooseFlyStyle(game.flyStyleChoice);
+            else if (key === 'escape') game.closeFlyStyleChooser();
             return;
         }
         if (key === 'escape') {
@@ -145,9 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'enter' || key === ' ') {
                 e.preventDefault();
                 game.activateSelectedMenuItem();
-            } else if (key >= '1' && key <= '9') {
+            } else if ((key >= '1' && key <= '9') || key === 'e' || key === 't') {
                 e.preventDefault();
-                const picked = game.menuItems().find(i => i.key === key);
+                const picked = game.menuItems().find(i => i.key.toLowerCase() === key);
                 if (picked) game.activateMenuItem(picked.id);
             }
             return;
@@ -157,7 +180,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (game.phase === 'BRIEFING') {
             if (key === 'enter') {
                 e.preventDefault();
-                game.confirmBriefing();
+                game.requestFlight('BRIEFING');
+            } else if (key === 't') {
+                e.preventDefault();
+                game.cycleTextSize();
+            } else if (key === 'e') {
+                e.preventDefault();
+                game.toggleFlyStyle();
             } else if (key === 'arrowup' || key === 'arrowdown') {
                 e.preventDefault();
                 game.cycleMapChoice(key === 'arrowup' ? -1 : 1);
@@ -177,11 +206,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'd') {
                 // Today's daily sortie: the same seeded run for everyone.
                 e.preventDefault();
-                game.startDailySortie();
+                game.requestFlight('DAILY');
             } else if (key === 's') {
                 // Quick start for returning players
-                game.confirmBriefing();
-                game.hotStartAirborne();
+                game.requestFlight('SKIP');
             }
             return;
         }
@@ -316,7 +344,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === ' ' || e.code === 'Space') {
             e.preventDefault();
             if (game.currentView !== 'MICRO_FLIGHT') return;
-            game.fireSelectedWeapon();
+            if (e.repeat) return; // a held trigger is handled in the fixed update
+            if (game.easyMode) game.easyFire();
+            else game.fireSelectedWeapon();
         }
     });
 
@@ -334,7 +364,9 @@ document.addEventListener('DOMContentLoaded', () => {
     /** Pointer position in CSS pixels, which is what every layout uses. */
     const pointAt = (e: PointerEvent) => {
         const rect = canvas.getBoundingClientRect();
-        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        // Layout pixels: the canvas is drawn zoomed when text is enlarged.
+        const z = game.uiZoom || 1;
+        return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
     };
 
     canvas.addEventListener('pointerdown', (e) => {
@@ -378,7 +410,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // and is the obvious thing to try with a mouse in hand.
         // Desktop button clicks (deck & HUD) take priority over designation.
         if (game.handleDesktopClick(x, y)) return;
-        if (game.currentView === 'MICRO_FLIGHT') game.designateAtPoint(x, y);
+        if (game.currentView === 'MICRO_FLIGHT') {
+            game.designateAtPoint(x, y);
+            // EASY: the mouse is a trigger. A click fires (if a shot is
+            // good), and holding the button keeps firing - so the game can be
+            // played with a mouse alone.
+            if (game.easyMode) {
+                game.inputState['mousefire'] = true;
+                game.easyFire();
+            }
+        }
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -403,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const releasePointer = (e: PointerEvent) => {
         game.touch.up(e.pointerId);
+        game.inputState['mousefire'] = false;
     };
     canvas.addEventListener('pointerup', releasePointer);
     canvas.addEventListener('pointercancel', releasePointer);

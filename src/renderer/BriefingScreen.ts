@@ -32,6 +32,9 @@ export interface BriefingProgress {
     careerLine: string | null;
     /** An incoming shared challenge, shown in place of the masthead line. */
     challengeLine?: string | null;
+    /** v2.1.0 accessibility switches, offered on the first screen. */
+    textSizeLabel?: string;
+    flyStyleLabel?: string;
 }
 
 /** A small five-point star, filled or outlined. */
@@ -121,9 +124,15 @@ export function briefingSecondaryOptions(opts: {
     showPaletteHint: boolean;
     /** True until the stick setting has been touched. */
     showStickHint?: boolean;
+    /** v2.1.0: "LARGE text" - on the first screen, where it is needed most. */
+    textSizeLabel?: string;
+    /** v2.1.0: "EASY flying" / "STANDARD flying". */
+    flyStyleLabel?: string;
 }): [string, string][] {
     return [
         ['←  →', 'change mission'],
+        ...(opts.textSizeLabel ? [['T', `text size: ${opts.textSizeLabel}`] as [string, string]] : []),
+        ...(opts.flyStyleLabel ? [['E', opts.flyStyleLabel] as [string, string]] : []),
         ...(opts.mapChangeable
             ? [['↑  ↓', 'change map'] as [string, string]]
             : []),
@@ -464,7 +473,9 @@ export class BriefingScreen {
             threatLabel,
             mapChangeable: mapChoice?.changeable === true,
             showPaletteHint,
-            showStickHint
+            showStickHint,
+            textSizeLabel: progress?.textSizeLabel,
+            flyStyleLabel: progress?.flyStyleLabel
         });
 
         /**

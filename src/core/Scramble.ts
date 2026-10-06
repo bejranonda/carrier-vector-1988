@@ -100,12 +100,17 @@ const b = (bearingDeg: number, rangeM: number, altOffsetM = 150, passive = false
     ({ type: 'BOMBER', bearingDeg, rangeM, altOffsetM, passive });
 
 /** The scripted opening: each wave introduces exactly one idea. */
-const OPENING: { spawns: ScrambleSpawn[]; brief: string }[] = [
-    { spawns: [b(0, 2300, 80, true)], brief: 'ONE BOMBER DEAD AHEAD - SPACE TO FIRE' },
-    { spawns: [b(-32, 2700, 120, true), b(32, 2700, 120, true)], brief: 'TWO BOMBERS - TURN TOWARD THEM' },
-    { spawns: [f(-22, 3200), f(22, 3200)], brief: 'FIGHTERS - THEY SHOOT BACK. KEEP TURNING' },
-    { spawns: [b(0, 3400, 200), f(-55, 2900), f(55, 2900)], brief: 'ESCORTED BOMBER - KILL THE BOMBER FIRST' },
-    { spawns: [f(180, 2600, 50), f(160, 3000), b(-20, 3600, 200), f(20, 3300)], brief: 'BANDITS BEHIND YOU - CHECK SIX' }
+/**
+ * Plain words (v2.1.0): no "bandit", no "check six", no "escort". Each brief
+ * says what is coming and the one thing to do about it. `easy` is the same
+ * line for a pilot whose plane is flying itself - it never asks them to steer.
+ */
+const OPENING: { spawns: ScrambleSpawn[]; brief: string; easy: string }[] = [
+    { spawns: [b(0, 2300, 80, true)], brief: 'ONE BOMBER AHEAD - PRESS SPACE TO FIRE', easy: 'ONE BOMBER AHEAD - PRESS SPACE TO FIRE' },
+    { spawns: [b(-32, 2700, 120, true), b(32, 2700, 120, true)], brief: 'TWO BOMBERS - TURN TOWARD THEM WITH A / D', easy: 'TWO BOMBERS - THE PLANE TURNS FOR YOU. FIRE WHEN TOLD' },
+    { spawns: [f(-22, 3200), f(22, 3200)], brief: 'FIGHTERS - THEY SHOOT BACK. KEEP TURNING', easy: 'FIGHTERS - THEY SHOOT BACK. KEEP FIRING WHEN TOLD' },
+    { spawns: [b(0, 3400, 200), f(-55, 2900), f(55, 2900)], brief: 'A BOMBER WITH GUARDS - SHOOT THE BOMBER FIRST', easy: 'A BOMBER WITH GUARDS - SHOOT THE BOMBER FIRST' },
+    { spawns: [f(180, 2600, 50), f(160, 3000), b(-20, 3600, 200), f(20, 3300)], brief: 'ENEMIES BEHIND YOU TOO - KEEP TURNING', easy: 'ENEMIES BEHIND YOU TOO - THE PLANE WILL TURN TO FIGHT' }
 ];
 
 /** A small deterministic generator so a wave is reproducible from (wave, seed). */
@@ -125,11 +130,11 @@ export function escalationCount(wave: number): number {
     return Math.min(SCRAMBLE.maxContacts, 4 + Math.floor((wave - 5) / 2));
 }
 
-export function scrambleWave(wave: number, seed = 1988): ScrambleWave {
+export function scrambleWave(wave: number, seed = 1988, easy = false): ScrambleWave {
     const n = Math.max(1, Math.floor(wave));
     if (n <= OPENING.length) {
         const o = OPENING[n - 1];
-        return { wave: n, spawns: o.spawns.map(s => ({ ...s })), brief: o.brief };
+        return { wave: n, spawns: o.spawns.map(s => ({ ...s })), brief: easy ? o.easy : o.brief };
     }
 
     const rng = mulberry32(seed * 7919 + n * 104729);
@@ -152,7 +157,7 @@ export function scrambleWave(wave: number, seed = 1988): ScrambleWave {
         spawns,
         brief: ace
             ? `WAVE ${n} - EVERYTHING THEY HAVE`
-            : `${count} BANDITS - ${bombers} BOMBER${bombers === 1 ? '' : 'S'} FOR THE BOAT`
+            : `${count} ENEMY PLANES - ${bombers} BOMBER${bombers === 1 ? '' : 'S'} GOING FOR YOUR SHIP`
     };
 }
 

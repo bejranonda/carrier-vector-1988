@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v2.0.0
+## Status at v2.1.0
 
 **Open, deliberately:**
 
@@ -11,6 +11,8 @@
 | 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
 | — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
 | 97 | SCRAMBLE difficulty and medal thresholds are calibrated against a bot, not people | Needs the pilot-customer round; see below |
+| 103 | Phones cannot enlarge text | The zoom floor protects the touch layout; needs a phone-specific type scale |
+| 104 | Small labels stay below the Xbox guideline's 28 px-at-1080p even at EXTRA LARGE | A full type-scale pass, not a zoom |
 | — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
@@ -28,6 +30,12 @@ climb-out, an "IN RANGE" call at twice the missile's reach, the deck title
 under the menu button, stacked kill banners, missiles fired at empty sky,
 ripple-fired missiles flying on blind, a first kill gated behind four instructions, and a
 stale share card. Evidence: [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
+
+**Closed in v2.1.0:** #98–#102, found while building EASY flying and the
+text-size zoom - a fly-style question whose keys did not act, an EASY coach
+rule that misread its own input, banners running off a phone screen, a long
+pause menu overflowing its panel, and a menu item EASY made useless.
+Evidence: [`reviews/v2.1.0/`](reviews/v2.1.0/README.md).
 
 ---
 
@@ -1139,4 +1147,54 @@ three to four minutes and loses jets mainly to waves 3-5 fighters. That is a
 floor, not a player. Thresholds such as "SCORE 8,000" and "CLEAR WAVE 10" are
 estimates from the scoring tables. Calibrate both against the pilot-customer
 round's recordings before tuning further.
+
+## 98. The fly-style question's keys highlighted a card but did not choose it **[Fixed in 2.1.0]**
+
+`1` and `2` moved the highlight and waited for `ENTER` - a highlight-then-
+confirm step that is exactly what trips up a player who is not used to games.
+Found by the relaxed-player bot, which pressed `1` and then sat on the
+question for three minutes. The keycap on a card now means "this one, now";
+arrows still move the highlight for players who prefer it.
+
+## 99. The EASY coach misread "turn toward it ... until it says FIRE NOW" **[Fixed in 2.1.0]**
+
+The plain-language locked hint contains the words FIRE NOW, and the EASY
+rewrite tested for FIRE NOW first - so it told a pilot to fire while the plane
+was still turning. Caught by `EasyMode.test.ts` before it ever ran in a
+browser; the rules are now ordered, with a comment saying why.
+
+## 100. Banners could run off the bottom of a phone screen **[Fixed in 2.1.0]**
+
+With EASY's 1.7× longer hold, three stacked callouts on a 390 px phone ran the
+third over the fuel/hull strip. `HUD.drawCallouts` now stops where the room
+ends; newest first, so the oldest banner is the one that waits.
+
+## 101. A long pause menu overflowed its panel on a short or zoomed screen **[Fixed in 2.1.0]**
+
+EASY FLYING and TEXT SIZE took the menu to ten items; at 150% text on a
+900 px window (a 600 px virtual screen) the last rows fell out of the panel.
+`pilotMenuLayout` now compresses rows to fit and drops the detail line below
+36 px (`compact`).
+
+## 102. "TAKE BACK THE STICK" did nothing while EASY was on **[Fixed in 2.1.0]**
+
+EASY forces the autopilot, so the autopilot switch was a menu item with no
+effect - against the menu's own rule. Hidden while EASY is on; TAKE ME HOME
+stays, because it still does something.
+
+## 103. Phones cannot enlarge text **[Open]**
+
+Text size is a UI zoom that never lays a screen out below 720 × 400, so a
+landscape phone (e.g. 844 × 390) is never zoomed: at 1.08 the objective strip
+already crowded the instruments. Phone type is larger relative to the screen
+than desktop type, but AARP finds 84% of players over 50 play on phones, so
+this matters. Needs a touch-specific type scale rather than a zoom.
+
+## 104. Small labels are below the 28 px-at-1080p guideline even at EXTRA LARGE **[Open]**
+
+The Xbox Accessibility Guidelines recommend 28 px at 1080p (a TV-distance
+figure) as a *minimum*. At EXTRA LARGE the game's 10 px labels become 15 px,
+its headings 30-60 px. Meeting the guideline for every label needs a type-scale
+pass (fewer, larger labels), not a bigger zoom - the zoom is already at the
+smallest layout every screen is tested at.
 

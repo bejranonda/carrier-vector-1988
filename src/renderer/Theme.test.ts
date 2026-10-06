@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
     DEFAULT_PALETTE,
+    MIN_LAYOUT,
+    TEXT_SIZES,
+    nextTextSize,
+    uiZoomFor,
     PALETTES,
     THEME,
     WORLD,
@@ -267,5 +271,31 @@ describe('palette persistence', () => {
             getItem: () => { throw new Error('blocked'); }
         };
         expect(storedPalette()).toBe(null);
+    });
+});
+
+describe('text size as UI zoom (v2.1.0)', () => {
+    it('zooms a desktop by the requested amount', () => {
+        expect(uiZoomFor('NORMAL', 1440, 900)).toBe(1);
+        expect(uiZoomFor('LARGE', 1440, 900)).toBe(1.25);
+        expect(uiZoomFor('HUGE', 1440, 900)).toBe(1.5);
+    });
+
+    it('never lays a screen out smaller than the tested minimum', () => {
+        const z = uiZoomFor('HUGE', 1000, 600);
+        expect(1000 / z).toBeGreaterThanOrEqual(MIN_LAYOUT.width - 0.001);
+        expect(600 / z).toBeGreaterThanOrEqual(MIN_LAYOUT.height - 0.001);
+    });
+
+    it('leaves a landscape phone unzoomed, and never zooms below 1', () => {
+        expect(uiZoomFor('HUGE', 844, 390)).toBe(1);
+        expect(uiZoomFor('HUGE', 320, 200)).toBe(1);
+    });
+
+    it('cycles NORMAL -> LARGE -> EXTRA LARGE and back', () => {
+        expect(nextTextSize('NORMAL')).toBe('LARGE');
+        expect(nextTextSize('LARGE')).toBe('HUGE');
+        expect(nextTextSize('HUGE')).toBe('NORMAL');
+        expect(TEXT_SIZES.map(t => t.scale)).toEqual([1, 1.25, 1.5]);
     });
 });

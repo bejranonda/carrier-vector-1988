@@ -36,3 +36,13 @@ describe('pilotMenuHitTest', () => {
         expect(pilotMenuHitTest(0, 0, layout)).toBeNull();
     });
 });
+
+describe('pilotMenuLayout with a long menu (v2.1.0)', () => {
+    it('squeezes rows to stay inside a short screen, dropping detail lines when needed', () => {
+        const l = pilotMenuLayout(960, 600, 11);
+        const last = l.items[l.items.length - 1];
+        expect(last.y + last.h).toBeLessThanOrEqual(l.panel.y + l.panel.h);
+        expect(l.panel.y + l.panel.h).toBeLessThanOrEqual(600);
+        expect(pilotMenuLayout(1440, 900, 8).compact).toBe(false);
+    });
+});

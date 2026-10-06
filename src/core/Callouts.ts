@@ -52,6 +52,11 @@ export const CALLOUT_TUNING = {
 
 export class Callouts {
     private queue: Callout[] = [];
+    /**
+     * Multiplier on how long every callout holds. EASY flying sets it above 1:
+     * a 1.6-second banner is too quick for many players to read.
+     */
+    public holdScale = 1;
 
     public push(
         text: string,
@@ -61,7 +66,8 @@ export class Callouts {
         group?: string
     ) {
         if (group !== undefined) this.queue = this.queue.filter(c => c.group !== group);
-        this.queue.unshift({ text, detail, tone, life: seconds, span: seconds, group });
+        const hold = seconds * this.holdScale;
+        this.queue.unshift({ text, detail, tone, life: hold, span: hold, group });
         if (this.queue.length > CALLOUT_TUNING.maxVisible) {
             this.queue.length = CALLOUT_TUNING.maxVisible;
         }

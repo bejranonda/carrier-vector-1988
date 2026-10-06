@@ -780,3 +780,20 @@ a screen full of information and no idea what to do, no feeling of winning.
 `npx tsc --noEmit` clean; **917 tests** in 51 suites (was 874 in 48); `npm run build`. New suites:
 `BankToTurn`, `RadarMath`, `Milestones`, plus additions to `Tutorial`, `EnemyAI`, `VectorRenderer` and
 the `GameLoop` smoke test (bank keys turn the jet both ways; a 180 in under 20 s; the death sequence).
+
+## 17. Renovation for Reach — Scramble and Every Pilot (v2.0.0–v2.1.0)
+
+**Goal:** make the game something a stranger plays twice (v2.0.0), and that a
+non-gamer or older player can enjoy at all (v2.1.0), without changing the
+simulation underneath.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Front door | SCRAMBLE first; airborne on ENTER; teaching waves | first kill 4.2 s, one key |
+| Payout | chains, hit-stop, score pops, medals, career, unlocks, FLY AGAIN | harness + smoke tests |
+| Reach | daily SCRAMBLE, challenge links, soundtrack | card/link tests |
+| Every pilot | fly-style question, EASY flying, text-size zoom, plain words | relaxed bot 6 -> 11-12 kills; older-player browser session |
+
+**Next (see `reviews/v2.1.0/RECOMMENDATIONS_AND_ROADMAP.md`):** a pilot-customer
+round that deliberately includes players over 50, a phone type scale (#103),
+a type-scale pass toward the 28 px guideline (#104).

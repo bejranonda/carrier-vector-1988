@@ -1498,3 +1498,55 @@ already had, rather than writing new reward text.
 | Browser checks | 33 (`npm run playtest`) |
 | Runtime dependencies | 0 |
 | Bundle | 253.6 kB raw / 82.0 kB gzip |
+
+## 23. SCRAMBLE, Chains, Progression and EASY (v2.0.0–v2.1.0)
+
+### 23.1 SCRAMBLE (`core/Scramble.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `lives` | 3 (EASY 5) | Jets per run |
+| `clearWave` | 5 | Waves cleared that count the run as completed |
+| `firstWaveDelay` / `breatherSeconds` | 1.0 s / 3.2 s | Before wave 1 / between waves |
+| `waveBonusPerWave` + `speedBonusPerSecond` × (`parSeconds` − t) | 150 + 15 × (30 − t) | Wave-clear bonus, never negative |
+| `bomberHullDamage` | 15 % (EASY 8) | Hull lost to a bomber within 650 m of the boat |
+| `repairPerWave` | 35 | Airframe damage patched per wave clear |
+| `waveTimeoutSeconds` | 75 | A wave still alive bugs out (no bonus) |
+| `fighterAccuracy(w)` | 0.45 (w ≤ 4), 0.7 (≤ 7), 1 | Share of connecting bursts that land |
+| `escalationCount(w)` | min(9, 4 + ⌊(w−5)/2⌋) | Contacts per wave after the scripted five |
+
+Waves are a pure function of `(wave, seed)` (`mulberry32`), which is what makes
+the daily and challenge links (`?c=seed.score.waves`) work without a server.
+
+### 23.2 Kill chains (`core/Combo.ts`) and kill effects
+
+Window 4.5 s; multiplier = chain length, capped at 5; bonus = base × (m − 1),
+so a lone kill is paid exactly its table value. Hit-stop: world at 12 % for
+0.09 s (0.16 s on a chain of 3+), applied in the real-time loop only.
+
+### 23.3 Medals and career (`core/Medals.ts`, `core/Career.ts`)
+
+Three independent star criteria per mission (bitmask, only ever gained).
+Career XP per run = max(0, score) + 100 + 400 × new stars; level n+1 needs
+1500 × n(n+1)/2 XP. Palettes: AMBER 3★, ARCTIC 8★, SYNTHWAVE 14★.
+
+### 23.4 EASY flying (`core/EasyMode.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `timeScale` | 0.8 | World speed |
+| `damageTaken` / `carrierDamage` | 0.5 / 0.5 | Damage multipliers |
+| `fighterAccuracy` | 0.5 | Extra share of fighter hits that miss |
+| `calloutHold` / `shake` | 1.7 / 0.5 | Message hold / camera shake multipliers |
+| `triggerInterval` | 0.9 s | Held-trigger cadence |
+| `missileTrickleSeconds` | 6 s | One Sidewinder back on the rail (SCRAMBLE) |
+| Missile cone | cos ≥ 0 (90°), 300-3500 m | Against STANDARD's cos ≥ 0.64 (~50°), 300-3500 m |
+
+Smart trigger: MISSILE if in the cone, a round is free and none is inbound to
+that target; else GUN if in the gun envelope (1.8 km, cos ≥ 0.985); else NOT YET.
+
+### 23.5 Text size (`Theme.uiZoomFor`)
+
+zoom = max(1, min(requested, w/720, h/400)); requested = 1, 1.25, 1.5. The
+canvas transform is `dpr × zoom`; layouts see `viewWidth = cssWidth / zoom`;
+pointer input is divided by the zoom in `main.ts`.

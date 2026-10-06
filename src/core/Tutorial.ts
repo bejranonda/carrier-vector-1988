@@ -70,7 +70,7 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
     },
     {
         match: (s) => !!s.gunsTracking,
-        hint: { text: 'BANDIT ON YOUR TAIL - BANK HARD AND PULL, DO NOT FLY STRAIGHT', severity: 'CRITICAL' }
+        hint: { text: 'ENEMY BEHIND YOU - TURN HARD (HOLD A OR D), DO NOT FLY STRAIGHT', severity: 'CRITICAL' }
     },
     {
         match: (s) => s.damage >= 60,
@@ -116,15 +116,15 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
     },
     {
         match: (s) => !!s.bandit?.locked && s.bandit.inRange,
-        hint: { text: 'IN RANGE - FIRE [SPACE]', severity: 'INFO' }
+        hint: { text: 'FIRE NOW - PRESS SPACE', severity: 'INFO' }
     },
     {
         match: (s) => !!s.bandit?.locked,
-        hint: { text: 'LOCKED - TURN TOWARD THE BANDIT UNTIL IT IS IN RANGE', severity: 'INFO' }
+        hint: { text: 'TARGET LOCKED - TURN TOWARD IT (A / D) UNTIL IT SAYS FIRE NOW', severity: 'INFO' }
     },
     {
         match: (s) => !!s.bandit?.ahead,
-        hint: { text: 'BANDIT AHEAD - PRESS [T] TO LOCK ON', severity: 'INFO' }
+        hint: { text: 'ENEMY AHEAD - PRESS [T] TO LOCK ON', severity: 'INFO' }
     },
     {
         match: (s) => s.rwrState === 'SEARCH',

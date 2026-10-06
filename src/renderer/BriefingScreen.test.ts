@@ -113,3 +113,14 @@ describe('briefingSecondaryOptions', () => {
         expect(opts.find(([k]) => k === 'V')?.[1]).toBe('VETERAN threat');
     });
 });
+
+describe('briefing accessibility options (v2.1.0)', () => {
+    it('offers text size and EASY flying right after changing the mission', () => {
+        const opts = briefingSecondaryOptions({
+            pacingLabel: 'ARCADE pacing', threatLabel: 'REGULAR threat', mapChangeable: false, showPaletteHint: false,
+            textSizeLabel: 'LARGE', flyStyleLabel: 'EASY flying'
+        });
+        expect(opts[1]).toEqual(['T', 'text size: LARGE']);
+        expect(opts[2]).toEqual(['E', 'EASY flying']);
+    });
+});

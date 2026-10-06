@@ -192,7 +192,7 @@ describe('Contextual flight coach - the attack and the tail', () => {
 
     it('tells a locked pilot to steer in, then to fire once in range', () => {
         expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: false } })?.text).toContain('LOCKED');
-        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: true } })?.text).toContain('[SPACE]');
+        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: true } })?.text).toContain('FIRE NOW - PRESS SPACE');
     });
 
     it('warns of a fighter on the tail ahead of any attack prompt', () => {
@@ -200,7 +200,8 @@ describe('Contextual flight coach - the attack and the tail', () => {
             ...base, gunsTracking: true, bandit: { ahead: true, locked: true, inRange: true }
         });
         expect(h?.severity).toBe('CRITICAL');
-        expect(h?.text).toContain('TAIL');
+        // Plain words since v2.1.0: "behind you", not "on your tail".
+        expect(h?.text).toContain('BEHIND YOU');
     });
 
     it('keeps a missile launch above a guns warning, and says chaff', () => {

@@ -1341,6 +1341,10 @@ export class HUD {
             ctx.font = font(c.tone === 'PRAISE' || isKill ? 22 : 18, 700);
             const w = Math.max(ctx.measureText(c.text).width, c.detail ? ctx.measureText(c.detail).width : 0) + 34;
             const h = c.detail ? 44 : 30;
+            // Newest first, so on a short screen the oldest banner is the one
+            // that waits rather than running off the bottom over the gauges
+            // (v2.1.0 phone screenshot, with EASY's longer hold).
+            if (y + h > this.height - 56) break;
             plate(ctx, { x: layout.cx - w / 2, y, w, h },
                 { fill: 'rgba(6,13,17,0.72)', border: color, radius: 4 });
 

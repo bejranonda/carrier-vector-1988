@@ -37,6 +37,14 @@
 > - [`v1.9.0 Current Review Suite`](reviews/v1.9.0/README.md) (**current** — browser-instrumented playtest, 12 dimensions)
 > - [`Standard Review Template`](reviews/REVIEW_TEMPLATE.md) (Standardized 12-dimension protocol, cut from 25 in v1.9.0)
 
+
+> **Status at v2.1.0 (2026-10-06):** this executive summary dates from the
+> v1.x reviews. The game has since been renovated around reach: SCRAMBLE as
+> the front door, a progression and payout layer (v2.0.0), and EASY flying
+> plus text size for non-gamers and older players (v2.1.0). Current verdicts
+> and scores live in [`reviews/v2.1.0/`](reviews/v2.1.0/README.md) and
+> [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
+
 ## 1. Current State Critique & Scoring
 
 ### 1.1. Core Mechanics & Flight Model (Score: 8.5/10)

@@ -36,6 +36,8 @@ import { KillFxSystem, drawKillFx } from '../renderer/KillFx';
 import { SpeedStreaks } from '../renderer/SpeedStreaks';
 import { scrambleIntensity } from '../audio/MusicPattern';
 import { challengeLine, challengeUrl, challengeVerdict } from './Challenge';
+import { EASY_TUNING, easyHint, easyTrigger, loadFlyStyle, saveFlyStyle, shouldAskFlyStyle } from './EasyMode';
+import type { FlyStyle } from './EasyMode';
 import type { Challenge } from './Challenge';
 import { MEDALS, earnedMask, loadMedals, mergeMedals, saveMedals, starCount, totalStars } from './Medals';
 import type { MedalRecords, RunSummary } from './Medals';
@@ -43,6 +45,7 @@ import { awardRun, careerLevel, isPaletteUnlocked, loadCareer, newlyUnlocked, ne
 import type { Career, XpAward } from './Career';
 import { debriefLayout, drawDebriefView } from '../renderer/DebriefView';
 import type { DebriefData } from '../renderer/DebriefView';
+import { drawFlyStyleChooser, flyStyleHitTest, flyStyleLayout } from '../renderer/FlyStyleView';
 import { arbitrateHint, getContextualHint, TrainingSequence } from './Tutorial';
 import { HUD_DENSITY_LABEL, resolveHudDensity, saveHudDensity } from './HudDensity';
 import { pilotMenuItems, plainInstruction, wrapMenuIndex, type PilotMenuItem } from './PilotMenu';
@@ -64,11 +67,16 @@ import {
     applyPalette,
     loadPalette,
     nextAvailablePalette,
+    loadTextSize,
+    nextTextSize,
+    saveTextSize,
+    textSizeSpec,
+    uiZoomFor,
     paletteSpec,
     savePalette,
     storedPalette
 } from '../renderer/Theme';
-import type { PaletteId } from '../renderer/Theme';
+import type { PaletteId, TextSizeId } from '../renderer/Theme';
 import {
     applyDisplayModeToDocument,
     displayModeSpec,
@@ -292,6 +300,8 @@ export class GameLoop {
      * red-green colour-blind player cannot read, so it is a setting.
      */
     public palette: PaletteId = loadPalette();
+    /** Text size for every label in the game - see Theme.TEXT_SIZES. */
+    public textSize: TextSizeId = loadTextSize();
     /**
      * Chosen map, for the scenarios that let one be chosen. Null means the
      * scenario's own terrain.
@@ -408,6 +418,23 @@ export class GameLoop {
      */
     private hitStop = 0;
     public static readonly HIT_STOP_SCALE = 0.12;
+
+    /** EASY or STANDARD - see EasyMode.ts. Set in the constructor. */
+    public flyStyle: FlyStyle = 'STANDARD';
+    /** The first-run "how would you like to fly?" screen is up. */
+    public flyStyleChooserOpen = false;
+    /** Which option the chooser's keyboard cursor is on. */
+    public flyStyleChoice: FlyStyle = 'EASY';
+    /** What the pilot asked to fly when the chooser interrupted them. */
+    private pendingFlight: 'BRIEFING' | 'DAILY' | 'SKIP' = 'BRIEFING';
+    /** EASY: seconds until a held trigger tries again. */
+    private easyTriggerTimer = 0;
+    /** EASY: seconds the cannon keeps firing after one click. */
+    private easyGunBurst = 0;
+    /** EASY: throttle on the "not yet" message. */
+    private easyNotYetCooldown = 0;
+    /** The "try EASY" offer has been made this run (once per run, never on EASY). */
+    public easyOffered = false;
     /** Seconds between a wave's last kill and its WAVE CLEARED payout. */
     public static readonly WAVE_CLEAR_BEAT = 1.1;
 
@@ -421,6 +448,8 @@ export class GameLoop {
         breather: number;
         waveSeconds: number;
         wavesCleared: number;
+        /** EASY: seconds toward the next Sidewinder trickling back. */
+        trickle: number;
         brief: string;
         seed: number;
         /** Seconds since the wave's last contact went down. */
@@ -520,6 +549,11 @@ export class GameLoop {
     public viewHeight = 1;
     /** Device pixel ratio the backing store is currently sized for. */
     public dpr = 1;
+    /** The real canvas size, CSS px. `viewWidth/Height` are these over `uiZoom`. */
+    public cssWidth = 1;
+    public cssHeight = 1;
+    /** Layout pixels -> CSS pixels. 1 at NORMAL text; see Theme.uiZoomFor. */
+    public uiZoom = 1;
 
     private lastTimestamp = 0;
     private audioStarted = false;
@@ -548,6 +582,8 @@ export class GameLoop {
         // directly to the visible canvas after compositing).
         this.viewWidth = canvas.width || 1;
         this.viewHeight = canvas.height || 1;
+        this.cssWidth = this.viewWidth;
+        this.cssHeight = this.viewHeight;
         this.post = new PostProcess(this.viewWidth, this.viewHeight);
         this.renderer = new VectorRenderer(this.post.worldTarget);
 
@@ -566,6 +602,10 @@ export class GameLoop {
 
         applyPalette(this.palette);
         this.applyDisplayMode();
+        // A pilot who has never chosen and never flown starts on EASY and is
+        // asked once; a returning pilot keeps the game they already knew.
+        const anyAttempts = Object.values(this.missionRecords).some(r => r.attempts > 0);
+        this.setFlyStyle(loadFlyStyle() ?? (anyAttempts ? 'STANDARD' : 'EASY'), false);
         this.scenario = scenarioById(DEFAULT_SCENARIO);
         this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === DEFAULT_SCENARIO);
         this.applyScenario(this.scenario);
@@ -693,6 +733,7 @@ export class GameLoop {
         this.samMissileActive.clear();
         this.lastCautionDamage = 0;
         this.sortieKills = 0;
+        this.easyOffered = false;
         this.combo.reset();
         this.killFx.clear();
         this.hitStop = 0;
@@ -714,6 +755,7 @@ export class GameLoop {
                 breather: SCRAMBLE.firstWaveDelay,
                 waveSeconds: 0,
                 wavesCleared: 0,
+                trickle: 0,
                 brief: '',
                 seed: seedOverride ?? Math.floor(Math.random() * 1e9),
                 clearTimer: 0,
@@ -792,7 +834,8 @@ export class GameLoop {
             perfectTraps: this.score.breakdown.perfectTraps,
             bombsRemaining: this.physics.loadout.ironBombs,
             rwrState: this.sensors.masterRwrState,
-            flightAssistMode: this.assistLevel
+            flightAssistMode: this.effectiveAssist(),
+            jetsAllowed: this.scrambleLives()
         };
     }
 
@@ -1066,6 +1109,7 @@ export class GameLoop {
         this.combo.breakChain();
         this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
         this.deck.log(reason);
+        this.offerEasyIfStruggling();
         if (this.scramble) {
             this.respawnScramble();
             return;
@@ -1147,19 +1191,25 @@ export class GameLoop {
             ? Math.min(2, Math.max(1, window.devicePixelRatio))
             : 1;
         this.dpr = dpr;
-        this.viewWidth = Math.max(1, Math.round(width));
-        this.viewHeight = Math.max(1, Math.round(height));
+        this.cssWidth = Math.max(1, Math.round(width));
+        this.cssHeight = Math.max(1, Math.round(height));
+        // Text size is a UI zoom: lay out for a smaller virtual screen, then
+        // scale it up - see Theme.uiZoomFor.
+        this.uiZoom = uiZoomFor(this.textSize, this.cssWidth, this.cssHeight);
+        this.viewWidth = Math.max(1, Math.round(this.cssWidth / this.uiZoom));
+        this.viewHeight = Math.max(1, Math.round(this.cssHeight / this.uiZoom));
 
-        this.canvas.width = Math.round(this.viewWidth * dpr);
-        this.canvas.height = Math.round(this.viewHeight * dpr);
+        this.canvas.width = Math.round(this.cssWidth * dpr);
+        this.canvas.height = Math.round(this.cssHeight * dpr);
         if (this.canvas.style) {
-            this.canvas.style.width = `${this.viewWidth}px`;
-            this.canvas.style.height = `${this.viewHeight}px`;
+            this.canvas.style.width = `${this.cssWidth}px`;
+            this.canvas.style.height = `${this.cssHeight}px`;
         }
-        // Everything downstream draws in CSS pixels.
-        this.ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+        // Everything downstream draws in layout pixels (CSS px / zoom).
+        const scale = dpr * this.uiZoom;
+        this.ctx.setTransform?.(scale, 0, 0, scale, 0, 0);
 
-        this.post.resize(this.viewWidth, this.viewHeight, dpr);
+        this.post.resize(this.viewWidth, this.viewHeight, scale);
         this.renderer.resize(this.viewWidth, this.viewHeight);
         this.hud.resize(this.viewWidth, this.viewHeight);
         this.applyControlScheme();
@@ -1242,6 +1292,8 @@ export class GameLoop {
             this.updateTouch();
 
             let simElapsed = elapsed;
+            // EASY runs the world at 80%: time to read, time to react.
+            if (this.easyMode && this.phase === 'ACTIVE') simElapsed *= EASY_TUNING.timeScale;
             if (this.hitStop > 0) {
                 this.hitStop = Math.max(0, this.hitStop - Math.min(0.1, Math.max(0, elapsed)));
                 simElapsed = elapsed * GameLoop.HIT_STOP_SCALE;
@@ -1321,7 +1373,7 @@ export class GameLoop {
         }
         this.lastAirSpeed = speed;
 
-        const demand = resolveControls(this.assistLevel, this.assistFlightState(), pilot, this.navTarget());
+        const demand = resolveControls(this.effectiveAssist(), this.assistFlightState(), pilot, this.navTarget());
         this.assistOverride = demand.override;
 
         if (demand.pitch !== 0) this.physics.applyPitchInput(demand.pitch, dt);
@@ -1348,7 +1400,9 @@ export class GameLoop {
         if (pilot.throttle !== 0) this.training.progress.throttleChanged = true;
 
         // Held-trigger cannon fire
-        if (k[' '] && this.selectedWeapon === 'GUN') {
+        // EASY fires the cannon only in the bursts the smart trigger asks for.
+        const gunHeld = this.easyMode ? this.easyGunBurst > 0 : k[' '] && this.selectedWeapon === 'GUN';
+        if (gunHeld) {
             const before = this.weapons.bullets.length;
             this.weapons.fireGun(this.physics);
             if (this.weapons.bullets.length > before) this.shake(SHAKE_SOURCES.gun);
@@ -1416,7 +1470,7 @@ export class GameLoop {
 
         // The cannon is a held trigger; everything else is edge-triggered, so
         // the same button can fire a burst or release a single bomb.
-        this.inputState[' '] = demand.firing && this.selectedWeapon === 'GUN';
+        this.inputState[' '] = demand.firing && (this.easyMode || this.selectedWeapon === 'GUN');
 
         for (const tap of this.touch.consumeTaps()) {
             this.handleTouchTap(tap.control, tap.x, tap.y);
@@ -1426,7 +1480,8 @@ export class GameLoop {
     private handleTouchTap(control: TouchControlId, x: number, y: number) {
         switch (control) {
             case 'FIRE':
-                if (this.selectedWeapon !== 'GUN') this.fireSelectedWeapon();
+                if (this.easyMode) this.easyFire();
+                else if (this.selectedWeapon !== 'GUN') this.fireSelectedWeapon();
                 return;
             case 'TARGET':
                 this.cycleDesignation(1);
@@ -1506,10 +1561,16 @@ export class GameLoop {
 
     /** A tap on a menu screen, in CSS pixels. Returns true if it was used. */
     public handleMenuTap(x: number, y: number): boolean {
+        if (this.flyStyleChooserOpen) {
+            const hit = flyStyleHitTest(x, y, flyStyleLayout(this.viewWidth, this.viewHeight));
+            if (hit === 'TEXT_SIZE') this.cycleTextSize();
+            else if (hit) this.chooseFlyStyle(hit);
+            return true;
+        }
         if (this.phase === 'BRIEFING') {
             const areas = briefingHitAreas(this.viewWidth, this.viewHeight, SCENARIOS.length, true);
             if (areas.daily && inside(areas.daily, x, y)) {
-                this.startDailySortie();
+                this.requestFlight('DAILY');
                 return true;
             }
             for (let i = 0; i < areas.pills.length; i++) {
@@ -1518,7 +1579,7 @@ export class GameLoop {
                     return true;
                 }
             }
-            this.confirmBriefing();
+            this.requestFlight('BRIEFING');
             return true;
         }
 
@@ -1534,7 +1595,7 @@ export class GameLoop {
 
     /** Register a shake event. Presentation only - see the field comment. */
     public shake(amount: number) {
-        this.trauma = addTrauma(this.trauma, amount * this.motion.shakeScale);
+        this.trauma = addTrauma(this.trauma, amount * this.motion.shakeScale * (this.easyMode ? EASY_TUNING.shake : 1));
     }
 
     /** Full-screen flash, used sparingly: damage taken and kills. */
@@ -1643,7 +1704,7 @@ export class GameLoop {
         // SCRAMBLE has no deck to recover to; a phone's default-on recovery
         // assist must not fly the jet away from the fight to land.
         if (!this.approachAssist || this.scramble) return null;
-        if (this.assistLevel !== 'AUTO') return null;
+        if (this.effectiveAssist() !== 'AUTO') return null;
         if (this.deck.aircraftState !== 'AIRBORNE') return null;
 
         // Fly the approach at this airframe's on-speed speed, not a constant:
@@ -1747,6 +1808,16 @@ export class GameLoop {
         this.callouts.push(`PALETTE — ${paletteSpec(this.palette).label}`, 'MODE');
         soundFX.playUiMove();
         return this.palette;
+    }
+
+    /** NORMAL -> LARGE -> EXTRA LARGE text, remembered. */
+    public cycleTextSize(): TextSizeId {
+        this.textSize = nextTextSize(this.textSize);
+        saveTextSize(this.textSize);
+        this.resize(this.cssWidth, this.cssHeight);
+        this.callouts.push(`TEXT SIZE — ${textSizeSpec(this.textSize).label}`, 'MODE');
+        soundFX.playUiMove();
+        return this.textSize;
     }
 
     /** Toggle the recovery assist, and remember the choice. */
@@ -1943,7 +2014,7 @@ export class GameLoop {
         if (this.currentView === 'MICRO_FLIGHT') {
             const hudSnap: HudStateSnapshot = {
                 selectedWeapon: this.selectedWeapon,
-                assistLabel: assistSpec(this.assistLevel).label,
+                assistLabel: this.easyMode ? 'EASY' : assistSpec(this.assistLevel).label,
                 hudDensity: this.hud.hudDensity,
                 padlockActive: this.padlock.isPadlocked,
                 pitchInverted: this.pitchInverted,
@@ -2028,7 +2099,7 @@ export class GameLoop {
             // SCRAMBLE re-locks whenever the lock is lost: the next bandit is
             // always boxed and pointed at, so SPACE is always the answer.
             const relock = this.scramble !== null && !this.tracker.designated();
-            if (this.assistLevel === 'AUTO' || !this.hasInitialTargetAcquired || relock) {
+            if (this.effectiveAssist() === 'AUTO' || !this.hasInitialTargetAcquired || relock) {
                 const acquired = this.tracker.autoAcquire();
                 if (acquired) this.hasInitialTargetAcquired = true;
             }
@@ -2421,6 +2492,17 @@ export class GameLoop {
         this.hitMarker = Math.max(0, this.hitMarker - dt);
         this.callouts.update(dt);
         this.combo.update(dt);
+        this.easyGunBurst = Math.max(0, this.easyGunBurst - dt);
+        this.easyNotYetCooldown = Math.max(0, this.easyNotYetCooldown - dt);
+        if (this.easyMode && (this.inputState[' '] || this.inputState['mousefire'])) {
+            this.easyTriggerTimer -= dt;
+            if (this.easyTriggerTimer <= 0) {
+                this.easyFire(true);
+                this.easyTriggerTimer = EASY_TUNING.triggerInterval;
+            }
+        } else {
+            this.easyTriggerTimer = 0;
+        }
         if (this.trapCinematic > 0) {
             this.trapCinematic = Math.max(0, this.trapCinematic - dt);
             // The deck state machine already owns the aircraft; this is purely
@@ -2498,7 +2580,7 @@ export class GameLoop {
             if (this.scenario.setup.combatShielded) {
                 this.deck.log(`[TRAINING] SAM from ${impact.samId} ghosted — no damage in combat-shielded sortie.`);
             } else {
-                this.physics.applyDamage(impact.damage);
+                this.physics.applyDamage(impact.damage * (this.easyMode ? EASY_TUNING.damageTaken : 1));
                 const sourceSam = this.sensors.samSites.find(s => s.id === impact.samId);
                 this.lastLossCause = { kind: 'SAM', detail: sourceSam?.name ?? impact.samId };
                 this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
@@ -2519,12 +2601,13 @@ export class GameLoop {
             if (this.scenario.setup.combatShielded || this.dying || enemy.passive) return; // ghost in training
             soundFX.playIncomingFire(this.placeAt(enemy.position));
             if (hit && enemy.accuracy !== undefined && Math.random() > enemy.accuracy) hit = false;
+            if (hit && this.easyMode && Math.random() < EASY_TUNING.fighterAccuracy) hit = false;
             if (!hit) {
                 this.deck.log(`TRACERS PAST YOU - ${enemy.name} IS FIRING`);
                 this.shake(SHAKE_SOURCES.damageTaken * 0.15);
                 return;
             }
-            const dmg = 4 + Math.random() * 6;
+            const dmg = (4 + Math.random() * 6) * (this.easyMode ? EASY_TUNING.damageTaken : 1);
             this.physics.applyDamage(dmg);
             this.lastLossCause = { kind: 'CANNON', detail: enemy.name };
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
@@ -2649,6 +2732,153 @@ export class GameLoop {
     }
 
     // -----------------------------------------------------------------
+    // EASY flying (v2.1.0) - see core/EasyMode.ts
+    // -----------------------------------------------------------------
+
+    public get easyMode(): boolean {
+        return this.flyStyle === 'EASY';
+    }
+
+    /** Switch EASY on or off; `remember` stores the choice. */
+    public setFlyStyle(style: FlyStyle, remember = true) {
+        this.flyStyle = style;
+        this.callouts.holdScale = style === 'EASY' ? EASY_TUNING.calloutHold : 1;
+        if (remember) saveFlyStyle(style);
+    }
+
+    public toggleFlyStyle(): FlyStyle {
+        this.setFlyStyle(this.easyMode ? 'STANDARD' : 'EASY');
+        this.callouts.push(this.easyMode ? 'EASY FLYING ON' : 'EASY FLYING OFF', 'MODE',
+            this.easyMode ? 'THE PLANE FLIES ITSELF - YOU FIRE' : 'YOU FLY THE PLANE');
+        soundFX.playUiSelect();
+        return this.flyStyle;
+    }
+
+    /** Whether the first-run chooser should be shown before this flight. */
+    public shouldAskFlyStyle(): boolean {
+        const anyAttempts = Object.values(this.missionRecords).some(r => r.attempts > 0);
+        return shouldAskFlyStyle(loadFlyStyle(), anyAttempts);
+    }
+
+    /**
+     * Every "fly" request from the briefing comes through here, so a brand-new
+     * pilot is asked how they want to fly before their very first flight -
+     * whichever button they pressed - and never again.
+     */
+    public requestFlight(kind: 'BRIEFING' | 'DAILY' | 'SKIP' = 'BRIEFING') {
+        if (this.phase !== 'BRIEFING') return;
+        if (this.shouldAskFlyStyle()) {
+            this.pendingFlight = kind;
+            this.flyStyleChoice = 'EASY';
+            this.flyStyleChooserOpen = true;
+            soundFX.playUiMove();
+            return;
+        }
+        this.launchFlight(kind);
+    }
+
+    private launchFlight(kind: 'BRIEFING' | 'DAILY' | 'SKIP') {
+        if (kind === 'DAILY') {
+            this.startDailySortie();
+        } else {
+            this.confirmBriefing();
+            if (kind === 'SKIP') this.hotStartAirborne();
+        }
+    }
+
+    /** The chooser's answer: remember it and fly what was asked for. */
+    public chooseFlyStyle(style: FlyStyle) {
+        this.flyStyleChooserOpen = false;
+        this.setFlyStyle(style);
+        soundFX.playUiSelect();
+        this.launchFlight(this.pendingFlight);
+    }
+
+    public moveFlyStyleChoice(style: FlyStyle) {
+        if (this.flyStyleChoice !== style) soundFX.playUiMove();
+        this.flyStyleChoice = style;
+    }
+
+    public closeFlyStyleChooser() {
+        this.flyStyleChooserOpen = false;
+    }
+
+    /**
+     * The control law actually flying. EASY means the autopilot flies every
+     * intercept, whatever the stored assist level says.
+     */
+    private effectiveAssist(): AssistLevel {
+        return this.easyMode ? 'AUTO' : this.assistLevel;
+    }
+
+    /** SCRAMBLE jets per run: more when flying EASY. */
+    private scrambleLives(): number {
+        return this.easyMode ? EASY_TUNING.lives : SCRAMBLE.lives;
+    }
+
+    /**
+     * The EASY smart trigger: SPACE, a click or the FIRE button. Fires the
+     * missile when it will land, the cannon when the target is close and on
+     * the nose, and otherwise says "not yet" in plain words. Bombs and HARMs
+     * still go when the pilot has chosen them - EASY never takes a weapon away.
+     */
+    public easyFire(silent = false) {
+        if (this.currentView !== 'MICRO_FLIGHT' || this.deck.aircraftState !== 'AIRBORNE' || this.dying) return;
+        if (this.selectedWeapon === 'BOMB' || this.selectedWeapon === 'HARM') {
+            if (!silent) this.fireSelectedWeapon();
+            return;
+        }
+        const d = this.tracker.designated();
+        const choice = this.easyTriggerChoice();
+        if (choice === 'MISSILE') {
+            this.selectedWeapon = 'AIM9';
+            this.fireSelectedWeapon();
+        } else if (choice === 'GUN') {
+            this.selectedWeapon = 'GUN';
+            this.easyGunBurst = EASY_TUNING.gunBurstSeconds;
+        } else if (!silent && this.easyNotYetCooldown <= 0) {
+            const inbound = !!d && this.weapons.missiles.some(m => m.targetId === d.target.id);
+            this.callouts.push('NOT YET', 'MODE',
+                !d ? 'NO TARGET YET - THE PLANE WILL FIND ONE'
+                    : inbound ? 'A MISSILE IS ALREADY ON ITS WAY'
+                        : 'THE PLANE IS LINING UP - WAIT FOR "FIRE NOW"',
+                1.4, 'EASY');
+            soundFX.playRelayClick();
+            this.easyNotYetCooldown = 1.2;
+        }
+    }
+
+    /**
+     * A STANDARD pilot who has lost two jets in one run is offered EASY, once,
+     * in plain words - the guidelines' "hints after repeated failure", and the
+     * same in-context pattern as the stick-flip offer. Never repeated, never
+     * shown on EASY, and it changes nothing until the pilot says so.
+     */
+    private offerEasyIfStruggling() {
+        if (this.easyMode || this.easyOffered || this.score.breakdown.airframesLost < 2) return;
+        this.easyOffered = true;
+        this.callouts.push('HAVING A HARD TIME?', 'MODE',
+            'PRESS ESC AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF, YOU FIRE', 4.5, 'EASY');
+        this.deck.log('TIP: EASY FLYING (ESC MENU) LETS THE PLANE FLY AND AIM ITSELF - YOU ONLY FIRE.');
+    }
+
+    /** What the smart trigger would do right now. */
+    private easyTriggerChoice() {
+        const d = this.tracker.designated();
+        return easyTrigger({
+            target: d ? {
+                kind: d.target.kind,
+                inMissileEnvelope: d.inMissileEnvelope,
+                inGunEnvelope: d.inGunEnvelope,
+                range: d.range,
+                aspect: d.aspect
+            } : null,
+            sidewinders: this.physics.loadout.sidewinders,
+            missileInbound: !!d && this.weapons.missiles.some(m => m.targetId === d.target.id)
+        });
+    }
+
+    // -----------------------------------------------------------------
     // SCRAMBLE (v2.0.0) - see core/Scramble.ts
     // -----------------------------------------------------------------
 
@@ -2664,6 +2894,14 @@ export class GameLoop {
         if (!s || this.dying) return;
         // Fuel is not the game here.
         if (this.physics.fuel < 1500) this.physics.fuel = 1500;
+        // EASY: the rails slowly refill, so a pilot never runs dry mid-wave.
+        if (this.easyMode && this.physics.loadout.sidewinders < SCRAMBLE.maxSidewinders) {
+            s.trickle += dt;
+            if (s.trickle >= EASY_TUNING.missileTrickleSeconds) {
+                s.trickle = 0;
+                this.physics.loadout.sidewinders++;
+            }
+        }
 
         // A bomber that reaches the boat hits it and is gone - the cost of
         // chasing the wrong contact, in the one currency this mode keeps.
@@ -2671,7 +2909,7 @@ export class GameLoop {
             if (!t.isAlive || !isBomber(t)) continue;
             if (Math.hypot(t.position.x, t.position.z) > SCRAMBLE.bomberStrikeRadius) continue;
             t.isAlive = false;
-            const dmg = SCRAMBLE.bomberHullDamage;
+            const dmg = Math.round(SCRAMBLE.bomberHullDamage * (this.easyMode ? EASY_TUNING.carrierDamage : 1));
             this.deck.inventory.carrierHealth = Math.max(0, this.deck.inventory.carrierHealth - dmg);
             this.score.recordHullDamage(dmg);
             this.deck.log(`CRITICAL: ${t.name} REACHED CV-68! -${dmg}% HULL.`);
@@ -2737,7 +2975,7 @@ export class GameLoop {
         s.wave++;
         s.waveSeconds = 0;
         s.bugOut = false;
-        const spec = scrambleWave(s.wave, s.seed);
+        const spec = scrambleWave(s.wave, s.seed, this.easyMode);
         s.brief = spec.brief;
 
         const p = this.physics.position;
@@ -2780,7 +3018,7 @@ export class GameLoop {
      * progress bar - is no part of this mode.
      */
     private respawnScramble() {
-        const jetsLeft = SCRAMBLE.lives - this.score.breakdown.airframesLost;
+        const jetsLeft = this.scrambleLives() - this.score.breakdown.airframesLost;
         if (jetsLeft <= 0) {
             // The failure condition ends the run on the next tick.
             this.deck.aircraftState = 'HANGAR_MAINTENANCE';
@@ -2798,13 +3036,13 @@ export class GameLoop {
         this.physics.yaw = yaw;
         this.physics.velocity = { x: Math.sin(yaw) * 230, y: 0, z: Math.cos(yaw) * 230 };
         this.armScrambleJet();
-        this.callouts.push(`JET ${SCRAMBLE.lives - jetsLeft + 1} OF ${SCRAMBLE.lives}`, 'MODE',
+        this.callouts.push(`JET ${this.scrambleLives() - jetsLeft + 1} OF ${this.scrambleLives()}`, 'MODE',
             jetsLeft === 1 ? 'LAST JET - MAKE IT COUNT' : 'BACK IN THE FIGHT', 2.2, 'WAVE');
     }
 
     private scrambleObjective(): ObjectiveStep {
         const s = this.scramble!;
-        const jets = Math.max(0, SCRAMBLE.lives - this.score.breakdown.airframesLost);
+        const jets = Math.max(0, this.scrambleLives() - this.score.breakdown.airframesLost);
         const hull = Math.round(this.deck.inventory.carrierHealth);
         const status = `JETS ${jets} · HULL ${hull}%`;
         const alive = this.airborneTargets.filter(t => t.isAlive).length;
@@ -2819,7 +3057,8 @@ export class GameLoop {
             };
         }
         return {
-            title: `SPLASH ${alive} BANDIT${alive === 1 ? '' : 'S'}`,
+            // Plain words (v2.1.0): "SHOOT DOWN 2 PLANES", not "SPLASH 2 BANDITS".
+            title: `SHOOT DOWN ${alive} PLANE${alive === 1 ? '' : 'S'}`,
             detail: `WAVE ${s.wave} · ${s.brief} · ${status}`,
             key: 'SPACE',
             urgency: 'ACTION'
@@ -3042,9 +3281,10 @@ export class GameLoop {
         // Safety first, then the training checkout, then routine coaching - and
         // routine coaching only when it does not contradict the objective strip.
         // See `arbitrateHint` for the measured case that made this necessary.
-        const hint = scramble && contextual?.text.includes('RETURN TO CARRIER')
+        let hint = scramble && contextual?.text.includes('RETURN TO CARRIER')
             ? { text: 'HEAVY DAMAGE - CLEAR THE WAVE TO PATCH THE JET', severity: contextual.severity }
             : contextual;
+        if (this.easyMode) hint = easyHint(hint, this.easyTriggerChoice() !== 'NOT_YET');
         return arbitrateHint(
             hint,
             this.training.currentStep?.prompt ?? null,
@@ -3098,10 +3338,16 @@ export class GameLoop {
                     careerLine: this.career.runs > 0
                         ? (() => { const c = careerLevel(this.career.xp); return `CAREER LV ${c.level} · ${c.title}`; })()
                         : null,
-                    challengeLine: this.challenge && this.scenario.setup.scramble ? challengeLine(this.challenge) : null
+                    challengeLine: this.challenge && this.scenario.setup.scramble ? challengeLine(this.challenge) : null,
+                    textSizeLabel: textSizeSpec(this.textSize).label,
+                    flyStyleLabel: this.easyMode ? 'EASY flying' : 'STANDARD flying'
                 }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
+            if (this.flyStyleChooserOpen) {
+                drawFlyStyleChooser(this.ctx, w, h, this.flyStyleChoice,
+                    textSizeSpec(this.textSize).label, this.controlScheme === 'TOUCH');
+            }
             return;
         }
 
@@ -3351,8 +3597,10 @@ export class GameLoop {
                 pitchInverted: this.pitchInverted,
                 rewindsRemaining: this.timeRewind.rewindsRemaining,
                 goHere: this.goHereGoal(),
-                assistLabel: assistSpec(this.assistLevel).label,
-                assistOverride: this.assistOverride,
+                assistLabel: this.easyMode ? 'EASY' : assistSpec(this.assistLevel).label,
+                // EASY: the autopilot's own limits (ALPHA LIMIT...) are its
+                // business, not a message for a pilot who is not flying.
+                assistOverride: this.easyMode ? 'NONE' : this.assistOverride,
                 callouts: this.callouts.active(),
                 combo: { chain: this.combo.chain, multiplier: multiplierFor(this.combo.chain), fraction: this.combo.fraction },
                 hitMarker: this.hitMarker,
@@ -3361,7 +3609,7 @@ export class GameLoop {
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
                 motion: this.motion,
                 visibleContacts: this.visibility,
-                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO',
+                terrainFollowing: this.terrainFollowing && this.effectiveAssist() === 'AUTO',
                 // The JOIN cue ("get astern of the boat") is advice for a jet on
                 // its way home. Shown from the catapult onward - where it used
                 // to be, on phones, which default the recovery assist on - it
@@ -3482,12 +3730,14 @@ export class GameLoop {
         return pilotMenuItems({
             airborne: this.deck.aircraftState === 'AIRBORNE',
             onDeckReady: this.deck.aircraftState === 'CATAPULT_READY',
-            autopilotFlying: this.assistLevel === 'AUTO',
+            autopilotFlying: this.effectiveAssist() === 'AUTO',
             recoveryOn: this.approachAssist,
             hudDensityLabel: HUD_DENSITY_LABEL[this.hud.hudDensity],
             muted: soundFX.muted,
             canRecover: this.scramble === null,
-            musicOn: this.scramble !== null ? soundFX.musicEnabled : undefined
+            musicOn: this.scramble !== null ? soundFX.musicEnabled : undefined,
+            easyOn: this.easyMode,
+            textSizeLabel: textSizeSpec(this.textSize).label
         });
     }
 
@@ -3565,6 +3815,12 @@ export class GameLoop {
                 return;
             case 'MUSIC':
                 soundFX.toggleMusic();
+                return;
+            case 'EASY':
+                this.toggleFlyStyle();
+                return;
+            case 'TEXT_SIZE':
+                this.cycleTextSize();
                 return;
             case 'RESTART':
                 this.restartMission();

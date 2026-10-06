@@ -340,6 +340,73 @@ export function savePalette(id: PaletteId) {
     }
 }
 
+/**
+ * Text size (v2.1.0). Almost every label in the game was drawn at 9-12 px -
+ * fine for a young eye at a desk, unreadable for many older players and on a
+ * laptop across a room.
+ *
+ * Implemented as a UI ZOOM, not a font multiplier. A first attempt scaled
+ * `font()` alone: at 150% every fixed line height overlapped (card bodies,
+ * menu rows, the stat grid, callout plates). Zooming instead lays every screen
+ * out for a smaller virtual viewport and scales the result up, so text,
+ * boxes and spacing grow together - and every layout is already tested down
+ * to a 640 x 360 phone, which is exactly the floor the zoom stops at.
+ */
+export type TextSizeId = 'NORMAL' | 'LARGE' | 'HUGE';
+
+export const TEXT_SIZES: readonly { id: TextSizeId; label: string; scale: number }[] = [
+    { id: 'NORMAL', label: 'NORMAL', scale: 1 },
+    { id: 'LARGE', label: 'LARGE', scale: 1.25 },
+    { id: 'HUGE', label: 'EXTRA LARGE', scale: 1.5 }
+];
+
+export function textSizeSpec(id: TextSizeId) {
+    return TEXT_SIZES.find(t => t.id === id) ?? TEXT_SIZES[0];
+}
+
+export function nextTextSize(id: TextSizeId): TextSizeId {
+    const i = TEXT_SIZES.findIndex(t => t.id === id);
+    return TEXT_SIZES[(i + 1) % TEXT_SIZES.length].id;
+}
+
+/**
+ * The smallest virtual viewport the zoom will lay a screen out for, CSS px.
+ * Layouts are tested down to 640 x 360; this keeps a margin above that, and
+ * it means a landscape phone - whose touch layout is already large - is never
+ * zoomed at all (checked: at 844 x 390 a 1.08 zoom crowded the cockpit).
+ */
+export const MIN_LAYOUT = { width: 720, height: 400 } as const;
+
+/**
+ * The zoom actually used for a screen: what the player asked for, but never
+ * so much that the virtual viewport drops below the smallest layout every
+ * screen is tested at. Never below 1.
+ */
+export function uiZoomFor(id: TextSizeId, cssWidth: number, cssHeight: number): number {
+    const requested = textSizeSpec(id).scale;
+    const fit = Math.min(cssWidth / MIN_LAYOUT.width, cssHeight / MIN_LAYOUT.height);
+    return Math.max(1, Math.min(requested, fit));
+}
+
+const TEXT_SIZE_KEY = 'carrier-vector-1988.textSize';
+
+export function loadTextSize(): TextSizeId {
+    try {
+        const raw = globalThis.localStorage?.getItem(TEXT_SIZE_KEY);
+        return TEXT_SIZES.some(t => t.id === raw) ? raw as TextSizeId : 'NORMAL';
+    } catch {
+        return 'NORMAL';
+    }
+}
+
+export function saveTextSize(id: TextSizeId) {
+    try {
+        globalThis.localStorage?.setItem(TEXT_SIZE_KEY, id);
+    } catch {
+        // Best effort.
+    }
+}
+
 export function font(size: number, weight: 400 | 500 | 600 | 700 = 400): string {
     return `${weight} ${size}px ${MONO}`;
 }

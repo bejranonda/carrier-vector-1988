@@ -314,3 +314,20 @@ and a 60% hit chance make the same enemy a fight.
 ### Still open
 Turns are energy-limited (~9 deg/s held, ~19 s for a sustained 180); the guns warning has no sound;
 there is no first-sortie "wings" debrief. See Known Issues #56, #59 and #55.
+
+## 8. The Scramble and Every Pilot Passes (v2.0.0–v2.1.0)
+
+**What was in the way of fun:** order and reach. A new player met a menu, a
+deck screen and four instructions before the first reward; a run paid nothing
+that lasted; and a player without fast hands hit a steering wall a few
+seconds in, reading 9-12 px text.
+
+**What changed:** SCRAMBLE puts the fight first (first kill in ~4 s); chains,
+hit-stop and score pops make kills land; stars, career XP and unlocks make
+every run bank something; ENTER on the debrief flies again; and EASY flying -
+the plane flies and aims itself, one held button fires when a shot is good -
+plus a text-size zoom open the game to players who are not gamers.
+
+**Principle added:** fun is measured per player profile. The same change can
+be a delight for one profile and invisible to another; EASY's first version
+was exactly that, and only a profile-specific measurement showed it.

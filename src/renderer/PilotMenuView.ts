@@ -26,13 +26,21 @@ export interface PilotMenuLayout {
     panel: Rect;
     objective: Rect;
     items: Rect[];
+    /** Rows too short for a detail line: labels only. */
+    compact: boolean;
 }
 
 /** The one layout both the renderer and the click handler read. */
 export function pilotMenuLayout(width: number, height: number, itemCount: number): PilotMenuLayout {
     const m = PILOT_MENU_METRICS;
     const panelW = Math.min(m.panelMaxW, width - m.sideMargin * 2);
-    const itemsH = itemCount * m.itemH + Math.max(0, itemCount - 1) * m.itemGap;
+    // A long menu (EASY, TEXT SIZE, MUSIC...) on a short or zoomed screen
+    // squeezes its rows rather than running out of the panel; below 36 px a
+    // row drops its detail line and keeps the label (`compact`).
+    const fixed = m.titleH + m.objectiveH + m.footerH + m.pad * 2 + 6;
+    const fitH = Math.floor((height - 40 - fixed + m.itemGap) / Math.max(1, itemCount)) - m.itemGap;
+    const itemH = Math.max(24, Math.min(m.itemH, fitH));
+    const itemsH = itemCount * itemH + Math.max(0, itemCount - 1) * m.itemGap;
     const panelH = Math.min(
         height - 40,
         m.titleH + m.objectiveH + itemsH + m.footerH + m.pad * 2
@@ -54,11 +62,11 @@ export function pilotMenuLayout(width: number, height: number, itemCount: number
     const items: Rect[] = [];
     let y = objective.y + objective.h + 6;
     for (let i = 0; i < itemCount; i++) {
-        items.push({ x: panel.x + m.pad, y, w: panel.w - m.pad * 2, h: m.itemH });
-        y += m.itemH + m.itemGap;
+        items.push({ x: panel.x + m.pad, y, w: panel.w - m.pad * 2, h: itemH });
+        y += itemH + m.itemGap;
     }
 
-    return { panel, objective, items };
+    return { panel, objective, items, compact: itemH < 36 };
 }
 
 /** Which item, if any, a point in CSS pixels lands on. */
@@ -136,10 +144,12 @@ export function drawPilotMenu(
         ctx.textAlign = 'left';
         ctx.font = font(13, 600);
         ctx.fillStyle = isSelected ? THEME.phosphor : THEME.ink;
-        ctx.fillText(fitText(ctx, item.label, r.w - textX + r.x - 20), textX, r.y + r.h / 2 - 6);
-        ctx.font = font(10);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(fitText(ctx, item.detail, r.w - textX + r.x - 20), textX, r.y + r.h / 2 + 10);
+        ctx.fillText(fitText(ctx, item.label, r.w - textX + r.x - 20), textX, r.y + r.h / 2 - (layout.compact ? 0 : 6));
+        if (!layout.compact) {
+            ctx.font = font(10);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(fitText(ctx, item.detail, r.w - textX + r.x - 20), textX, r.y + r.h / 2 + 10);
+        }
     });
 
     const footerY = layout.panel.y + layout.panel.h - PILOT_MENU_METRICS.footerH / 2;

@@ -110,9 +110,15 @@ await session('desktop', { width: 1440, height: 900 }, false, async (page, shot)
         feedbackOnMenu ? 'ok' : feedbackOnMenu);
     check('new pilot flies the FIRST_FLIGHT HUD', s.density === 'FIRST_FLIGHT', s.density);
 
-    // v2.0.0: ENTER is the whole onboarding. No deck, no catapult wait.
-    const t0 = Date.now();
+    // v2.1.0: a brand-new pilot is asked once how they want to fly.
     await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    const chooser = await page.evaluate(() => window.__game.flyStyleChooserOpen);
+    check('a brand-new pilot is asked how they want to fly, once', chooser === true, chooser);
+    await shot('01b-fly-style');
+    // This session models a STANDARD pilot; the older-player session flies EASY.
+    const t0 = Date.now();
+    await page.keyboard.press('2');
     await page.waitForTimeout(400);
     s = await snapshot(page);
     check('ENTER on the briefing puts a new pilot straight into the air',
@@ -235,6 +241,8 @@ await session('training', { width: 1440, height: 900 }, false, async (page, shot
     let s = await snapshot(page);
     check('key 2 selects the training sortie', s.scenario === 'TRAINING_SORTIE', s.scenario);
     await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('2'); // the one-time fly-style question: STANDARD
     await page.waitForTimeout(800);
     await shot('01-deck');
     s = await snapshot(page);
@@ -285,6 +293,77 @@ await session('laptop', { width: 1280, height: 720 }, false, async (page, shot) 
 });
 
 // ---------------------------------------------------------------------
+// An older, non-gamer player (v2.1.0): EXTRA LARGE text, mouse only, EASY
+// ---------------------------------------------------------------------
+await session('older-player', { width: 1440, height: 900 }, false, async (page, shot) => {
+    // Text size is the first thing they change, from the briefing itself.
+    await page.keyboard.press('t');
+    await page.keyboard.press('t');
+    await page.waitForTimeout(300);
+    const z = await page.evaluate(() => ({ size: window.__game.textSize, zoom: window.__game.uiZoom }));
+    check('T on the briefing enlarges every word (EXTRA LARGE = 150% zoom)', z.size === 'HUGE' && z.zoom === 1.5, z);
+    await shot('01-briefing-xl');
+
+    // Mouse only from here: click the big FLY button...
+    await page.mouse.click(720, 900 - 100);
+    await page.waitForTimeout(400);
+    await shot('02-fly-style-xl');
+    // ...then the EASY card.
+    const card = await page.evaluate(() => {
+        const g = window.__game;
+        const l = window.__ui.flyStyleLayout(g.viewWidth, g.viewHeight);
+        return { x: (l.easy.x + 40) * g.uiZoom, y: (l.easy.y + 40) * g.uiZoom, open: g.flyStyleChooserOpen };
+    });
+    check('one click on FLY opens the fly-style question', card.open === true, card.open);
+    await page.mouse.click(card.x, card.y);
+    await page.waitForTimeout(500);
+    let s = await snapshot(page);
+    const easy = await page.evaluate(() => window.__game.easyMode);
+    check('one click on EASY puts them in the air on EASY', easy === true && s.deck === 'AIRBORNE', { easy, deck: s.deck });
+
+    // Hold the mouse button down - the EASY advice - and touch nothing else.
+    const t0 = Date.now();
+    const hints = new Set();
+    await page.mouse.move(720, 450);
+    await page.mouse.down();
+    let kills = 0;
+    for (let i = 0; i < 90 && kills < 3; i++) {
+        await page.waitForTimeout(500);
+        s = await snapshot(page);
+        if (s.hint) hints.add(s.hint);
+        kills = s.kills;
+        if (i === 8) await shot('03-easy-flight-xl');
+    }
+    await page.mouse.up();
+    check('holding the mouse button alone shoots down 3 planes within 45 s',
+        kills >= 3, { kills, seconds: (Date.now() - t0) / 1000 });
+    const steering = [...hints].filter(h => /TURN TOWARD|PRESS \[T\]|A \/ D|HOLD A OR D/.test(h));
+    check('the coach never asks an EASY pilot to steer', steering.length === 0, steering);
+
+    // The pause menu has the two switches they need.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await shot('04-menu-xl');
+    const ids = await page.evaluate(() => window.__game.menuItems().map(i => i.id));
+    check('the pause menu offers EASY FLYING and TEXT SIZE', ids.includes('EASY') && ids.includes('TEXT_SIZE'), ids);
+    await page.keyboard.press('Escape');
+
+    // End the run; FLY AGAIN by clicking it.
+    await page.evaluate(() => { const g = window.__game; g.scramble.wavesCleared = 5; g.deck.inventory.carrierHealth = 0; });
+    await page.waitForTimeout(2800);
+    await shot('05-debrief-xl');
+    const again = await page.evaluate(() => {
+        const g = window.__game;
+        const l = window.__ui.debriefLayout(g.viewWidth, g.viewHeight, g.debriefData());
+        return { x: (l.again.x + l.again.w / 2) * g.uiZoom, y: (l.again.y + l.again.h / 2) * g.uiZoom };
+    });
+    await page.mouse.click(again.x, again.y);
+    await page.waitForTimeout(500);
+    s = await snapshot(page);
+    check('a click on FLY AGAIN flies again', s.phase === 'ACTIVE' && s.deck === 'AIRBORNE', s.phase);
+});
+
+// ---------------------------------------------------------------------
 // A shared challenge link (v2.0.0): same waves, a score to beat
 // ---------------------------------------------------------------------
 await session('challenge', { width: 1280, height: 720 }, false, async (page, shot) => {
@@ -298,6 +377,8 @@ await session('challenge', { width: 1280, height: 720 }, false, async (page, sho
     check('a challenge link opens SCRAMBLE with the run to beat',
         state.scenario === 'SCRAMBLE' && state.challenge?.seed === 424242 && state.challenge?.score === 5000, state);
     await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('1'); // the one-time fly-style question: EASY
     await page.waitForTimeout(400);
     const seed = await page.evaluate(() => window.__game.scramble?.seed);
     check('the challenge flies the sharer\'s waves', seed === 424242, seed);
@@ -311,10 +392,21 @@ async function phoneFlight(page, shot, label) {
     await shot('01-briefing');
     const vp = page.viewportSize();
     await page.tap('#gameCanvas', { position: { x: vp.width / 2, y: vp.height - 60 } });
+    await page.waitForTimeout(400);
+    // The one-time fly-style question: tap the EASY card.
+    const easyCard = await page.evaluate(() => {
+        const g = window.__game;
+        const l = window.__ui.flyStyleLayout(g.viewWidth, g.viewHeight);
+        return { x: (l.easy.x + l.easy.w / 2) * g.uiZoom, y: (l.easy.y + l.easy.h / 2) * g.uiZoom, open: g.flyStyleChooserOpen };
+    });
+    check(`${label}: the fly-style question appears and is tappable`, easyCard.open === true, easyCard.open);
+    await page.tap('#gameCanvas', { position: { x: easyCard.x, y: easyCard.y } });
     await page.waitForTimeout(900);
     await shot('02-airborne');
     let s = await snapshot(page);
     check(`${label}: tapping FLY puts a new pilot in the air`, s.phase === 'ACTIVE' && s.deck === 'AIRBORNE', s.deck);
+    const easy = await page.evaluate(() => window.__game.easyMode);
+    check(`${label}: tapping EASY turns EASY flying on`, easy === true, easy);
 
     const before = await page.evaluate(() => window.__game.physics.loadout.chaff);
     const chaff = await page.evaluate(() => window.__game.touchLayout.chaff);

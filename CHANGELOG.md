@@ -5,6 +5,101 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-10-06
+
+**"Every Pilot."** The owner's brief: *players are not professional gamers,
+and can be older people who are not good at technique.* v2.1.0 measures what
+stops that player and removes it - without touching the simulation underneath.
+Evidence: [`docs/reviews/v2.1.0/`](docs/reviews/v2.1.0/README.md).
+
+**The measured wall.** A scripted "relaxed" player - slow reactions, never
+steers, presses SPACE only when told - got its first kill in 5 s, then spent
+minute after minute on `LOCKED - TURN TOWARD THE BANDIT`. Steering was the
+barrier. Text was the other: almost every label was drawn at 9-12 px.
+
+### EASY flying (`EasyMode.ts`)
+
+- **The plane flies itself and aims for you; you decide when to fire.** The
+  autopilot flies every intercept and the lock is always on.
+- **A smart trigger** on SPACE, a mouse click or the FIRE button: the missile
+  when a missile shot will land (and none is already on its way), the cannon
+  when the target is close and on the nose, otherwise `NOT YET` with the reason
+  in plain words. **Holding** it keeps firing whenever a shot is good - the
+  game can be played with one button, or a mouse alone.
+- EASY's missile cone is anything ahead of the wing line (90°), against the
+  standard ~50° seeker cone; the coach says `FIRE NOW` exactly when the trigger
+  would fire, and never asks an EASY pilot to steer or lock.
+- **Forgiving:** world at 80% speed, half damage to you and from bombers to the
+  boat, fighters miss more, five jets in SCRAMBLE, Sidewinders trickle back
+  onto the rail, messages hold 1.7× longer, half the camera shake, no
+  autopilot jargon (`ALPHA LIMIT`) on screen.
+- **Measured, same relaxed player, 3 minutes:** STANDARD 6 kills / 4 waves;
+  EASY 11 kills / 5 waves (first medal star); EASY holding fire 12 kills, on
+  wave 6. No jets lost in any of them.
+
+### Text size (`Theme.uiZoomFor`)
+
+- **NORMAL / LARGE / EXTRA LARGE** (100 / 125 / 150%), on `T` from the very
+  first screen, in the fly-style question and in the pause menu. Remembered.
+- Implemented as a **UI zoom**, not a font multiplier: the first attempt scaled
+  fonts alone and every fixed line height overlapped at 150%. Zooming lays each
+  screen out for a smaller virtual viewport, so text, boxes and spacing grow
+  together; it stops at a 720 × 400 virtual screen, so landscape phones (whose
+  touch layout is already large) are not zoomed.
+
+### "How would you like to fly?"
+
+- **Asked once**, the first time a brand-new pilot presses FLY (or the daily,
+  or skip): two big plain-language cards - EASY (recommended if you are new to
+  games) and STANDARD - plus the text size. Keys `1` / `2` act at once,
+  arrows + ENTER, mouse or a tap. A returning pilot is never interrupted and
+  keeps STANDARD.
+- Pause menu: `EASY FLYING: ON/OFF` (second item - where a struggling player
+  looks) and `TEXT SIZE`. Briefing: `T text size`, `E EASY flying`.
+- **"Having a hard time?"** A STANDARD pilot who loses two jets in one run is
+  offered EASY once, in plain words (the guidelines' hint after repeated
+  failure). Never repeated, never on EASY, changes nothing by itself.
+
+### Plain words
+
+- Instructions drop the jargon: `SHOOT DOWN 2 PLANES` (was `SPLASH 2
+  BANDITS`), `FIRE NOW - PRESS SPACE`, `TARGET LOCKED - TURN TOWARD IT (A / D)
+  UNTIL IT SAYS FIRE NOW`, `ENEMY BEHIND YOU - TURN HARD (HOLD A OR D)`, wave
+  briefs such as `A BOMBER WITH GUARDS - SHOOT THE BOMBER FIRST`. Celebrations
+  keep their flavour (`SPLASH ONE`).
+
+### Fixed
+
+- **#98** The fly-style keycaps only highlighted a card and waited for ENTER -
+  found by the bot, which sat on the question for three minutes. They now act.
+- **#99** The EASY coach turned `TARGET LOCKED ... UNTIL IT SAYS FIRE NOW` into
+  `FIRE NOW` (the line contains the words) - caught by its unit test.
+- **#100** Kill/wave banners could run off the bottom of a phone screen over
+  the gauges; banners now stop where the room ends (oldest waits).
+- **#101** A long pause menu on a short or zoomed screen ran out of its panel;
+  rows now compress, dropping the detail line when they must.
+- **#102** The menu offered `TAKE BACK THE STICK` while EASY made it do
+  nothing; hidden while EASY is on.
+- A held SPACE no longer auto-repeats missile or bomb releases through key
+  repeat in STANDARD (the cannon is unaffected) - one press, one round.
+
+### Engineering
+
+- 1,134 tests (was 1,107), 66 files. Browser harness **61/61** (was 48): every
+  new-pilot path answers the fly-style question; a new **older-player session**
+  (EXTRA LARGE text, mouse only, EASY: 3 kills in 19.7 s holding the button,
+  never told to steer, FLY AGAIN by click); phones tap the EASY card.
+- Busy late wave (7 contacts, streaks, bloom): p50 16.7 ms, p95 16.8 ms in
+  Chromium. Reduced motion: zero shake.
+- Bundle 296.2 kB raw / 97.1 kB gzip (was 284.7 / 93.4). Zero runtime deps.
+
+### Still open
+
+#103 (phones cannot enlarge text - the zoom floor protects the touch layout,
+and 84% of 50+ players play on phones), #104 (small labels stay below the
+Xbox guideline's 28 px-at-1080p even at EXTRA LARGE), #97, and - fifth release
+running - **no human playtest**, which for this audience matters most of all.
+
 ## [2.0.0] — 2026-10-06
 
 **"Scramble."** A renovation of the player experience around one question the
