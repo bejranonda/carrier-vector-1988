@@ -43,6 +43,14 @@ export interface DailyResult {
     attempts: number;
     /** Whether the best run completed the mission objective. */
     completed: boolean;
+    /**
+     * Which mode the day was flown in. v2.0.0 moved the daily from the endless
+     * carrier defence to SCRAMBLE; results stored before that have no mode
+     * and keep their old card.
+     */
+    mode?: 'SCRAMBLE';
+    /** Longest kill chain in the run (SCRAMBLE cards). */
+    bestChain?: number;
 }
 
 export type DailyResults = Record<string, DailyResult>;
@@ -96,8 +104,27 @@ const repeat = (glyph: string, n: number, cap = 8) => glyph.repeat(Math.max(0, M
  * The shareable card. Kept to four short lines: anything longer gets truncated
  * by the places people paste it.
  */
-export function formatShareCard(result: DailyResult, url = 'carrier-vector-1988'): string {
+/**
+ * Where a card sends whoever reads it. The card is the game's only way out of
+ * the tab, so it carries the address you can actually open (v2.0.0; it was a
+ * bare project name that went nowhere when pasted).
+ */
+export const PLAY_URL = 'bejranonda.github.io/carrier-vector-1988';
+
+export function formatShareCard(result: DailyResult, url = PLAY_URL): string {
     const kills = result.fighterKills + result.bomberKills;
+    const number = dailyNumber(new Date(`${result.date}T00:00:00Z`));
+    if (result.mode === 'SCRAMBLE') {
+        // No deck in SCRAMBLE, so no traps: the card says waves, kills and
+        // the longest chain - the three numbers a SCRAMBLE pilot brags about.
+        const chain = result.bestChain ?? 0;
+        return [
+            `CARRIER VECTOR: 1988 — DAILY SCRAMBLE #${number}`,
+            `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
+            `${kills > 0 ? repeat('●', kills, 10) + '  ' : ''}${kills} splashed · ${chain >= 2 ? `chain x${Math.min(5, chain)}` : 'no chain'} · hull ${Math.round(result.hullRemaining)}%`,
+            `attempt ${result.attempts} · ${url}`
+        ].join('\n');
+    }
     // Geometric Shapes rather than emoji: an aircraft glyph is missing from
     // most monospace faces, including the game's own, where it rendered as a
     // stray arrow. These three exist everywhere and still read as a score
@@ -118,7 +145,7 @@ export function formatShareCard(result: DailyResult, url = 'carrier-vector-1988'
     ].filter(Boolean).join(' · ');
 
     return [
-        `CARRIER VECTOR: 1988 — DAILY SORTIE #${dailyNumber(new Date(`${result.date}T00:00:00Z`))}`,
+        `CARRIER VECTOR: 1988 — DAILY SORTIE #${number}`,
         `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
         `${marks ? marks + '  ' : ''}${detail}`,
         `attempt ${result.attempts} · ${url}`

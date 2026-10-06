@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v1.11.0
+## Status at v2.0.0
 
 **Open, deliberately:**
 
@@ -10,7 +10,8 @@
 | 41 | No key-remapping screen (P2) | Layout independence shipped; build the screen only if feedback asks |
 | 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
 | — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
-| — | A `FIRST_FLIGHT` briefing, a `TURN_TO_DRONE` training step, a full "ghost-lead flies the whole climb" autopilot | Scoped out of v1.11.0 for time; see the v1.11.0 review's frank notes |
+| 97 | SCRAMBLE difficulty and medal thresholds are calibrated against a bot, not people | Needs the pilot-customer round; see below |
+| — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
 
@@ -20,6 +21,13 @@
 menu, "what do I do now" on demand, an ASSIST climb-attitude limit, the "take me
 home flies away" bug, and a mixed-units training readout.
 Evidence: [`reviews/v1.11.0/`](reviews/v1.11.0/README.md).
+
+**Closed in v2.0.0:** #88–#96, found and fixed during the renovation - a
+beginner checklist pinned over veterans' runs, an approach hint on every
+climb-out, an "IN RANGE" call at twice the missile's reach, the deck title
+under the menu button, stacked kill banners, missiles fired at empty sky,
+ripple-fired missiles flying on blind, a first kill gated behind four instructions, and a
+stale share card. Evidence: [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
 
 ---
 
@@ -1054,3 +1062,81 @@ instead. See `GameLoop.smoke.test.ts`'s "take me home from anywhere" test.
 The `CLIMB TO 2,500 FT` card's detail line read "Current altitude: X m" in
 metres, directly beside a HUD altimeter reading feet. Cheap, real confusion;
 now both read feet.
+
+## 88. The beginner flight checkout was pinned over every veteran's endless run **[Fixed in 2.0.0]**
+
+`CARRIER_DEFENSE` set `showTrainingChecklist`, so the six-step "hold W / roll /
+throttle..." panel and its `TRAINING 1/6` coach line appeared on every run of
+the endless mode - for a pilot with every mission cleared, and replacing combat
+hints a minute into the fight. Found in the v2.0.0 browser run. The checkout now
+runs only for a pilot who has completed nothing (`GameLoop.applyScenario`);
+`npm run playtest` asserts a veteran sees none of it.
+
+## 89. "Line up with the deck" on every catapult climb-out **[Fixed in 2.0.0]**
+
+The lowest-priority coach rule, `ON APPROACH - LINE UP WITH THE DECK, FLY THE
+MEATBALL`, matched on range alone (`< 2.5 km`), so it fired for the first seconds
+of every launch - the same class of bug as #77/#78. It now also requires
+`closingOnCarrier`. Regression tests in `Tutorial.test.ts`.
+
+## 90. "IN RANGE - FIRE" at twice the missile's reach **[Fixed in 2.0.0]**
+
+`DESIGNATION_TUNING.missileMaxRange` was 8 km. The AIM-9's seven-second motor
+reaches about 3.8 km at a standing target and about 2.5 km at one running away,
+so the HUD's SIDEWINDER recommendation and the coach's `IN RANGE` both told the
+pilot to waste missiles. Now 3.5 km (`TargetDesignation.test.ts`).
+
+## 91. The deck screen's title was drawn under the menu button **[Fixed in 2.0.0]**
+
+The DOM `MENU (ESC)` button (v1.11.0) shares the top-left corner with the deck
+header's `FLIGHT DECK`. Visible in the v1.11.0 harness's own screenshot
+(`desktop-02-deck.png`). The header now reserves the button's width on desktop.
+
+## 92. Kill banners stacked three deep in a furball **[Fixed in 2.0.0]**
+
+Four kills in two seconds produced `SPLASH FOUR / SPLASH THREE / SPLASH TWO`
+stacked over the bottom of the screen, plus `FIRST BLOOD!`. Kill callouts now
+share a group and replace one another, escalating as a chain (`DOUBLE SPLASH x2`
+...) - `Callouts.push(..., group)`.
+
+## 93. SPACE before the bandits arrived emptied the missile rails **[Fixed in 2.0.0]**
+
+A Sidewinder with no target flies straight and is gone. The v2.0.0 browser run
+launched all four at empty sky before SCRAMBLE's first wave spawned, then met
+the first bomber with the gun. With nothing designated or visible, the launch
+is refused (`NO TARGET`, relay click); an empty rail falls back to guns.
+
+## 94. Ripple-fired missiles flew on blind after their target died **[Fixed in 2.0.0]**
+
+Pilots fire a second round before the first lands. When the first killed the
+target, the second kept its dead target id and flew straight - the bot log
+recorded those as misses passing 3-7 m from the wreck. In-flight rounds now
+re-acquire the nearest live contact inside a 45° cone within 3 km
+(`WeaponsSystem.reacquire`). The guidance law itself was measured (80/80 hits
+across cruising and hunting fighters, old law and lead pursuit alike) and left
+alone.
+
+## 95. A new player's first kill was gated behind four instructions **[Fixed in 2.0.0]**
+
+Title -> briefing -> deck screen -> catapult -> "climb to 2,500 ft" -> "engage
+the autopilot" -> lock and fire. Measured with a scripted pilot that obeys the
+objective strip instantly: first kill at **13.9 s** after ENTER - four distinct
+correct actions read off the screen, before any human reading time. (The v2.0.0
+review first *estimated* this at "over two minutes"; the measurement corrected
+it.) SCRAMBLE is now the first-flight mission: airborne on ENTER with a passive
+bomber locked dead ahead. Measured: **4.2 s**, one key (`npm run playtest`
+asserts < 10 s).
+
+## 96. A share card could follow you into the next run **[Fixed in 2.0.0]**
+
+`dailyCard` was cleared only when a daily started, so a card could appear on a
+later, unrelated debrief. Every run now starts without one.
+
+## 97. SCRAMBLE's difficulty and the medal thresholds are bot-calibrated **[Open]**
+
+A scripted steering bot (bang-bang keys, no throttle use) reaches wave 4-5 in
+three to four minutes and loses jets mainly to waves 3-5 fighters. That is a
+floor, not a player. Thresholds such as "SCORE 8,000" and "CLEAR WAVE 10" are
+estimates from the scoring tables. Calibrate both against the pilot-customer
+round's recordings before tuning further.
+

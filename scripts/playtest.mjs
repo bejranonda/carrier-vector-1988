@@ -18,7 +18,10 @@
  * things a player would feel:
  *
  *   - no page errors, anywhere
- *   - a new pilot is routed to the training sortie, on the FIRST_FLIGHT HUD
+ *   - a new pilot is routed to SCRAMBLE, on the FIRST_FLIGHT HUD, and is
+ *     airborne the moment they press ENTER (v2.0.0)
+ *   - a first SPACE scores a kill within seconds; a chain banner, the medal
+ *     debrief and FLY AGAIN all work in a real browser
  *   - idling on the deck of the training sortie costs the carrier nothing
  *   - no coaching hint contradicts the objective during the climb-out
  *   - a held bank on default settings is a turn, with the nose on the horizon
@@ -66,7 +69,10 @@ const snapshot = (page) => page.evaluate(() => {
         hull: g.deck.inventory.carrierHealth, deck: g.deck.aircraftState,
         objective: g.currentObjective()?.title ?? null, objectiveKey: g.currentObjective()?.key ?? null,
         hint: g.currentHint?.text ?? null, hintSeverity: g.currentHint?.severity ?? null,
-        contacts: g.airborneTargets.filter((t) => t.isAlive).length
+        contacts: g.airborneTargets.filter((t) => t.isAlive).length,
+        wave: g.scramble?.wave ?? null,
+        kills: g.score.breakdown.fighterKills + g.score.breakdown.bomberKills,
+        weapon: g.selectedWeapon
     };
 });
 
@@ -94,7 +100,7 @@ async function session(name, viewport, touch, body, options = {}) {
 await session('desktop', { width: 1440, height: 900 }, false, async (page, shot) => {
     await shot('01-briefing');
     let s = await snapshot(page);
-    check('new pilot is routed to the training sortie', s.scenario === 'TRAINING_SORTIE', s.scenario);
+    check('new pilot is routed to SCRAMBLE', s.scenario === 'SCRAMBLE', s.scenario);
     const feedbackOnMenu = await page.evaluate(() => {
         const a = document.getElementById('feedback-link');
         return a && !a.hidden ? a.href : null;
@@ -104,26 +110,29 @@ await session('desktop', { width: 1440, height: 900 }, false, async (page, shot)
         feedbackOnMenu ? 'ok' : feedbackOnMenu);
     check('new pilot flies the FIRST_FLIGHT HUD', s.density === 'FIRST_FLIGHT', s.density);
 
+    // v2.0.0: ENTER is the whole onboarding. No deck, no catapult wait.
+    const t0 = Date.now();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(800);
-    await shot('02-deck');
+    await page.waitForTimeout(400);
     s = await snapshot(page);
-    check('ENTER on the briefing reaches the deck', s.phase === 'ACTIVE' && s.view === 'MACRO_DECK', s);
+    check('ENTER on the briefing puts a new pilot straight into the air',
+        s.phase === 'ACTIVE' && s.view === 'MICRO_FLIGHT' && s.deck === 'AIRBORNE', s);
+    check('missiles are armed for the first shot', s.weapon === 'AIM9', s.weapon);
 
-    await page.waitForTimeout(SLOW ? 40000 : 12000);
+    // The first shot, the way the wave banner says: SPACE once it is up.
+    let firstKill = null;
+    for (let i = 0; i < 60 && firstKill === null; i++) {
+        await page.waitForTimeout(250);
+        s = await snapshot(page);
+        if (s.wave >= 1 && i % 4 === 0) await page.keyboard.press(' ');
+        if (s.kills > 0) firstKill = (Date.now() - t0) / 1000;
+        if (i === 6) await shot('02-wave-one');
+    }
+    await shot('03-first-kill');
+    check('a first SPACE scores a kill within 10 s of pressing ENTER',
+        firstKill !== null && firstKill < 10, { secondsToFirstKill: firstKill });
     s = await snapshot(page);
-    check('idling on the training deck costs the carrier nothing', s.hull === 100, { hull: s.hull, slow: SLOW });
-
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(4500);
-    await shot('03-climb-out');
-    s = await snapshot(page);
-    check('catapult launch puts the jet in the air', s.deck === 'AIRBORNE' && s.view === 'MICRO_FLIGHT', s);
-    const feedbackInFlight = await page.evaluate(() => document.getElementById('feedback-link')?.hidden);
-    check('the feedback link is hidden in flight', feedbackInFlight === true, feedbackInFlight);
-    const contradicts = s.hint !== null && s.hintSeverity === 'INFO' && s.objectiveKey === 'W';
-    check('no routine hint contradicts the climb-out order', !contradicts, { objective: s.objective, hint: s.hint });
-    check('no trap-speed nag on the climb-out', !(s.hint ?? '').includes('TOO FAST'), s.hint);
+    check('no routine hint contradicts the objective in SCRAMBLE', !(s.hint ?? '').includes('APPROACH'), s.hint);
 
     // A held bank, the way a beginner turns: hold A, touch nothing else.
     await page.evaluate(() => {
@@ -194,6 +203,58 @@ await session('desktop', { width: 1440, height: 900 }, false, async (page, shot)
     await page.waitForTimeout(400);
     await shot('07-help');
     await page.keyboard.press('Escape');
+
+    // The renovated debrief (v2.0.0): stars, XP, FLY AGAIN on ENTER.
+    await page.evaluate(() => {
+        const g = window.__game;
+        g.scramble.wavesCleared = 5;
+        g.deck.inventory.carrierHealth = 0;
+    });
+    await page.waitForTimeout(2600);
+    await shot('08-debrief');
+    const debrief = await page.evaluate(() => ({
+        phase: window.__game.phase,
+        stars: window.__game.medals.SCRAMBLE ?? 0,
+        xp: window.__game.career.xp
+    }));
+    check('the run ends in a debrief that pays a star and career XP',
+        debrief.phase === 'DEBRIEF' && debrief.stars > 0 && debrief.xp > 0, debrief);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+    s = await snapshot(page);
+    check('ENTER on the debrief flies the same mission again, airborne',
+        s.phase === 'ACTIVE' && s.scenario === 'SCRAMBLE' && s.deck === 'AIRBORNE', s);
+});
+
+// ---------------------------------------------------------------------
+// Desktop, the guided training sortie (deck, catapult, climb-out)
+// ---------------------------------------------------------------------
+await session('training', { width: 1440, height: 900 }, false, async (page, shot) => {
+    await page.keyboard.press('2');
+    await page.waitForTimeout(200);
+    let s = await snapshot(page);
+    check('key 2 selects the training sortie', s.scenario === 'TRAINING_SORTIE', s.scenario);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(800);
+    await shot('01-deck');
+    s = await snapshot(page);
+    check('ENTER on the training briefing reaches the deck', s.phase === 'ACTIVE' && s.view === 'MACRO_DECK', s);
+
+    await page.waitForTimeout(SLOW ? 40000 : 12000);
+    s = await snapshot(page);
+    check('idling on the training deck costs the carrier nothing', s.hull === 100, { hull: s.hull, slow: SLOW });
+
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(4500);
+    await shot('02-climb-out');
+    s = await snapshot(page);
+    check('catapult launch puts the jet in the air', s.deck === 'AIRBORNE' && s.view === 'MICRO_FLIGHT', s);
+    const feedbackInFlight = await page.evaluate(() => document.getElementById('feedback-link')?.hidden);
+    check('the feedback link is hidden in flight', feedbackInFlight === true, feedbackInFlight);
+    const contradicts = s.hint !== null && s.hintSeverity === 'INFO' && s.objectiveKey === 'W';
+    check('no routine hint contradicts the climb-out order', !contradicts, { objective: s.objective, hint: s.hint });
+    check('no trap-speed nag on the climb-out', !(s.hint ?? '').includes('TOO FAST'), s.hint);
+    check('no "line up with the deck" on the climb-out', !(s.hint ?? '').includes('APPROACH'), s.hint);
 });
 
 // ---------------------------------------------------------------------
@@ -208,34 +269,52 @@ await session('laptop', { width: 1280, height: 720 }, false, async (page, shot) 
     await page.waitForTimeout(2600);
     await shot('01-briefing');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(600);
-    await shot('02-deck');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(4500);
-    await shot('03-cockpit');
+    await page.waitForTimeout(1600);
+    await shot('02-cockpit');
     const s = await snapshot(page);
     check('a pilot with a completed mission graduates to ARCADE', s.density === 'ARCADE', s.density);
+
+    // v2.0.0 playtest: the six-step "hold W" checkout was pinned over every
+    // endless run a veteran flew. It is for pilots who have completed nothing.
+    await page.evaluate(() => { window.__game.returnToBriefing(); window.__game.selectScenarioById('CARRIER_DEFENSE'); });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const checklist = await page.evaluate(() => window.__game.training.checklist().length);
+    check('a veteran is not shown the beginner flight checkout', checklist === 0, checklist);
+    await shot('03-veteran-deck');
+});
+
+// ---------------------------------------------------------------------
+// A shared challenge link (v2.0.0): same waves, a score to beat
+// ---------------------------------------------------------------------
+await session('challenge', { width: 1280, height: 720 }, false, async (page, shot) => {
+    await page.goto(`${url}?c=424242.5000.3`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2600);
+    await shot('01-briefing');
+    const state = await page.evaluate(() => ({
+        scenario: window.__game.scenario.id,
+        challenge: window.__game.challenge
+    }));
+    check('a challenge link opens SCRAMBLE with the run to beat',
+        state.scenario === 'SCRAMBLE' && state.challenge?.seed === 424242 && state.challenge?.score === 5000, state);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const seed = await page.evaluate(() => window.__game.scramble?.seed);
+    check('the challenge flies the sharer\'s waves', seed === 424242, seed);
 });
 
 // ---------------------------------------------------------------------
 // Phones
 // ---------------------------------------------------------------------
-/** Phone: brief, deck, launch, fly, and use the thumb chaff button. */
+/** Phone: brief, straight into SCRAMBLE, thumb chaff; then the deck via the training sortie. */
 async function phoneFlight(page, shot, label) {
     await shot('01-briefing');
     const vp = page.viewportSize();
     await page.tap('#gameCanvas', { position: { x: vp.width / 2, y: vp.height - 60 } });
     await page.waitForTimeout(900);
-    await shot('02-deck');
+    await shot('02-airborne');
     let s = await snapshot(page);
-    check(`${label}: tapping FLY reaches the deck`, s.phase === 'ACTIVE', s.phase);
-
-    const launch = await page.evaluate(() => window.__game.touchLayout.launch);
-    await page.tap('#gameCanvas', { position: { x: launch.x + launch.w / 2, y: launch.y + launch.h / 2 } });
-    await page.waitForTimeout(4500);
-    await shot('03-cockpit');
-    s = await snapshot(page);
-    check(`${label}: tapping LAUNCH puts the jet in the air`, s.deck === 'AIRBORNE', s.deck);
+    check(`${label}: tapping FLY puts a new pilot in the air`, s.phase === 'ACTIVE' && s.deck === 'AIRBORNE', s.deck);
 
     const before = await page.evaluate(() => window.__game.physics.loadout.chaff);
     const chaff = await page.evaluate(() => window.__game.touchLayout.chaff);
@@ -243,6 +322,21 @@ async function phoneFlight(page, shot, label) {
     await page.waitForTimeout(300);
     const after = await page.evaluate(() => window.__game.physics.loadout.chaff);
     check(`${label}: the thumb chaff button releases chaff (#44)`, after === before - 1, { before, after });
+
+    // The deck still works on a phone: training sortie, FLY, LAUNCH.
+    await page.evaluate(() => { window.__game.returnToBriefing(); window.__game.selectScenarioById('TRAINING_SORTIE'); });
+    await page.waitForTimeout(300);
+    await page.tap('#gameCanvas', { position: { x: vp.width / 2, y: vp.height - 60 } });
+    await page.waitForTimeout(900);
+    await shot('03-deck');
+    s = await snapshot(page);
+    check(`${label}: the training sortie reaches the deck`, s.phase === 'ACTIVE' && s.view === 'MACRO_DECK', s.view);
+    const launch = await page.evaluate(() => window.__game.touchLayout.launch);
+    await page.tap('#gameCanvas', { position: { x: launch.x + launch.w / 2, y: launch.y + launch.h / 2 } });
+    await page.waitForTimeout(4500);
+    await shot('04-cockpit');
+    s = await snapshot(page);
+    check(`${label}: tapping LAUNCH puts the jet in the air`, s.deck === 'AIRBORNE', s.deck);
 }
 
 await session('phone-landscape', { width: 844, height: 390 }, true, (page, shot) => phoneFlight(page, shot, 'phone'));

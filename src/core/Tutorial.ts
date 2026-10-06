@@ -131,7 +131,10 @@ const COACH_RULES: { match: (s: CoachSnapshot) => boolean; hint: Hint }[] = [
         hint: { text: 'SAM RADAR SEARCHING - STAY LOW', severity: 'INFO' }
     },
     {
-        match: (s) => s.distanceToCarrier < 2500,
+        // Only when actually closing on the boat. v2.0.0 playtest: this fired
+        // on every climb-out from the catapult - "line up with the deck" to a
+        // pilot who had left it two seconds ago - because it only checked range.
+        match: (s) => s.distanceToCarrier < 2500 && s.closingOnCarrier === true,
         hint: { text: 'ON APPROACH - LINE UP WITH THE DECK, FLY THE MEATBALL', severity: 'INFO' }
     }
 ];

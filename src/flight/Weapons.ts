@@ -116,6 +116,32 @@ function toughnessFactor(target: AirborneTarget): number {
 }
 
 export class WeaponsSystem {
+    /** Seeker cone for an in-flight re-acquisition, as a cosine (~45 deg). */
+    public static readonly REACQUIRE_ASPECT = 0.7;
+    /** How far ahead an in-flight round can re-acquire, metres. */
+    public static readonly REACQUIRE_RANGE = 3000;
+
+    /** The nearest live contact in front of a missile's seeker, if any. */
+    public static reacquire(m: { pos: Vector3; vel: Vector3 }, targets: AirborneTarget[]): AirborneTarget | undefined {
+        const speed = Math.hypot(m.vel.x, m.vel.y, m.vel.z) || 1;
+        let best: AirborneTarget | undefined;
+        let bestDist = WeaponsSystem.REACQUIRE_RANGE;
+        for (const t of targets) {
+            if (!t.isAlive) continue;
+            const dx = t.position.x - m.pos.x;
+            const dy = t.position.y - m.pos.y;
+            const dz = t.position.z - m.pos.z;
+            const dist = Math.hypot(dx, dy, dz);
+            if (dist >= bestDist || dist < 1) continue;
+            const aspect = (dx * m.vel.x + dy * m.vel.y + dz * m.vel.z) / (dist * speed);
+            if (aspect >= WeaponsSystem.REACQUIRE_ASPECT) {
+                best = t;
+                bestDist = dist;
+            }
+        }
+        return best;
+    }
+
     public bullets: Bullet[] = [];
     public missiles: PlayerMissile[] = [];
     public harms: PlayerHarm[] = [];
@@ -489,8 +515,15 @@ export class WeaponsSystem {
             const m = this.missiles[i];
             m.life -= dt;
 
-            // Target homing
-            const target = targets.find(t => t.id === m.targetId && t.isAlive);
+            // Target homing. A round whose target died under it (usually to
+            // the round before it - pilots ripple-fire) looks for another one
+            // ahead of it instead of flying on blind: the v2.0.0 bot log showed
+            // "misses" that had closed to 3-7 m of an already-dead bomber.
+            let target = targets.find(t => t.id === m.targetId && t.isAlive);
+            if (!target && m.targetId !== null) {
+                target = WeaponsSystem.reacquire(m, targets);
+                m.targetId = target ? target.id : null;
+            }
             const mSpeed = 580; // m/s
             if (target) {
                 const tdx = target.position.x - m.pos.x;

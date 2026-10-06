@@ -11,9 +11,6 @@
 
 import type { VectorRenderer } from './VectorRenderer';
 import { WireframeModels } from './VectorRenderer';
-import type { ScoreKeeper } from '../core/ScoreKeeper';
-import { formatLossCause, postMortemTip } from '../core/PostMortem';
-import type { LossCause } from '../core/PostMortem';
 import { CONTROL_SCHEMA, bindingsFor } from '../core/Controls';
 import type { ControlContext } from '../core/Controls';
 import { THEME, WORLD, fitText, font, glow, keycap, noGlow, plate, roundRect } from './Theme';
@@ -25,6 +22,37 @@ import type { MapId } from '../tactics/TerrainProfiles';
 import { isCleared, recordFor } from '../core/MissionRecords';
 import type { MissionRecords } from '../core/MissionRecords';
 import type { DailyResult } from '../core/DailySortie';
+import { MEDALS, starCount, totalStars } from '../core/Medals';
+import type { MedalRecords } from '../core/Medals';
+
+/** Career and medal standing, for the masthead and the selector (v2.0.0). */
+export interface BriefingProgress {
+    medals: MedalRecords;
+    /** "CAREER LV 3 · SECTION LEAD", or null before the first run. */
+    careerLine: string | null;
+    /** An incoming shared challenge, shown in place of the masthead line. */
+    challengeLine?: string | null;
+}
+
+/** A small five-point star, filled or outlined. */
+function miniStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, filled: boolean, color: string) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+        const rad = i % 2 === 0 ? r : r * 0.45;
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        if (i === 0) ctx.moveTo(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+        else ctx.lineTo(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+    }
+    ctx.closePath();
+    if (filled) {
+        ctx.fillStyle = color;
+        ctx.fill();
+    } else {
+        ctx.strokeStyle = THEME.edgeSoft;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
 
 /**
  * Where the briefing's interactive elements are.
@@ -254,7 +282,8 @@ export class BriefingScreen {
         /** See `briefingSecondaryOptions` - true until the palette is touched. */
         showPaletteHint = false,
         /** See `briefingSecondaryOptions` - true until the stick is touched. */
-        showStickHint = false
+        showStickHint = false,
+        progress: BriefingProgress | null = null
     ) {
         ctx.save();
         noGlow(ctx);
@@ -289,10 +318,19 @@ export class BriefingScreen {
 
         ctx.font = font(11);
         ctx.fillStyle = THEME.muted;
-        let sub = 'Run the flight deck. Fly the sortie. Bring the jet home.';
+        let sub = 'Scramble. Splash the wave. Bring the boat home.';
         const cleared = clearedCount(records);
-        if (cleared > 0) sub += `   ·   ${cleared} / ${SCENARIOS.length} MISSIONS CLEARED`;
-        if (bestScore > 0) sub += `   ·   PERSONAL BEST ${bestScore} PTS`;
+        const stars = progress ? totalStars(progress.medals) : 0;
+        if (progress?.careerLine) sub = progress.careerLine;
+        if (stars > 0) sub += `   ·   ★ ${stars} / ${SCENARIOS.length * 3}`;
+        if (cleared > 0) sub += `   ·   ${cleared} / ${SCENARIOS.length} CLEARED`;
+        if (bestScore > 0) sub += `   ·   BEST ${bestScore} PTS`;
+        if (progress?.challengeLine) {
+            // A friend's run to beat outranks everything else on this line.
+            ctx.font = font(12, 700);
+            ctx.fillStyle = THEME.caution;
+            sub = progress.challengeLine;
+        }
         ctx.fillText(fitText(ctx, sub, w - 60), cx, compact ? 66 : 90);
 
         // Build stamp, top-right and quiet: a pilot's screenshot or report
@@ -310,7 +348,7 @@ export class BriefingScreen {
         // --- Scenario selector ---
         const selectorY = areas.selectorY;
         const recommended = recommendScenario(records);
-        this.scenarioSelector(ctx, areas.pills, scenario, records, recommended.id);
+        this.scenarioSelector(ctx, areas.pills, scenario, records, recommended.id, progress?.medals ?? {});
 
         // --- Selected scenario headline ---
         const headY = selectorY + (compact ? 66 : 76);
@@ -339,17 +377,21 @@ export class BriefingScreen {
         // whether they had ever beaten THIS mission, which is the only
         // question the selector is really being asked.
         const record = recordFor(records, scenario.id);
+        // The mission's medals, and the next one to go for: a named goal is a
+        // far better reason to fly again than "beat your number".
+        const mask = progress?.medals[scenario.id] ?? 0;
+        const criteria = MEDALS[scenario.id];
+        const nextStar = criteria.findIndex((_, i) => !(mask & (1 << i)));
+        const goal = nextStar >= 0 ? `NEXT ★ ${criteria[nextStar].label}` : 'ALL THREE STARS';
         ctx.font = font(11, 600);
         if (record.attempts === 0) {
             ctx.fillStyle = THEME.key;
-            ctx.fillText('NOT YET FLOWN', cx, headY + 36);
+            ctx.fillText(fitText(ctx, `NOT YET FLOWN   ·   ${goal}`, w - 40), cx, headY + 36);
         } else {
-            const parts = [`BEST ${record.best} PTS`];
-            parts.push(record.completions > 0
-                ? `CLEARED ${record.completions}×`
-                : `${record.attempts} ATTEMPT${record.attempts === 1 ? '' : 'S'}, NOT YET CLEARED`);
+            const parts = [`${'★'.repeat(starCount(mask))}${'☆'.repeat(3 - starCount(mask))}`, `BEST ${record.best} PTS`];
+            parts.push(goal);
             ctx.fillStyle = record.completions > 0 ? THEME.phosphor : THEME.caution;
-            ctx.fillText(parts.join('   ·   '), cx, headY + 36);
+            ctx.fillText(fitText(ctx, parts.join('   ·   '), w - 40), cx, headY + 36);
         }
 
         // --- Three phase cards, supplied by the scenario ---
@@ -494,7 +536,7 @@ export class BriefingScreen {
     ) {
         const flown = daily.result !== null;
         const accent = flown ? THEME.phosphor : THEME.caution;
-        const headline = `DAILY SORTIE #${daily.number}`;
+        const headline = `DAILY SCRAMBLE #${daily.number}`;
         const detail = flown
             ? `TODAY: WAVE ${daily.result!.wave} · ${daily.result!.score.toLocaleString('en-US')} PTS · ${daily.result!.rank}`
             : 'Same seed for every pilot in the world. One run, one score to share.';
@@ -546,7 +588,8 @@ export class BriefingScreen {
         pills: Rect[],
         selected: ScenarioDef,
         records: MissionRecords,
-        recommendedId: string
+        recommendedId: string,
+        medals: MedalRecords = {}
     ) {
         const pillW = pills[0].w;
         const pillH = pills[0].h;
@@ -576,30 +619,28 @@ export class BriefingScreen {
             ctx.textAlign = 'left';
             ctx.fillText(`${i + 1}`, x + 9, y + 15);
 
-            // A tick for a mission already beaten - the one thing a returning
-            // player wants to see at a glance is what is left.
-            if (isCleared(records, s.id)) {
-                ctx.strokeStyle = THEME.phosphor;
-                ctx.lineWidth = 1.8;
-                const tx = x + pillW - 16;
-                const ty = y + 15;
-                ctx.beginPath();
-                ctx.moveTo(tx - 5, ty);
-                ctx.lineTo(tx - 2, ty + 4);
-                ctx.lineTo(tx + 5, ty - 5);
-                ctx.stroke();
+            // Medal stars for a mission already flown - what a returning
+            // player wants to see at a glance is what is left to earn. (They
+            // replace v1's single tick, which could only say "cleared".)
+            const mask = medals[s.id] ?? 0;
+            const flown = recordFor(records, s.id).attempts > 0 || mask > 0;
+            if (flown) {
+                for (let k = 0; k < 3; k++) {
+                    miniStar(ctx, x + pillW - 26 + k * 8, y + 31, 3.4, (mask & (1 << k)) !== 0, THEME.caution);
+                }
             }
 
             ctx.font = font(11, isSelected ? 700 : 400);
             ctx.fillStyle = isSelected ? THEME.ink : THEME.muted;
             ctx.textAlign = 'center';
-            ctx.fillText(fitText(ctx, s.name, pillW - 46), x + pillW / 2, y + 15);
+            ctx.fillText(fitText(ctx, s.name, pillW - 28), x + pillW / 2, y + 15);
 
             // Difficulty: filled pips out of five.
             const pipR = 2.6;
             const pipGap = 8;
             const pipsW = pipGap * 4;
-            let px = x + pillW / 2 - pipsW / 2;
+            // On a narrow pill the stars need the right-hand end of this row.
+            let px = x + (flown && pillW < 120 ? (pillW - 30) / 2 : pillW / 2) - pipsW / 2;
             for (let d = 1; d <= 5; d++) {
                 ctx.beginPath();
                 ctx.arc(px, y + 31, pipR, 0, Math.PI * 2);
@@ -770,261 +811,6 @@ export class BriefingScreen {
         ctx.fillText('resume', cx - 60 + capW + 10, h - 40);
         ctx.restore();
     }
-
-    /** End-of-mission debrief with final score and rank. */
-    public drawDebrief(
-        ctx: CanvasRenderingContext2D,
-        w: number,
-        h: number,
-        score: ScoreKeeper,
-        wave: number,
-        best = 0,
-        isNewBest = false,
-        result: DebriefResult = { outcome: 'FAILED', scenarioName: 'CARRIER DEFENSE', reason: null }
-    ) {
-        ctx.save();
-        noGlow(ctx);
-        ctx.fillStyle = 'rgba(7,13,17,0.96)';
-        ctx.fillRect(0, 0, w, h);
-
-        const cx = w / 2;
-        ctx.textAlign = 'center';
-
-        const won = result.outcome === 'SUCCESS';
-        const b = score.breakdown;
-        const rows: [string, string][] = [
-            ['WAVES SURVIVED', `${wave}`],
-            ['FIGHTERS SPLASHED', `${b.fighterKills}`],
-            ['BOMBERS SPLASHED', `${b.bomberKills}`],
-            ['SAM SITES DESTROYED', `${b.samKills}`],
-            ['CARRIER TRAPS', `${b.traps}`],
-            ['PERFECT 3-WIRE TRAPS', `${b.perfectTraps}`],
-            ['BOLTERS', `${b.bolters}`],
-            ['AIRFRAMES LOST', `${b.airframesLost}`],
-            ['HULL DAMAGE TAKEN', `${Math.round(b.hullDamageTaken)}%`]
-        ];
-        if (b.structureKills > 0) {
-            rows.splice(4, 0, ['HARDENED TARGETS HIT', `${b.structureKills}`]);
-        }
-        if (b.missionsCompleted > 0) {
-            rows.splice(1, 0, ['MISSION OBJECTIVE', 'COMPLETE']);
-        }
-
-        // Lay the whole card out from a measured height and centre it. The
-        // fixed y = 104 / 162 / ... offsets left a 300px void under the rank
-        // on a 900px-tall window, with the prompt stranded at the bottom.
-        const boxW = Math.min(460, w - 80);
-
-        /**
-         * On a short window the full nine-row breakdown plus a share card is
-         * taller than the viewport. Rather than clipping it - the deck screen
-         * and the cockpit both shed content instead of clipping, and this
-         * should match - drop the rows that read zero, which are exactly the
-         * ones carrying no information.
-         */
-        const causeText = formatLossCause(result.cause ?? null);
-        const tipText = postMortemTip(result.cause ?? null);
-        // 20px per line plus 6px of breathing room, only when there is a
-        // cause to show - a win, or a loss with no recorded cause, costs
-        // nothing extra in the layout.
-        const causeBlockH = causeText ? 20 + (tipText ? 20 : 0) + 6 : 0;
-
-        const fullHeight = (n: number) => 112 + causeBlockH + (n * 22 + 36) + 118
-            + (result.shareCard ? result.shareCard.split('\n').length * 17 + 46 + 56 : 0);
-        let compact = false;
-        if (fullHeight(rows.length) > h - 40) {
-            const essential = new Set(['WAVES SURVIVED', 'MISSION OBJECTIVE']);
-            const trimmed = rows.filter(([label, value]) =>
-                essential.has(label) || !/^0%?$/.test(value));
-            rows.length = 0;
-            rows.push(...trimmed);
-            compact = fullHeight(rows.length) > h - 40;
-        }
-
-        const boxH = rows.length * 22 + 36;
-        // The share card is part of the block, not an afterthought pasted
-        // under it: leaving it out of the height left the ENTER prompt drawn
-        // straight through the card on a 700px-tall window.
-        const cardH = result.shareCard ? result.shareCard.split('\n').length * 17 + 46 : 0;
-        const blockH = 112 + causeBlockH + boxH + 118 + (cardH ? cardH + 56 : 0);
-        const top = Math.max(20, (h - blockH) / 2 - 20);
-
-        const headlineColor = won ? THEME.phosphor : THEME.alert;
-        ctx.fillStyle = headlineColor;
-        ctx.font = font(Math.min(38, Math.max(26, w / 38)), 700);
-        glow(ctx, headlineColor, 12);
-        ctx.fillText(won ? result.title ?? 'MISSION COMPLETE' : 'MISSION FAILED', cx, top + 40);
-        noGlow(ctx);
-
-        ctx.fillStyle = THEME.muted;
-        ctx.font = font(13);
-        ctx.fillText(
-            fitText(ctx, result.reason ?? 'CV-68 NIMITZ IS COMBAT INEFFECTIVE', w - 80),
-            cx,
-            top + 66
-        );
-        ctx.font = font(11, 600);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(result.scenarioName, cx, top + 84);
-
-        // What got you, and what to do differently. Only shown on a loss
-        // with a recorded cause - a win has nothing to explain, and a loss
-        // with no cause on record says nothing rather than guessing.
-        if (causeText) {
-            ctx.font = font(12, 700);
-            ctx.fillStyle = THEME.alert;
-            ctx.fillText(fitText(ctx, causeText, w - 80), cx, top + 100);
-            if (tipText) {
-                ctx.font = font(11);
-                ctx.fillStyle = THEME.muted;
-                ctx.fillText(fitText(ctx, tipText, w - 80), cx, top + 120);
-            }
-        }
-
-        const boxX = cx - boxW / 2;
-        const boxY = top + 112 + causeBlockH;
-        plate(ctx, { x: boxX, y: boxY, w: boxW, h: boxH }, { border: THEME.edgeSoft, radius: 5 });
-
-        ctx.font = font(12);
-        ctx.textBaseline = 'middle';
-        rows.forEach(([label, value], i) => {
-            const y = boxY + 26 + i * 22;
-            ctx.fillStyle = THEME.muted;
-            ctx.textAlign = 'left';
-            ctx.fillText(label, boxX + 18, y);
-            ctx.fillStyle = THEME.ink;
-            ctx.textAlign = 'right';
-            ctx.fillText(value, boxX + boxW - 18, y);
-        });
-
-        const scoreY = boxY + boxH + 44;
-        ctx.textAlign = 'center';
-
-        /**
-         * On a window too short for both, the share card IS the summary - it
-         * already carries the score and the rank - so the big readout stands
-         * down rather than pushing the card off the bottom of the screen.
-         */
-        const showScoreBlock = !(compact && result.shareCard);
-        if (showScoreBlock) {
-            ctx.fillStyle = THEME.caution;
-            ctx.font = font(30, 700);
-            ctx.fillText(`${score.totalScore} PTS`, cx, scoreY);
-            ctx.font = font(17, 700);
-            ctx.fillStyle = THEME.ink;
-            ctx.fillText(`FINAL RANK: ${score.rank}`, cx, scoreY + 30);
-        }
-
-        ctx.font = font(12, 600);
-        if (!showScoreBlock) {
-            // Nothing: the card says it.
-        } else if (isNewBest) {
-            ctx.fillStyle = THEME.phosphor;
-            glow(ctx, THEME.phosphor, 8);
-            ctx.fillText('NEW PERSONAL BEST', cx, scoreY + 54);
-            noGlow(ctx);
-        } else if (best > 0) {
-            ctx.fillStyle = THEME.muted;
-            ctx.fillText(`PERSONAL BEST  ${best} PTS`, cx, scoreY + 54);
-        }
-
-        // ...and how this run compares on THIS mission, which for anything
-        // other than the endless defence is the number that means something.
-        if (showScoreBlock && result.missionBest !== undefined && result.missionBest > 0) {
-            ctx.font = font(11, 600);
-            ctx.fillStyle = result.isMissionBest ? THEME.phosphor : THEME.muted;
-            ctx.fillText(
-                result.isMissionBest
-                    ? `BEST RUN YET ON ${result.scenarioName}`
-                    : `BEST ON THIS MISSION  ${result.missionBest} PTS`,
-                cx,
-                scoreY + 74
-            );
-        }
-
-        // Below the personal-best and mission-best lines, which both live at
-        // scoreY + 54 / + 74 and were being covered by the card's top edge.
-        const cardY = showScoreBlock ? scoreY + 96 : boxY + boxH + 24;
-        if (result.shareCard) {
-            this.shareCard(ctx, cx, cardY, w, result.shareCard, result.copied === true);
-        } else if (result.nextUp) {
-            ctx.font = font(11, 600);
-            ctx.fillStyle = THEME.key;
-            ctx.fillText(fitText(ctx, `NEXT UP: ${result.nextUp}`, w - 80), cx, scoreY + 94);
-        }
-
-        // Below the card, or below the score block when there is no card. Not
-        // clamped into the card: a prompt drawn over the thing it refers to is
-        // worse than a prompt slightly off the bottom.
-        const promptY = result.shareCard
-            ? cardY + cardH + 26
-            : Math.min(h - 32, scoreY + 112);
-        const capW = keycap(ctx, cx - 90, promptY, 'ENTER', { size: 13 });
-        ctx.font = font(13, 600);
-        ctx.fillStyle = THEME.muted;
-        ctx.textAlign = 'left';
-        ctx.fillText('back to mission select', cx - 90 + capW + 12, promptY);
-        ctx.restore();
-    }
-
-    /**
-     * The daily result, as the text that gets pasted somewhere. Drawn as the
-     * card itself rather than as a prettier summary, so what the player sees
-     * is exactly what lands in the clipboard.
-     */
-    private shareCard(
-        ctx: CanvasRenderingContext2D,
-        cx: number,
-        y: number,
-        viewportW: number,
-        card: string,
-        copied: boolean
-    ) {
-        const lines = card.split('\n');
-        ctx.save();
-        noGlow(ctx);
-        ctx.font = font(11);
-        const w = Math.min(viewportW - 60, Math.max(...lines.map(l => ctx.measureText(l).width)) + 48);
-        const h = lines.length * 17 + 46;
-        const x = cx - w / 2;
-        plate(ctx, { x, y, w, h }, { fill: 'rgba(9,19,25,0.9)', border: THEME.phosphor, radius: 5 });
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        lines.forEach((line, i) => {
-            ctx.font = font(i === 0 ? 11 : i === 1 ? 13 : 11, i <= 1 ? 700 : 400);
-            ctx.fillStyle = i === 1 ? THEME.ink : i === 0 ? THEME.phosphor : THEME.muted;
-            ctx.fillText(fitText(ctx, line, w - 24), cx, y + 18 + i * 17);
-        });
-
-        const capW = keycap(ctx, cx - 58, y + h - 15, 'C', { size: 11 });
-        ctx.font = font(11, 600);
-        ctx.fillStyle = copied ? THEME.phosphor : THEME.muted;
-        ctx.textAlign = 'left';
-        ctx.fillText(copied ? 'copied to clipboard' : 'copy result', cx - 58 + capW + 10, y + h - 15);
-        ctx.restore();
-    }
-}
-
-export interface DebriefResult {
-    outcome: 'SUCCESS' | 'FAILED';
-    scenarioName: string;
-    /** Why it ended, in one line. */
-    reason: string | null;
-    /** Scenario-supplied headline for a win. */
-    title?: string;
-    /** Best score ever recorded on this scenario, including this run. */
-    missionBest?: number;
-    /** Whether this run set that scenario best. */
-    isMissionBest?: boolean;
-    /** The mission the debrief suggests flying next, if any. */
-    nextUp?: string;
-    /** The daily result as shareable text, when this was a daily run. */
-    shareCard?: string | null;
-    /** Whether the card has just been copied, for the confirmation line. */
-    copied?: boolean;
-    /** What killed the aeroplane, when the mission ended in a loss. */
-    cause?: LossCause | null;
 }
 
 /** What the briefing needs to draw the daily sortie line. */

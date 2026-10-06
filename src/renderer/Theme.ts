@@ -63,7 +63,7 @@ export interface WorldPalette {
     missile: string;
 }
 
-export type PaletteId = 'CLASSIC' | 'DEUTERAN';
+export type PaletteId = 'CLASSIC' | 'DEUTERAN' | 'AMBER' | 'ARCTIC' | 'SYNTHWAVE';
 
 export interface PaletteSpec {
     id: PaletteId;
@@ -152,8 +152,113 @@ export const PALETTES: readonly PaletteSpec[] = [
             hostile: '#ffae3a',
             missile: '#ff7a1f'
         }
+    },
+    /*
+     * Unlockable looks (v2.0.0, see core/Career.ts) - earned with medal stars.
+     * Every one holds the same 4.5:1 floor and the same key-vs-instrument
+     * separation as the two above; the tests run over all of them.
+     */
+    {
+        id: 'AMBER',
+        label: 'AMBER VECTOR',
+        blurb: 'The arcade cabinet look',
+        ui: {
+            ground: '#0d0a06',
+            panelFill: 'rgba(24, 17, 8, 0.82)',
+            plateFill: 'rgba(17, 12, 6, 0.62)',
+            ink: '#fff3dd',
+            phosphor: '#ffb547',
+            muted: '#b8a68c',
+            key: '#5fd8ff',
+            caution: '#fff07a',
+            alert: '#ff5e5e',
+            hostile: '#ff5e5e',
+            edge: 'rgba(255, 181, 71, 0.34)',
+            edgeSoft: 'rgba(184, 166, 140, 0.22)',
+            grid: 'rgba(255, 181, 71, 0.14)'
+        },
+        world: {
+            horizon: '#b07a24',
+            sea: '#5c3d0d',
+            terrain: '#d9952e',
+            valley: '#4a300a',
+            carrier: '#ffd08a',
+            hostile: '#ff4d6d',
+            missile: '#ff2d55'
+        }
+    },
+    {
+        id: 'ARCTIC',
+        label: 'ARCTIC WHITE',
+        blurb: 'Ice-blue strokes on polar night',
+        ui: {
+            ground: '#060b10',
+            panelFill: 'rgba(10, 18, 26, 0.82)',
+            plateFill: 'rgba(7, 13, 19, 0.62)',
+            ink: '#ffffff',
+            phosphor: '#d8f3ff',
+            muted: '#9fb2bd',
+            key: '#ffb86b',
+            caution: '#ffe066',
+            alert: '#ff5c7a',
+            hostile: '#ff5c7a',
+            edge: 'rgba(216, 243, 255, 0.32)',
+            edgeSoft: 'rgba(159, 178, 189, 0.22)',
+            grid: 'rgba(216, 243, 255, 0.12)'
+        },
+        world: {
+            horizon: '#7fa8bd',
+            sea: '#2a4552',
+            terrain: '#bfe6f7',
+            valley: '#22343d',
+            carrier: '#ffffff',
+            hostile: '#ff5c7a',
+            missile: '#ff3355'
+        }
+    },
+    {
+        id: 'SYNTHWAVE',
+        label: 'SYNTHWAVE',
+        blurb: 'Neon magenta over a violet sea',
+        ui: {
+            ground: '#0c0612',
+            panelFill: 'rgba(24, 10, 32, 0.82)',
+            plateFill: 'rgba(17, 7, 23, 0.62)',
+            ink: '#fff0fb',
+            phosphor: '#ff6ad5',
+            muted: '#b9a5c6',
+            key: '#5fd8ff',
+            caution: '#ffe066',
+            alert: '#ff9a3d',
+            hostile: '#ffd23f',
+            edge: 'rgba(255, 106, 213, 0.34)',
+            edgeSoft: 'rgba(185, 165, 198, 0.22)',
+            grid: 'rgba(255, 106, 213, 0.14)'
+        },
+        world: {
+            horizon: '#a03fb0',
+            sea: '#3b1450',
+            terrain: '#e05ad0',
+            valley: '#2c0d3d',
+            carrier: '#ffb3ec',
+            hostile: '#ffd23f',
+            missile: '#ff9a3d'
+        }
     }
 ];
+
+/**
+ * The next palette in the cycle that `available` allows. The cycle key skips
+ * looks that are still locked rather than showing one and refusing it.
+ */
+export function nextAvailablePalette(id: PaletteId, available: (p: PaletteId) => boolean): PaletteId {
+    let next = id;
+    for (let i = 0; i < PALETTES.length; i++) {
+        next = nextPalette(next);
+        if (available(next)) return next;
+    }
+    return id;
+}
 
 export const DEFAULT_PALETTE: PaletteId = 'CLASSIC';
 

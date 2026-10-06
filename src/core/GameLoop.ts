@@ -29,7 +29,20 @@ import { TimeRewindBuffer } from './TimeRewind';
 import { soundFX } from '../audio/SoundFX';
 import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
-import { ScoreKeeper } from './ScoreKeeper';
+import { ScoreKeeper, SCORE_VALUES } from './ScoreKeeper';
+import { ComboTracker, multiplierFor } from './Combo';
+import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, formatScrambleCard, rearmAfterWave, scrambleWave, waveClearBonus } from './Scramble';
+import { KillFxSystem, drawKillFx } from '../renderer/KillFx';
+import { SpeedStreaks } from '../renderer/SpeedStreaks';
+import { scrambleIntensity } from '../audio/MusicPattern';
+import { challengeLine, challengeUrl, challengeVerdict } from './Challenge';
+import type { Challenge } from './Challenge';
+import { MEDALS, earnedMask, loadMedals, mergeMedals, saveMedals, starCount, totalStars } from './Medals';
+import type { MedalRecords, RunSummary } from './Medals';
+import { awardRun, careerLevel, isPaletteUnlocked, loadCareer, newlyUnlocked, nextUnlock, saveCareer } from './Career';
+import type { Career, XpAward } from './Career';
+import { debriefLayout, drawDebriefView } from '../renderer/DebriefView';
+import type { DebriefData } from '../renderer/DebriefView';
 import { arbitrateHint, getContextualHint, TrainingSequence } from './Tutorial';
 import { HUD_DENSITY_LABEL, resolveHudDensity, saveHudDensity } from './HudDensity';
 import { pilotMenuItems, plainInstruction, wrapMenuIndex, type PilotMenuItem } from './PilotMenu';
@@ -50,7 +63,7 @@ import {
     WORLD,
     applyPalette,
     loadPalette,
-    nextPalette,
+    nextAvailablePalette,
     paletteSpec,
     savePalette,
     storedPalette
@@ -162,6 +175,7 @@ import {
     dailyKey,
     dailyNumber,
     dailySeed,
+    PLAY_URL,
     formatShareCard,
     loadDailyResults,
     mergeDailyResult,
@@ -380,6 +394,40 @@ export class GameLoop {
     public callouts = new Callouts();
     /** Kills this sortie, so the callout can say SPLASH ONE, SPLASH TWO. */
     private sortieKills = 0;
+    /** Kill chains and their multiplier - see Combo.ts. */
+    public combo = new ComboTracker();
+    /** Shockwave rings and rising score text at the wreck - see KillFx.ts. */
+    public killFx = new KillFxSystem();
+    /** Vector dust streaming past the canopy - see SpeedStreaks.ts. */
+    private streaks = new SpeedStreaks();
+    /**
+     * Real seconds of hit-stop left. While it runs the simulation advances at
+     * HIT_STOP_SCALE of real time: a kill lands with a beat of weight instead
+     * of sliding past at full speed. Applied in `frame()` - the real-time
+     * loop - so the fixed-step simulation itself stays deterministic.
+     */
+    private hitStop = 0;
+    public static readonly HIT_STOP_SCALE = 0.12;
+    /** Seconds between a wave's last kill and its WAVE CLEARED payout. */
+    public static readonly WAVE_CLEAR_BEAT = 1.1;
+
+    /**
+     * SCRAMBLE run state (core/Scramble.ts), or null on every other scenario.
+     * `breather` counts down to the next wave; `waveSeconds` times the live
+     * one for the speed bonus.
+     */
+    public scramble: {
+        wave: number;
+        breather: number;
+        waveSeconds: number;
+        wavesCleared: number;
+        brief: string;
+        seed: number;
+        /** Seconds since the wave's last contact went down. */
+        clearTimer: number;
+        /** The live wave timed out rather than being shot down. */
+        bugOut: boolean;
+    } | null = null;
     /** Seconds remaining on the cannon hit marker. */
     private hitMarker = 0;
     /** Last-seen missileActive per SAM, for launch-edge detection. */
@@ -401,6 +449,23 @@ export class GameLoop {
      */
     private trapCinematic = 0;
     private trapGrade: string | null = null;
+
+    /** Three stars per mission, held across sessions - see Medals.ts. */
+    public medals: MedalRecords = loadMedals();
+    /** Career XP and runs flown - see Career.ts. */
+    public career: Career = loadCareer();
+    /**
+     * What the run that just ended earned, for the debrief: the stars it took
+     * for the first time, the XP award, and any unlock it crossed.
+     */
+    public lastRun: { fresh: number[]; award: XpAward; unlocks: string[]; summary: RunSummary } | null = null;
+    /**
+     * A run someone shared (`?c=seed.score.waves`): fly the same SCRAMBLE
+     * waves and beat their score. See Challenge.ts.
+     */
+    public challenge: Challenge | null = null;
+    /** Real seconds the debrief has been up - drives its payout animation. */
+    public debriefAge = 0;
 
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
@@ -592,8 +657,12 @@ export class GameLoop {
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         // The flight checkout is the intro mode's teaching tool; on a scripted
-        // mission it is six lines of noise over the top of real orders.
-        if (!setup.showTrainingChecklist) this.training.skip();
+        // mission it is six lines of noise over the top of real orders. And a
+        // pilot who has already completed a mission has nothing left to learn
+        // from "hold W": v2.0.0 playtest found the 0/6 checkout pinned over
+        // every endless run a veteran flew, and a TRAINING 1/6 coach line
+        // replacing combat hints a minute into the fight.
+        if (!setup.showTrainingChecklist || this.hasCompletedAMission()) this.training.skip();
 
         if (setup.loadout) {
             this.deck.plannedLoadout = { ...setup.loadout };
@@ -624,6 +693,9 @@ export class GameLoop {
         this.samMissileActive.clear();
         this.lastCautionDamage = 0;
         this.sortieKills = 0;
+        this.combo.reset();
+        this.killFx.clear();
+        this.hitStop = 0;
         this.trauma = 0;
         this.flashAlpha = 0;
         this.hitMarker = 0;
@@ -636,9 +708,24 @@ export class GameLoop {
 
         this.deck.log(`SCENARIO: ${scenario.name.toUpperCase()} - ${scenario.tagline}`);
 
+        this.scramble = setup.scramble
+            ? {
+                wave: 0,
+                breather: SCRAMBLE.firstWaveDelay,
+                waveSeconds: 0,
+                wavesCleared: 0,
+                brief: '',
+                seed: seedOverride ?? Math.floor(Math.random() * 1e9),
+                clearTimer: 0,
+                bugOut: false
+            }
+            : null;
+        if (this.scramble) this.airborneTargets = [];
+
         if (setup.startAirborne) {
             this.hotStartAirborne();
             this.hasLaunched = true;
+            if (this.scramble) this.armScrambleJet();
         } else {
             this.currentView = 'MACRO_DECK';
         }
@@ -976,8 +1063,13 @@ export class GameLoop {
         this.shake(SHAKE_SOURCES.damageTaken);
         this.flash(THEME.alert, 0.75);
         this.sortieKills = 0;
+        this.combo.breakChain();
         this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
         this.deck.log(reason);
+        if (this.scramble) {
+            this.respawnScramble();
+            return;
+        }
         this.physics.repair();
         this.physics.velocity = { x: 0, y: 0, z: 0 };
         this.physics.throttle = 0;
@@ -1078,7 +1170,7 @@ export class GameLoop {
         // sortie for a new pilot, the easiest uncleared mission after that. It
         // used to do this for new pilots only, so a returning pilot saw START
         // HERE on one mission while the big FLY button flew another.
-        this.selectScenarioById(recommendScenario(this.missionRecords).id);
+        this.selectScenarioById(this.challenge ? 'SCRAMBLE' : recommendScenario(this.missionRecords).id);
         requestAnimationFrame(this.step.bind(this));
     }
 
@@ -1130,6 +1222,7 @@ export class GameLoop {
         const elapsed = (timestamp - this.lastTimestamp) / 1000;
         this.lastTimestamp = timestamp;
         this.elapsedSeconds += Math.min(0.1, Math.max(0, elapsed));
+        if (this.phase === 'DEBRIEF') this.debriefAge += Math.min(0.1, Math.max(0, elapsed));
 
         if (this.phase === 'BOOT') {
             this.bootTimer += elapsed;
@@ -1148,14 +1241,35 @@ export class GameLoop {
             // would just repeat the same pointer positions.
             this.updateTouch();
 
-            const steps = this.timestep.consume(elapsed);
+            let simElapsed = elapsed;
+            if (this.hitStop > 0) {
+                this.hitStop = Math.max(0, this.hitStop - Math.min(0.1, Math.max(0, elapsed)));
+                simElapsed = elapsed * GameLoop.HIT_STOP_SCALE;
+            }
+            const steps = this.timestep.consume(simElapsed);
             for (let i = 0; i < steps; i++) {
                 this.fixedUpdate(FIXED_DT);
             }
+            // Real time, so the payoff keeps moving through the hit-stop.
+            this.killFx.update(Math.min(0.1, Math.max(0, elapsed)));
         }
 
         this.updateAdaptiveQuality(elapsed);
+        this.updateMusic();
         this.draw(elapsed);
+    }
+
+    /** The SCRAMBLE soundtrack follows the fight, and stops everywhere else. */
+    private updateMusic() {
+        const s = this.scramble;
+        const playing = s !== null && this.phase === 'ACTIVE' && !this.paused;
+        soundFX.setMusicIntensity(playing
+            ? scrambleIntensity({
+                wave: s!.wave,
+                waveLive: s!.breather <= 0 && this.airborneTargets.some(t => t.isAlive),
+                chain: this.combo.chain
+            })
+            : 0);
     }
 
     /**
@@ -1409,7 +1523,10 @@ export class GameLoop {
         }
 
         if (this.phase === 'DEBRIEF') {
-            this.restartFromDebrief();
+            if (!this.debriefAcceptsInput()) return true;
+            const layout = debriefLayout(this.viewWidth, this.viewHeight, this.debriefData());
+            if (inside(layout.missions, x, y)) this.returnToBriefing();
+            else this.flyAgain();
             return true;
         }
         return false;
@@ -1523,7 +1640,9 @@ export class GameLoop {
      */
     private recoveryNav(): NavTarget | null {
         this.approachPhase = null;
-        if (!this.approachAssist) return null;
+        // SCRAMBLE has no deck to recover to; a phone's default-on recovery
+        // assist must not fly the jet away from the fight to land.
+        if (!this.approachAssist || this.scramble) return null;
         if (this.assistLevel !== 'AUTO') return null;
         if (this.deck.aircraftState !== 'AIRBORNE') return null;
 
@@ -1621,7 +1740,8 @@ export class GameLoop {
 
     /** Cycle the colour palette, and remember the choice. */
     public cyclePalette(): PaletteId {
-        this.palette = nextPalette(this.palette);
+        const stars = totalStars(this.medals);
+        this.palette = nextAvailablePalette(this.palette, (p) => isPaletteUnlocked(p, stars));
         applyPalette(this.palette);
         savePalette(this.palette);
         this.callouts.push(`PALETTE — ${paletteSpec(this.palette).label}`, 'MODE');
@@ -1888,10 +2008,12 @@ export class GameLoop {
             if (!threat.isTerrainMasked) this.visibility.markDiscovered(threat.id);
         }
 
+        // SCRAMBLE flies with a datalinked AEW picture: every bandit is on the
+        // scope whether or not a ridge is in the way, so a wave can never hide.
         this.visibility.update(
             this.elapsedSeconds,
             candidates,
-            (position) => this.sensors.checkLOS(this.physics.position, position)
+            (position) => this.scramble !== null || this.sensors.checkLOS(this.physics.position, position)
         );
 
         this.tracker.refresh(
@@ -1903,7 +2025,10 @@ export class GameLoop {
         // 1. In AUTO mode (autopilot), continuously maintain a target lock so the autopilot can prosecute.
         // 2. In ASSIST mode, acquire the initial threat after takeoff so new pilots don't fly blind without HUD brackets.
         if (this.deck.aircraftState === 'AIRBORNE' && !this.manualTargetCleared) {
-            if (this.assistLevel === 'AUTO' || !this.hasInitialTargetAcquired) {
+            // SCRAMBLE re-locks whenever the lock is lost: the next bandit is
+            // always boxed and pointed at, so SPACE is always the answer.
+            const relock = this.scramble !== null && !this.tracker.designated();
+            if (this.assistLevel === 'AUTO' || !this.hasInitialTargetAcquired || relock) {
                 const acquired = this.tracker.autoAcquire();
                 if (acquired) this.hasInitialTargetAcquired = true;
             }
@@ -1915,12 +2040,15 @@ export class GameLoop {
     // -----------------------------------------------------------------
 
     /**
-     * Fly today's daily sortie: the endless carrier defence, seeded from the
-     * date so every player in the world gets the identical campaign, at ARCADE
+     * Fly today's daily: a SCRAMBLE (v2.0.0; it was the endless carrier
+     * defence), seeded from the date so every player in the world gets the
+     * identical waves, at ARCADE
      * pacing so the comparison is like for like whatever they have set.
      */
     public startDailySortie(now: Date = new Date()) {
-        this.selectScenarioById('CARRIER_DEFENSE');
+        // v2.0.0: the daily is a SCRAMBLE - short, seeded wave for wave, and
+        // the mode a newcomer arriving from a shared card can play at once.
+        this.selectScenarioById('SCRAMBLE');
         this.isDailyRun = true;
         this.dailyRunDate = dailyKey(now);
         this.dailyCard = null;
@@ -1959,20 +2087,162 @@ export class GameLoop {
     }
 
     /** Fold a finished daily run into the stored record and build its card. */
+    /**
+     * Stars, career XP and unlocks for the run that just ended (v2.0.0). A new
+     * cosmetic look is equipped on the spot, so the reward is seen rather
+     * than read - unless the pilot flies the colour-blind palette, which is
+     * never swapped out from under them.
+     */
+    private recordProgression(completed: boolean) {
+        const summary: RunSummary = {
+            completed,
+            score: this.score.totalScore,
+            waves: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber,
+            airframesLost: this.score.breakdown.airframesLost,
+            traps: this.score.breakdown.traps,
+            perfectTraps: this.score.breakdown.perfectTraps,
+            bestChain: this.combo.best,
+            hull: this.deck.inventory.carrierHealth,
+            seconds: this.missionSeconds
+        };
+        const starsBefore = totalStars(this.medals);
+        const merged = mergeMedals(this.medals, this.scenario.id, earnedMask(this.scenario.id, summary));
+        this.medals = merged.records;
+        saveMedals(this.medals);
+        const starsAfter = totalStars(this.medals);
+
+        const award = awardRun(this.career, this.score.totalScore, merged.fresh.length);
+        this.career = award.career;
+        saveCareer(this.career);
+
+        const unlocked = newlyUnlocked(starsBefore, starsAfter);
+        if (unlocked.length > 0 && this.palette !== 'DEUTERAN') {
+            this.palette = unlocked[unlocked.length - 1].palette;
+            applyPalette(this.palette);
+            savePalette(this.palette);
+        }
+        this.lastRun = { fresh: merged.fresh, award, unlocks: unlocked.map(u => u.label), summary };
+        // Every SCRAMBLE run gets a card to paste, not only the daily.
+        if (this.scramble && !this.isDailyRun) {
+            const b = this.score.breakdown;
+            this.dailyCard = formatScrambleCard({
+                wavesCleared: this.scramble.wavesCleared,
+                score: this.score.totalScore,
+                stars: starCount(this.medals.SCRAMBLE ?? 0),
+                kills: b.fighterKills + b.bomberKills,
+                bestChain: this.combo.best,
+                // The card carries the run itself: whoever opens it flies
+                // these exact waves with this score to beat.
+                url: challengeUrl(PLAY_URL, {
+                    seed: this.scramble.seed,
+                    score: this.score.totalScore,
+                    waves: this.scramble.wavesCleared
+                })
+            });
+        }
+        this.debriefAge = 0;
+        if (merged.fresh.length > 0) soundFX.playFanfare(4);
+    }
+
+    /** Everything the debrief draws, assembled from the run that just ended. */
+    public debriefData(): DebriefData {
+        const won = this.missionOutcome === 'SUCCESS';
+        const b = this.score.breakdown;
+        const run = this.lastRun;
+        const kills = b.fighterKills + b.bomberKills;
+        const stats: [string, string][] = this.scramble
+            ? [
+                ['WAVES CLEARED', `${this.scramble.wavesCleared}`],
+                ['BANDITS SPLASHED', `${kills}`],
+                ['BEST CHAIN', this.combo.best >= 2 ? `x${Math.min(5, this.combo.best)} · ${this.combo.best}` : '-'],
+                ['JETS LOST', `${b.airframesLost}`],
+                ['HULL LEFT', `${Math.round(this.deck.inventory.carrierHealth)}%`],
+                ['BONUS PTS', `${this.score.bonusPoints}`]
+            ]
+            : [
+                ['WAVES', `${this.deck.waveNumber}`],
+                ['AIR KILLS', `${kills}`],
+                ['GROUND KILLS', `${b.samKills + b.structureKills}`],
+                ['TRAPS (3-WIRE)', `${b.traps} (${b.perfectTraps})`],
+                ['BEST CHAIN', this.combo.best >= 2 ? `x${Math.min(5, this.combo.best)}` : '-'],
+                ['JETS LOST', `${b.airframesLost}`]
+            ];
+        const stars = totalStars(this.medals);
+        const next = nextUnlock(stars);
+        const headline = won
+            ? this.scenario.victoryTitle
+            : this.scramble
+                ? `SHOT DOWN · WAVE ${Math.max(1, this.scramble.wave)}`
+                : 'MISSION FAILED';
+        // SCRAMBLE always ends in a loss of some kind; on a completed run the
+        // headline is the win and the reason says how far it went first.
+        let reason = this.scramble && won
+            ? `${this.scramble.wavesCleared} waves held before the end. ${this.missionReason ?? ''}`.trim()
+            : this.missionReason;
+        if (this.scramble && this.challenge && !this.isDailyRun) {
+            reason = challengeVerdict(this.challenge, this.score.totalScore);
+        }
+        return {
+            outcome: won ? 'SUCCESS' : 'FAILED',
+            headline,
+            reason,
+            scenarioName: this.scenario.name,
+            cause: won ? null : this.lastLossCause,
+            score: this.score.totalScore,
+            isNewBest: this.isNewBest,
+            missionBest: recordFor(this.missionRecords, this.scenario.id).best,
+            isMissionBest: this.isMissionBest,
+            stats,
+            stars: {
+                labels: MEDALS[this.scenario.id].map(c => c.label),
+                recordMask: this.medals[this.scenario.id] ?? 0,
+                fresh: run?.fresh ?? []
+            },
+            xp: run ? run.award : null,
+            unlocks: run?.unlocks ?? [],
+            nextUnlock: next ? { label: next.label, starsNeeded: next.stars - stars } : null,
+            shareCard: this.dailyCard,
+            copied: this.dailyCopied,
+            nextUp: this.nextUpLabel() ?? undefined,
+            touch: this.controlScheme === 'TOUCH'
+        };
+    }
+
+    /**
+     * ENTER on the debrief: the same mission again, straight back into it.
+     * The single most important button in an arcade game, and the old
+     * debrief did not have it - ENTER went back to mission select.
+     */
+    public flyAgain() {
+        if (this.phase !== 'DEBRIEF') return;
+        const daily = this.isDailyRun;
+        this.returnToBriefing();
+        if (daily) this.startDailySortie();
+        else this.confirmBriefing();
+    }
+
+    /** Debrief input is ignored for a beat, so a held trigger cannot skip the payout. */
+    public static readonly DEBRIEF_INPUT_DELAY = 0.7;
+
+    public debriefAcceptsInput(): boolean {
+        return this.phase === 'DEBRIEF' && this.debriefAge >= GameLoop.DEBRIEF_INPUT_DELAY;
+    }
+
     private recordDailyRun() {
         const b = this.score.breakdown;
         const merged = mergeDailyResult(this.dailyResults, {
             date: this.dailyRunDate ?? dailyKey(),
             score: this.score.totalScore,
             rank: this.score.rank,
-            wave: this.deck.waveNumber,
+            wave: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber,
             fighterKills: b.fighterKills,
             bomberKills: b.bomberKills,
             samKills: b.samKills,
             traps: b.traps,
             perfectTraps: b.perfectTraps,
             hullRemaining: this.deck.inventory.carrierHealth,
-            completed: this.missionOutcome === 'SUCCESS'
+            completed: this.missionOutcome === 'SUCCESS',
+            ...(this.scramble ? { mode: 'SCRAMBLE' as const, bestChain: this.combo.best } : {})
         });
 
         this.dailyResults = merged.results;
@@ -2038,8 +2308,26 @@ export class GameLoop {
      */
     public fireSelectedWeapon() {
         if (this.currentView !== 'MICRO_FLIGHT') return;
+        if (this.selectedWeapon === 'AIM9' && this.physics.loadout.sidewinders <= 0) {
+            // An empty rail should not be a dead key in a dogfight: fall back
+            // to the cannon, say so, and let the held trigger do the rest.
+            this.selectedWeapon = 'GUN';
+            this.callouts.push('GUNS', 'MODE', 'OUT OF MISSILES - HOLD SPACE');
+            return;
+        }
         if (this.selectedWeapon === 'AIM9') {
             const designated = this.tracker.designated();
+            // A heat-seeker launched at an empty sky is a missile thrown away.
+            // The v2.0.0 browser run found an eager pilot mashing SPACE before
+            // wave 1 had spawned, emptying the rails at nothing - then facing
+            // the first bomber with the gun. No target, no launch.
+            const anyTarget = designated?.target.kind === 'AIR'
+                || this.airborneTargets.some(t => t.isAlive && this.visibility.isVisible(t.id));
+            if (!anyTarget) {
+                soundFX.playRelayClick();
+                this.callouts.push('NO TARGET', 'MODE', 'NOTHING TO LOCK - WAIT FOR THE BANDITS');
+                return;
+            }
             const before = this.weapons.missiles.length;
             this.weapons.fireSidewinder(
                 this.physics,
@@ -2116,6 +2404,7 @@ export class GameLoop {
         if (this.deck.aircraftState === 'AIRBORNE') {
             this.hasLaunched = true;
             this.updateSortie(dt);
+            if (this.scramble && this.deck.aircraftState === 'AIRBORNE') this.updateScramble(dt);
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
@@ -2131,6 +2420,7 @@ export class GameLoop {
         this.flashAlpha = Math.max(0, this.flashAlpha - dt * 2.6);
         this.hitMarker = Math.max(0, this.hitMarker - dt);
         this.callouts.update(dt);
+        this.combo.update(dt);
         if (this.trapCinematic > 0) {
             this.trapCinematic = Math.max(0, this.trapCinematic - dt);
             // The deck state machine already owns the aircraft; this is purely
@@ -2226,8 +2516,9 @@ export class GameLoop {
             // Simplified hit-scan cannon burst: the alignment/range gate in
             // EnemyAI has already established a valid guns solution, and
             // `hit` says whether this burst actually connected.
-            if (this.scenario.setup.combatShielded || this.dying) return; // ghost in training
+            if (this.scenario.setup.combatShielded || this.dying || enemy.passive) return; // ghost in training
             soundFX.playIncomingFire(this.placeAt(enemy.position));
+            if (hit && enemy.accuracy !== undefined && Math.random() > enemy.accuracy) hit = false;
             if (!hit) {
                 this.deck.log(`TRACERS PAST YOU - ${enemy.name} IS FIRING`);
                 this.shake(SHAKE_SOURCES.damageTaken * 0.15);
@@ -2241,7 +2532,7 @@ export class GameLoop {
             this.flash(THEME.alert, 0.28);
         }, (enemy) => {
             // The warning that makes cannon fire a fight instead of an ambush.
-            if (this.scenario.setup.combatShielded) return;
+            if (this.scenario.setup.combatShielded || enemy.passive) return;
             this.callouts.push('GUNS TRACKING', 'LOSS', `${enemy.name} - BREAK TURN`);
             // Heard, not just read: the pilot is looking at the target.
             if (this.gunsWarningTimer <= 0) soundFX.playGunsTracking(this.placeAt(enemy.position));
@@ -2266,11 +2557,11 @@ export class GameLoop {
             onSAMDestroyed: (destroyedSAM) => {
                 this.score.recordKill('SAM');
                 this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
-                this.callouts.push('SAM DOWN', 'KILL', destroyedSAM.name);
+                this.payKill(destroyedSAM.position, SCORE_VALUES.SAM, 'SAM DOWN', destroyedSAM.name);
                 this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedSAM.position), 900));
                 this.debris.spawnFromMesh(this.samMesh.lines, destroyedSAM.position, { x: 0, y: 0, z: 0 }, '#ff6622');
                 soundFX.playExplosion(this.placeAt(destroyedSAM.position));
-                soundFX.playKillConfirm();
+                soundFX.playKillConfirm(undefined, this.combo.chain);
             },
             onStrikeTargetHit: (target, destroyed) => this.onStrikeTargetHit(target, destroyed)
         });
@@ -2326,7 +2617,8 @@ export class GameLoop {
 
         // Carrier recovery (arresting gear trap)
         const distToCarrier = Math.hypot(this.physics.position.x, this.physics.position.z);
-        if (distToCarrier < 190 && this.physics.position.y >= 17 && this.physics.position.y <= 30) {
+        // SCRAMBLE has no deck: a low pass over the boat is a flypast, not a trap.
+        if (!this.scramble && distToCarrier < 190 && this.physics.position.y >= 17 && this.physics.position.y <= 30) {
             if (this.physics.airSpeed < 95) {
                 const grade = ScoreKeeper.gradeTrap(this.physics.position.z);
                 this.score.recordTrap(grade);
@@ -2356,20 +2648,225 @@ export class GameLoop {
         }
     }
 
+    // -----------------------------------------------------------------
+    // SCRAMBLE (v2.0.0) - see core/Scramble.ts
+    // -----------------------------------------------------------------
+
+    /** Missiles armed and selected: a beginner's first SPACE should be a kill. */
+    private armScrambleJet() {
+        this.physics.loadout = { ...SCRAMBLE_LOADOUT };
+        this.countermeasures = createCountermeasureState(SCRAMBLE_LOADOUT.chaff);
+        this.selectedWeapon = 'AIM9';
+    }
+
+    private updateScramble(dt: number) {
+        const s = this.scramble;
+        if (!s || this.dying) return;
+        // Fuel is not the game here.
+        if (this.physics.fuel < 1500) this.physics.fuel = 1500;
+
+        // A bomber that reaches the boat hits it and is gone - the cost of
+        // chasing the wrong contact, in the one currency this mode keeps.
+        for (const t of this.airborneTargets) {
+            if (!t.isAlive || !isBomber(t)) continue;
+            if (Math.hypot(t.position.x, t.position.z) > SCRAMBLE.bomberStrikeRadius) continue;
+            t.isAlive = false;
+            const dmg = SCRAMBLE.bomberHullDamage;
+            this.deck.inventory.carrierHealth = Math.max(0, this.deck.inventory.carrierHealth - dmg);
+            this.score.recordHullDamage(dmg);
+            this.deck.log(`CRITICAL: ${t.name} REACHED CV-68! -${dmg}% HULL.`);
+            this.callouts.push('CARRIER HIT', 'LOSS', `-${dmg}% HULL · A BOMBER GOT THROUGH`);
+            this.weapons.spawnExplosion({ x: 0, y: 30, z: 0 }, 30, '#ff6600');
+            soundFX.playExplosion(this.placeAt({ x: 0, y: 20, z: 0 }));
+            soundFX.playMasterCaution();
+            this.shake(SHAKE_SOURCES.damageTaken * 0.6);
+        }
+
+        if (s.breather > 0) {
+            s.breather -= dt;
+            if (s.breather <= 0) this.spawnScrambleWave();
+            return;
+        }
+
+        if (this.airborneTargets.some(t => t.isAlive)) {
+            s.waveSeconds += dt;
+            s.clearTimer = 0;
+            if (s.waveSeconds < SCRAMBLE.waveTimeoutSeconds) return;
+            // Safety net: whatever is left turns for home. No points for it,
+            // but the run moves on.
+            for (const t of this.airborneTargets) t.isAlive = false;
+            s.bugOut = true;
+            this.callouts.push('BANDITS BUGGING OUT', 'MODE', 'THE REST OF THE WAVE TURNED FOR HOME', 2.2, 'WAVE');
+            return;
+        }
+        // Let the last kill have its moment - banner, ring, hit-stop - before
+        // the wave-clear payout lands on top of it.
+        s.clearTimer += dt;
+        if (s.clearTimer < GameLoop.WAVE_CLEAR_BEAT) return;
+        s.clearTimer = 0;
+
+        s.wavesCleared++;
+        // A wave that ran out the clock is survived, not won: no bonus.
+        const bonus = s.bugOut ? 0 : waveClearBonus(s.wave, s.waveSeconds);
+        s.bugOut = false;
+        this.score.recordWaveSurvived();
+        this.score.recordBonus(bonus);
+        const rearmed = rearmAfterWave(this.physics.loadout, this.physics.damage);
+        this.physics.loadout = rearmed.loadout;
+        this.physics.damage = rearmed.damage;
+        // The rails are loaded again; so is the weapon a beginner fires best.
+        if (this.selectedWeapon === 'GUN' && this.physics.loadout.sidewinders > 0) this.selectedWeapon = 'AIM9';
+        this.lastCautionDamage = this.physics.damage;
+        this.callouts.push(
+            `WAVE ${s.wave} CLEARED`,
+            'PRAISE',
+            `+${bonus + SCORE_VALUES.WAVE_SURVIVED} PTS · REARMED & PATCHED`,
+            2.6,
+            'WAVE'
+        );
+        this.deck.log(`WAVE ${s.wave} CLEARED IN ${Math.round(s.waveSeconds)} S. +${bonus} BONUS.`);
+        soundFX.playFanfare(Math.min(12, s.wave));
+        this.flash(THEME.phosphor, 0.2);
+        s.breather = SCRAMBLE.breatherSeconds;
+    }
+
+    /** Turn the next wave's specs into contacts placed round the jet. */
+    private spawnScrambleWave() {
+        const s = this.scramble;
+        if (!s) return;
+        s.wave++;
+        s.waveSeconds = 0;
+        s.bugOut = false;
+        const spec = scrambleWave(s.wave, s.seed);
+        s.brief = spec.brief;
+
+        const p = this.physics.position;
+        const yaw = this.physics.yaw;
+        this.airborneTargets = spec.spawns.map((sp, i) => {
+            const a = yaw + sp.bearingDeg * (Math.PI / 180);
+            const x = p.x + Math.sin(a) * sp.rangeM;
+            const z = p.z + Math.cos(a) * sp.rangeM;
+            const ground = this.terrain.getElevation(x, z);
+            const y = Math.max(ground + 250, p.y + sp.altOffsetM, 300);
+            const bomber = sp.type === 'BOMBER';
+            const speed = bomber ? 190 : 185;
+            // Fighters come for the jet; bombers go for the boat.
+            const tx = bomber ? -x : p.x - x;
+            const tz = bomber ? -z : p.z - z;
+            const h = Math.hypot(tx, tz) || 1;
+            return {
+                id: `W${s.wave}-${bomber ? 'TU-22' : 'MIG'}-${i}`,
+                name: bomber ? 'Tu-22M BACKFIRE' : `MiG-23 FLOGGER #${i + 1}`,
+                position: { x, y, z },
+                velocity: { x: (tx / h) * speed, y: 0, z: (tz / h) * speed },
+                isAlive: true,
+                passive: sp.passive,
+                accuracy: fighterAccuracy(s.wave),
+                huntsPlayer: !bomber && !sp.passive
+            };
+        });
+        // Every wave is auto-locked again: picking a target is a skill this
+        // mode teaches later (T), not a gate in front of the first shot.
+        this.hasInitialTargetAcquired = false;
+        this.manualTargetCleared = false;
+        this.callouts.push(`WAVE ${s.wave}`, 'PRAISE', spec.brief, 2.6, 'WAVE');
+        this.deck.log(`WAVE ${s.wave} INBOUND: ${spec.brief}.`);
+        soundFX.playUiSelect();
+    }
+
+    /**
+     * Back in the fight after a loss: same patch of sky, a safe height,
+     * nose on the nearest bandit, a fresh magazine. The deck - and its
+     * progress bar - is no part of this mode.
+     */
+    private respawnScramble() {
+        const jetsLeft = SCRAMBLE.lives - this.score.breakdown.airframesLost;
+        if (jetsLeft <= 0) {
+            // The failure condition ends the run on the next tick.
+            this.deck.aircraftState = 'HANGAR_MAINTENANCE';
+            return;
+        }
+        const was = { ...this.physics.position };
+        this.hotStartAirborne();
+        const ground = this.terrain.getElevation(was.x, was.z);
+        const nearest = this.airborneTargets
+            .filter(t => t.isAlive)
+            .sort((a, b) => Math.hypot(a.position.x - was.x, a.position.z - was.z)
+                - Math.hypot(b.position.x - was.x, b.position.z - was.z))[0];
+        const yaw = nearest ? Math.atan2(nearest.position.x - was.x, nearest.position.z - was.z) : 0;
+        this.physics.position = { x: was.x, y: Math.max(ground + 600, 800), z: was.z };
+        this.physics.yaw = yaw;
+        this.physics.velocity = { x: Math.sin(yaw) * 230, y: 0, z: Math.cos(yaw) * 230 };
+        this.armScrambleJet();
+        this.callouts.push(`JET ${SCRAMBLE.lives - jetsLeft + 1} OF ${SCRAMBLE.lives}`, 'MODE',
+            jetsLeft === 1 ? 'LAST JET - MAKE IT COUNT' : 'BACK IN THE FIGHT', 2.2, 'WAVE');
+    }
+
+    private scrambleObjective(): ObjectiveStep {
+        const s = this.scramble!;
+        const jets = Math.max(0, SCRAMBLE.lives - this.score.breakdown.airframesLost);
+        const hull = Math.round(this.deck.inventory.carrierHealth);
+        const status = `JETS ${jets} · HULL ${hull}%`;
+        const alive = this.airborneTargets.filter(t => t.isAlive).length;
+        if (s.wave === 0 || s.breather > 0 || alive === 0) {
+            const cleared = s.wave > 0 && s.breather <= 0;
+            return {
+                title: s.wave === 0 ? 'BANDITS INBOUND' : cleared ? `WAVE ${s.wave} CLEARED` : `WAVE ${s.wave + 1} INBOUND`,
+                detail: s.wave === 0 ? `Weapons hot. ${status}`
+                    : cleared ? `Splashed them all. Rearming. ${status}` : `Rearmed and patched. ${status}`,
+                urgency: 'NORMAL',
+                waiting: true
+            };
+        }
+        return {
+            title: `SPLASH ${alive} BANDIT${alive === 1 ? '' : 'S'}`,
+            detail: `WAVE ${s.wave} · ${s.brief} · ${status}`,
+            key: 'SPACE',
+            urgency: 'ACTION'
+        };
+    }
+
+    /**
+     * The shared payout for anything the player kills: extend the chain, bank
+     * its bonus, put one escalating banner up (a chain replaces its own
+     * previous banner rather than stacking), throw the ring and the points at
+     * the wreck, and hold the world for a beat.
+     */
+    private payKill(position: Vector3, baseValue: number, soloLine: string, name: string) {
+        const kill = this.combo.registerKill(baseValue);
+        this.score.recordBonus(kill.bonus);
+        const chained = kill.chain >= 2;
+        this.callouts.push(
+            chained ? `${kill.label}  x${kill.multiplier}` : soloLine,
+            'KILL',
+            chained ? `+${baseValue + kill.bonus} PTS  ·  ${name}` : name,
+            undefined,
+            'KILL_CHAIN'
+        );
+        this.killFx.spawn(
+            position,
+            `+${baseValue + kill.bonus}${chained ? ` x${kill.multiplier}` : ''}`,
+            chained ? THEME.caution : THEME.phosphor,
+            chained ? 1 + Math.min(4, kill.chain - 1) * 0.35 : 1
+        );
+        this.hitStop = Math.max(this.hitStop, kill.chain >= 3 ? 0.16 : 0.09);
+    }
+
     private onTargetDestroyed(destroyedTarget: AirborneTarget) {
         this.deck.log(`COMBAT REPORT: ${destroyedTarget.name} DESTROYED.`);
         this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
 
         this.sortieKills++;
         this.celebrate('FIRST_BLOOD');
-        this.callouts.push(splashLine(this.sortieKills), 'KILL', destroyedTarget.name);
+        const base = isBomber(destroyedTarget) ? SCORE_VALUES.BOMBER : SCORE_VALUES.FIGHTER;
+        this.payKill(destroyedTarget.position, base, splashLine(this.sortieKills), destroyedTarget.name);
         // A kill at knife-fighting range should rattle the canopy; one at
         // five kilometres is a flash on the horizon.
         this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedTarget.position), 900));
         this.flash(THEME.phosphor, 0.22);
         const meshLines = isBomber(destroyedTarget) ? this.bomberMesh.lines : this.mig23Mesh.lines;
         this.debris.spawnFromMesh(meshLines, destroyedTarget.position, destroyedTarget.velocity, '#ff4433', 24);
-        soundFX.playKillConfirm();
+        soundFX.playKillConfirm(undefined, this.combo.chain);
 
         // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
         const pkgId = destroyedTarget.id.replace(/-\d+$/, '');
@@ -2406,8 +2903,13 @@ export class GameLoop {
         }
 
         const deckFailed = this.deck.missionState === 'FAILED';
-        const outcome = deckFailed ? 'FAILED' : this.missionStatus.outcome;
+        let outcome = deckFailed ? 'FAILED' : this.missionStatus.outcome;
         if (outcome === 'ACTIVE' || this.phase === 'DEBRIEF') return;
+        // SCRAMBLE always ends with the jets or the boat gone; going down
+        // after the fifth wave is a completed run, not a failed one.
+        if (this.scramble && outcome === 'FAILED' && this.scramble.wavesCleared >= SCRAMBLE.clearWave) {
+            outcome = 'SUCCESS';
+        }
 
         this.missionOutcome = outcome;
         this.missionReason = deckFailed
@@ -2426,6 +2928,7 @@ export class GameLoop {
         this.isMissionBest = merged.isNewBest;
         saveMissionRecords(this.missionRecords);
         if (this.isDailyRun) this.recordDailyRun();
+        this.recordProgression(outcome === 'SUCCESS');
 
         this.deck.log(outcome === 'SUCCESS' ? 'MISSION COMPLETE.' : 'MISSION FAILED.');
         soundFX.playDebriefSting(outcome === 'SUCCESS');
@@ -2456,6 +2959,7 @@ export class GameLoop {
         // A scenario with scripted phases owns the objective line; the generic
         // deck/flight director is the fallback for the open-ended mode, and
         // for the deck states a flight phase has nothing useful to say about.
+        if (this.scramble) return this.scrambleObjective();
         const snapshot = this.missionSnapshot();
         const missionObjective = this.mission.objective(snapshot);
         if (missionObjective) return missionObjective;
@@ -2514,6 +3018,9 @@ export class GameLoop {
         if (this.deck.aircraftState !== 'AIRBORNE' || this.dying) return null;
 
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        // SCRAMBLE has no deck to come home to: no approach, trap or
+        // return-to-carrier coaching, and damage is patched by clearing a wave.
+        const scramble = this.scramble !== null;
         const contextual = getContextualHint({
             isStalled: this.physics.isStalled,
             rwrState: this.sensors.masterRwrState,
@@ -2522,11 +3029,11 @@ export class GameLoop {
             fuel: this.physics.fuel,
             airSpeed: this.physics.airSpeed,
             damage: this.physics.damage,
-            distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
+            distanceToCarrier: scramble ? Number.POSITIVE_INFINITY : Math.hypot(this.physics.position.x, this.physics.position.z),
             isAirborne: true,
             // The trap-speed warning is for a recovery, not for the cat shot
             // that necessarily happens fast and at zero range from the boat.
-            closingOnCarrier: HUD.isOnApproach(this.physics),
+            closingOnCarrier: !scramble && HUD.isOnApproach(this.physics),
             bayOpen: this.physics.bayOpen,
             gunsTracking: this.gunsWarningTimer > 0,
             bandit: this.nearestBandit()
@@ -2535,8 +3042,11 @@ export class GameLoop {
         // Safety first, then the training checkout, then routine coaching - and
         // routine coaching only when it does not contradict the objective strip.
         // See `arbitrateHint` for the measured case that made this necessary.
+        const hint = scramble && contextual?.text.includes('RETURN TO CARRIER')
+            ? { text: 'HEAVY DAMAGE - CLEAR THE WAVE TO PATCH THE JET', severity: contextual.severity }
+            : contextual;
         return arbitrateHint(
-            contextual,
+            hint,
             this.training.currentStep?.prompt ?? null,
             this.currentObjective()
         );
@@ -2582,31 +3092,21 @@ export class GameLoop {
                     changeable: this.scenario.setup.allowMapChoice === true
                 },
                 storedPalette() === null,
-                storedPitchInversion() === null
+                storedPitchInversion() === null,
+                {
+                    medals: this.medals,
+                    careerLine: this.career.runs > 0
+                        ? (() => { const c = careerLevel(this.career.xp); return `CAREER LV ${c.level} · ${c.title}`; })()
+                        : null,
+                    challengeLine: this.challenge && this.scenario.setup.scramble ? challengeLine(this.challenge) : null
+                }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             return;
         }
 
         if (this.phase === 'DEBRIEF') {
-            this.briefing.drawDebrief(
-                this.ctx, w, h, this.score, this.deck.waveNumber, this.bestScore, this.isNewBest,
-                {
-                    outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-                    scenarioName: this.scenario.name,
-                    reason: this.missionReason,
-                    // Only surfaced on a failure - a win has no "cause" to
-                    // report, and lastLossCause is reset every sortie so it
-                    // can never point at a hit from a previous flight.
-                    cause: this.missionOutcome === 'FAILED' ? this.lastLossCause : null,
-                    title: this.scenario.victoryTitle,
-                    missionBest: recordFor(this.missionRecords, this.scenario.id).best,
-                    isMissionBest: this.isMissionBest,
-                    nextUp: this.nextUpLabel() ?? undefined,
-                    shareCard: this.dailyCard,
-                    copied: this.dailyCopied
-                }
-            );
+            drawDebriefView(this.ctx, w, h, this.debriefData(), this.debriefAge);
             return;
         }
 
@@ -2751,6 +3251,19 @@ export class GameLoop {
 
         this.drawHorizonAndSea(camPos, camPitch, camYaw, camRoll);
 
+        // Speed streaks: how many of the pool show scales with airspeed, so a
+        // slow approach is calm and a 500-knot pass is a blur. Thinned for
+        // prefers-reduced-motion rather than removed - they are also the only
+        // close-range motion cue over open water.
+        this.streaks.update(camPos, this.physics.velocity);
+        const streakShare = SpeedStreaks.intensity(this.physics.airSpeed) * (this.motion.shakeScale < 1 ? 0.3 : 1);
+        const shown = Math.floor(this.streaks.points.length * streakShare);
+        for (let i = 0; i < shown; i++) {
+            const p = this.streaks.points[i];
+            this.renderer.drawLine(p, SpeedStreaks.tail(p, this.physics.velocity),
+                camPos, camPitch, camYaw, camRoll, WORLD.horizon, 1);
+        }
+
         this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll, WORLD.carrier);
         this.terrain.render(this.renderer, camPos, camPitch, camYaw, camRoll);
 
@@ -2810,6 +3323,13 @@ export class GameLoop {
             this.flash('#00e5ff', this.timeRewind.isRewindingEffect * 0.8);
         }
 
+        drawKillFx(this.ctx, this.killFx, (p) => {
+            const c = this.renderer.transformToCamera(p, camPos, camPitch, camYaw, camRoll);
+            if (c.z < this.renderer.nearPlane) return null;
+            const sp = this.renderer.projectCameraPoint(c);
+            return { x: sp.x, y: sp.y, z: c.z };
+        }, this.renderer.fov);
+
         this.hud.draw(
             this.ctx,
             this.physics,
@@ -2834,6 +3354,7 @@ export class GameLoop {
                 assistLabel: assistSpec(this.assistLevel).label,
                 assistOverride: this.assistOverride,
                 callouts: this.callouts.active(),
+                combo: { chain: this.combo.chain, multiplier: multiplierFor(this.combo.chain), fraction: this.combo.fraction },
                 hitMarker: this.hitMarker,
                 trapStamp: this.trapGrade,
                 touchMode: this.controlScheme === 'TOUCH',
@@ -2897,14 +3418,25 @@ export class GameLoop {
     // Phase transitions driven by the input layer
     // -----------------------------------------------------------------
 
+    /** Take up a shared challenge: SCRAMBLE, on the sharer's seed. */
+    public acceptChallenge(challenge: Challenge | null) {
+        this.challenge = challenge;
+        if (challenge) this.selectScenarioById('SCRAMBLE');
+    }
+
     public confirmBriefing(seedOverride?: number) {
         if (this.phase !== 'BRIEFING') return;
+        if (seedOverride === undefined && this.challenge && this.scenario.setup.scramble && !this.isDailyRun) {
+            seedOverride = this.challenge.seed;
+        }
         soundFX.playUiSelect();
         // Re-resolved per mission so a first completion graduates the player
         // to the full instruments - unless they have chosen a density already.
         this.hud.hudDensity = resolveHudDensity(this.hasCompletedAMission());
         // Build the world fresh from whatever the selector landed on.
         this.applyScenario(this.scenario, seedOverride);
+        // A card belongs to the run that made it; the next run starts without one.
+        this.dailyCard = null;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'ACTIVE';
@@ -2953,7 +3485,9 @@ export class GameLoop {
             autopilotFlying: this.assistLevel === 'AUTO',
             recoveryOn: this.approachAssist,
             hudDensityLabel: HUD_DENSITY_LABEL[this.hud.hudDensity],
-            muted: soundFX.muted
+            muted: soundFX.muted,
+            canRecover: this.scramble === null,
+            musicOn: this.scramble !== null ? soundFX.musicEnabled : undefined
         });
     }
 
@@ -3028,6 +3562,9 @@ export class GameLoop {
                 return;
             case 'SOUND':
                 soundFX.toggleMute();
+                return;
+            case 'MUSIC':
+                soundFX.toggleMusic();
                 return;
             case 'RESTART':
                 this.restartMission();

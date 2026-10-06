@@ -82,6 +82,17 @@ export class ScoreKeeper {
         missionsCompleted: 0
     };
 
+    /**
+     * Points earned on top of the score table - kill-chain multipliers and
+     * SCRAMBLE wave-clear bonuses. Kept out of `breakdown`, which is a count
+     * of things that happened, not of points.
+     */
+    public bonusPoints = 0;
+
+    public recordBonus(points: number) {
+        if (Number.isFinite(points) && points > 0) this.bonusPoints += Math.round(points);
+    }
+
     public recordKill(type: KillType) {
         if (type === 'FIGHTER') this.breakdown.fighterKills++;
         else if (type === 'BOMBER') this.breakdown.bomberKills++;
@@ -127,7 +138,8 @@ export class ScoreKeeper {
             b.airframesLost * SCORE_VALUES.AIRFRAME_LOST +
             b.hullDamageTaken * SCORE_VALUES.HULL_DAMAGE_PER_PCT +
             b.wavesSurvived * SCORE_VALUES.WAVE_SURVIVED +
-            b.missionsCompleted * SCORE_VALUES.MISSION_COMPLETE
+            b.missionsCompleted * SCORE_VALUES.MISSION_COMPLETE +
+            this.bonusPoints
         );
     }
 

@@ -42,7 +42,9 @@ export const MIX = {
     /** Events out in the world, before distance attenuation. */
     world: 0.50,
     /** Menus and confirmations. */
-    ui: 0.38
+    ui: 0.38,
+    /** The SCRAMBLE soundtrack: a bed under the fight, never over a warning. */
+    music: 0.16
 } as const;
 
 export interface SpatialResult {

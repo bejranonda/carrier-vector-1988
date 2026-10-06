@@ -9,12 +9,12 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-1029%20passing-00ff66)](https://vitest.dev/)
-[![Playtest](https://img.shields.io/badge/browser%20checks-33%20passing-00ff66)](#testing)
+[![Vitest](https://img.shields.io/badge/tests-1107%20passing-00ff66)](https://vitest.dev/)
+[![Playtest](https://img.shields.io/badge/browser%20checks-48%20passing-00ff66)](#testing)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Fly 6-DOF wireframe sorties through radar-masking canyons, then manage the flight deck that launched you. Every line of 3D projection, aerodynamics, and audio is hand-written linear algebra on a single HTML5 canvas — no Three.js, no Babylon, no Pixi, no gl-matrix.
+**Press ENTER and you are airborne, a bomber locked dead ahead.** SCRAMBLE throws wave after wave at you over a wireframe fjord: chain your kills for a multiplier, earn three medal stars per mission, level up a career and unlock new phosphor looks - then, when you want depth, fly 6-DOF sorties through radar-masking canyons and manage the flight deck that launched you. Every line of 3D projection, aerodynamics, and audio is hand-written linear algebra on a single HTML5 canvas — no Three.js, no Babylon, no Pixi, no gl-matrix.
 
 **No install required — it runs entirely in the browser.**
 
@@ -25,6 +25,7 @@ Fly 6-DOF wireframe sorties through radar-masking canyons, then manage the fligh
 - [Play Online](https://bejranonda.github.io/carrier-vector-1988/)
 - [What is this?](#what-is-this)
 - [Quick Start](#quick-start)
+- [SCRAMBLE: the arcade front door](#scramble-the-arcade-front-door)
 - [How to Play](#how-to-play)
 - [Controls](#controls)
 - [Features](#features)
@@ -57,27 +58,96 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 989 headless Vitest tests
-npm run playtest # 28 checks in a real browser, screenshots to playtest-output/
+npm run test     # 1,107 headless Vitest tests
+npm run playtest # 48 checks in a real browser, screenshots to playtest-output/
 npm run preview  # serve the production build
 ```
 
 **Requirements:** Node 18+ and any modern browser. No GPU, no WebGL, no build-time asset pipeline.
 
+## SCRAMBLE: the arcade front door
+
+New in v2.0.0, and where every new pilot starts. No deck, no checklist, no
+catapult wait: `ENTER` on the briefing and you are in the air with Sidewinders
+selected and a bomber already boxed dead ahead. **Measured in Chromium: first
+kill 4.2 s after pressing ENTER**, with one key to learn. The old first
+flight, the guided training sortie, took 13.9 s even for a scripted pilot who
+obeyed every order instantly - and needed four different correct actions
+(launch, hold W, F, then lock and fire) read off the screen first.
+
+Each wave teaches exactly one thing, by doing it:
+
+| Wave | What arrives | What it teaches |
+| :-: | :-- | :-- |
+| 1 | One bomber dead ahead, auto-locked | `SPACE` fires |
+| 2 | Two bombers either side | turn toward them |
+| 3 | Two fighters - and they shoot back | keep turning |
+| 4 | A bomber with an escort | kill the bomber first |
+| 5 | Bandits from behind | check six |
+| 6+ | Mixed waves from every bearing, growing | everything at once |
+
+The first two waves cannot fire a shot; the fighters learn to aim as the run
+goes on. Clearing a wave **rearms and patches** the jet and pays a bonus that
+is bigger the faster it went down. Bombers that reach the boat hurt it. You
+have **three jets**, and a lost one respawns in the same patch of sky - no
+deck, no progress bar. Every bandit is on the scope (an AEW datalink), and a
+wave that drags past 75 s bugs out, so a run can never stall on one contact
+you cannot find.
+
+**Kill chains.** Kill again within 4.5 s and the multiplier climbs: `DOUBLE
+SPLASH x2`, `TRIPLE SPLASH x3`, `QUAD SPLASH`, `ACE STREAK` (capped at x5). The
+banner escalates in place instead of stacking, a shockwave ring and the points
+(`+500 x2`) rise off the wreck, the world holds for a beat (hit-stop), and the
+kill chime climbs a whole tone per link. Chains work in every mission, not only
+SCRAMBLE.
+
+**Medals, career, unlocks.** Every mission has three named stars ("CLEAR WAVE
+10", "COMPLETE WITHOUT LOSING A JET", "LOG TWO 3-WIRE TRAPS"), each earned on
+its own and shown on the selector with the next one to go for. Every run pays
+career XP (score plus a bounty per new star) that fills a bar on the debrief
+and levels you from NUGGET through WINGMAN, FLIGHT LEAD and ACE to LEGEND.
+Stars unlock cosmetic palettes - **AMBER VECTOR** (3★), **ARCTIC WHITE** (8★),
+**SYNTHWAVE** (14★) - equipped the moment you earn them (`C` cycles what you
+own; the colour-blind palette is never locked).
+
+**FLY AGAIN.** The debrief pays out stars, score, XP and unlocks, then puts
+`ENTER - FLY AGAIN` under your thumb: straight back into the same mission.
+`ESC` goes to mission select. Every SCRAMBLE run leaves a three-line card to
+paste (`C` copies it), and its last line is a **challenge link**:
+
+```
+CARRIER VECTOR: 1988 — SCRAMBLE ★★☆
+7 WAVES HELD · 12,400 PTS · 18 splashed · chain x4
+beat it: bejranonda.github.io/carrier-vector-1988/?c=482913.12400.7
+```
+
+Whoever opens it lands on the briefing with `CHALLENGE · BEAT 12,400 PTS (7
+WAVES) ON THE SAME WAVES`, flies *your exact waves* (they are a pure function
+of the seed), and the debrief tells them by how much they beat you - or how
+far short they fell. No server involved.
+
+SCRAMBLE also has its own soundtrack: a small procedural synthwave loop that
+layers up with the fight - kick and bass while bandits are inbound, hats when a
+wave is live, an arpeggio when a chain is running or you are past wave 5.
+`MUSIC: ON/OFF` in the pause menu switches it without touching the effects.
+
 ## Missions
 
 Pick a mission on the briefing screen with `←` / `→` or the number keys, then
 press `ENTER`. Each one sets the world up differently, writes its own briefing
-cards, and tracks its own ordered objectives.
+cards, and tracks its own ordered objectives. The order is the suggested path:
+the arcade front door, the guided flight that teaches the trap, then the
+campaign by difficulty.
 
 | # | Mission | Difficulty | Map | What it asks of you |
 | --- | --- | --- | --- | --- |
-| 1 | **CARRIER DEFENSE** | ●●○○○ | BJORNFJORD | The endless mode. Hold CV-68 against escalating waves for as long as you can. |
-| 2 | **CANYON STRIKE** | ●●●●● | BJORNFJORD | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
-| 3 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges: lock each radiating site with an **AGM-88 HARM**, and bomb any that go quiet. |
-| 4 | **LAST STAND** | ●●●●● | NORWEGIAN SEA | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
-| 5 | **CARRIER QUALS** | ●○○○○ | NORWEGIAN SEA | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
-| 6 | **TRAINING SORTIE** | ●○○○○ | NORWEGIAN SEA | **Where a new pilot starts.** A guided flight with Ghost-Lead: launch, climb, engage the autopilot, splash a real target drone, trap aboard. Nothing can shoot you and the wingman hauls you clear of the sea, so it cannot end in a crash. |
+| 1 | **SCRAMBLE** | ●○○○○ | BJORNFJORD (or any) | **Where a new pilot starts.** Airborne at once; endless waves; chain the kills, beat your score. See above. |
+| 2 | **TRAINING SORTIE** | ●○○○○ | BJORNFJORD | The guided flight with Ghost-Lead: launch, climb, engage the autopilot, splash a real target drone, trap aboard. Nothing can shoot you and the wingman hauls you clear of the ground, so it cannot end in a crash. |
+| 3 | **CARRIER DEFENSE** | ●●○○○ | BJORNFJORD | The endless deck mode. Hold CV-68 against escalating waves for as long as you can - arming, launching and trapping between them. |
+| 4 | **CANYON STRIKE** | ●●●●● | BJORNFJORD | A four-minute window to run the fjord below the ridge line, put a Mk.82 inside 55 m of a hardened submarine pen, and get back out through a SAM belt that has gone weapons-free. |
+| 5 | **IRON HAND** | ●●●○○ | KVITOYA RIDGES | Roll back the SAM belt. Four launchers behind four ridges: lock each radiating site with an **AGM-88 HARM**, and bomb any that go quiet. |
+| 6 | **LAST STAND** | ●●●●● | NORWEGIAN SEA | Five packages inbound at once and a hull already down to 70%. You cannot stop everything, so kill the bombers. |
+| 7 | **CARRIER QUALS** | ●○○○○ | NORWEGIAN SEA | No enemies at all. Three traps with at least one 3-wire — the hardest skill in the game, with nothing shooting at you while you learn it. |
 
 ### The three maps
 
@@ -110,21 +180,21 @@ asks you to use all three in one run:
 
 ## How to Play
 
-**Your first flight is deliberately small.** A new pilot is routed to the
-TRAINING SORTIE and flies the **FIRST FLIGHT** HUD: the horizon, speed, altitude,
+**Your first flight is deliberately small - and deliberately a fight.** A new
+pilot is routed to SCRAMBLE (above) and flies the **FIRST FLIGHT** HUD: the horizon, speed, altitude,
 one line saying what to do, the armed weapon, and a single steering cue on a ring
 round the gunsight that says where to go (`BOAT 4.2 KM · TURN LEFT`) - no
 compass, no radar, no row of buttons. The deck shows four panels, not eight.
-Finish the training sortie (`WINGS EARNED`) and the full instruments unlock; `U`
+Complete any mission (SCRAMBLE counts once you clear wave 5) and the full instruments unlock; `U`
 switches between **FIRST FLIGHT / ARCADE / PRO** at any time and is remembered.
 Not sure what to do at any point? Press `ESC` (or click the `MENU` button) for
 a pause menu that restates the current objective in plain words and can hand
 the boring parts to the autopilot.
 
-The briefing screen lays the rest out in three cards; here it is in full.
+For the deck missions the briefing lays the rest out in three cards; here it is in full.
 
 1. **Boot & mission select** — The display warms up, then the briefing screen
-   offers six missions. `←` / `→` or `1`-`6` picks one; the three cards under
+   offers seven missions. `←` / `→` or `1`-`7` picks one; the three cards under
    the selector explain *that* mission. Press `ENTER` (or click) to fly it, or
    `S` to skip straight to airborne.
 2. **On the deck** — The **CURRENT ORDERS** panel at the top of the deck screen
@@ -214,18 +284,18 @@ upright — the cockpit needs a landscape screen to hold its instruments.
 Detection is a heuristic, so press `K` to cycle `AUTO` / `TOUCH` / `KEYBOARD`
 if it guesses wrong. Desktop players get tap-to-designate with the mouse too.
 
-### The Daily Sortie
+### The Daily Scramble
 
-Press `D` on the briefing. It is the endless carrier defence, seeded from
-today's date, so **every player in the world flies the identical campaign** —
-the same packages, in the same order, at the same time. The debrief prints a
-four-line card and `C` copies it:
+Press `D` on the briefing. Since v2.0.0 it is a SCRAMBLE seeded from today's
+date, so **every player in the world flies the identical waves** — short, and
+the mode someone arriving from a shared card can play at once. The debrief
+prints a four-line card and `C` copies it:
 
 ```
-CARRIER VECTOR: 1988 — DAILY SORTIE #262
-WAVE 7 · 18,400 PTS · LT COMMANDER
-●●●● ◆◆ ▲▲  4 splashed · 2 SAM · 2 traps (1 perfect) · hull 62%
-attempt 2 · carrier-vector-1988
+CARRIER VECTOR: 1988 — DAILY SCRAMBLE #279
+WAVE 7 · 12,400 PTS · COMMANDER
+●●●●●●●●●●  18 splashed · chain x4 · hull 70%
+attempt 2 · bejranonda.github.io/carrier-vector-1988
 ```
 
 Unlimited attempts; the card says which one it was. Locking the day to a
@@ -246,12 +316,14 @@ key apart, so you can have either.
 
 ### Progress
 
-Each mission keeps its own best score and completion count. The selector ticks
-what you have cleared, marks one mission `START HERE`, and the debrief tells you
-what to fly next. Nothing is locked — the five-pip missions are selectable from
-the first run if you want them.
+Each mission keeps its own best score, completion count and **three medal
+stars**. The selector shows the stars on every pill, marks one mission
+`START HERE`, names the next star to go for, and the masthead carries your
+career level and total stars. The debrief tells you what to fly next. Nothing
+is locked — the five-pip missions are selectable from the first run if you want
+them; only cosmetic palettes are earned.
 
-> **First sortie:** a six-step **FLIGHT CHECKOUT** checklist walks you through
+> **First deck sortie:** until you have completed a mission, a six-step **FLIGHT CHECKOUT** checklist walks you through
 > pitch, roll, throttle, the weapons bay, guns and terrain masking, ticking
 > each one off as you demonstrate it. A contextual coach calls out stalls,
 > terrain, missile launches and approach guidance as they happen, and `H`
@@ -559,7 +631,12 @@ src/
 │   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
 │   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
 │   ├── Milestones.ts      # First blood / first trap / chaff save / first loop, persisted (pure)
-│   └── ScoreKeeper.ts     # Scoring, trap grading, rank ladder
+│   ├── Scramble.ts        # SCRAMBLE waves, bonuses, rearm, brag card (pure)
+│   ├── Combo.ts           # Kill chains and the multiplier (pure)
+│   ├── Medals.ts          # Three named stars per mission, persisted (pure)
+│   ├── Career.ts          # Career XP, levels, palette unlocks, persisted (pure)
+│   ├── Challenge.ts       # ?c=seed.score.waves challenge links (pure)
+│   └── ScoreKeeper.ts     # Scoring (incl. chain/wave bonuses), trap grading, rank ladder
 ├── flight/
 │   ├── AircraftPhysics.ts # 6-DOF aerodynamics, bank-to-turn, loops, stall, damage
 │   ├── FlightAssist.ts    # MANUAL / ASSIST / AUTOPILOT control laws (pure)
@@ -589,10 +666,14 @@ src/
 │   ├── RadarMath.ts       # Heading-up radar projection (pure)
 │   ├── DeckLayout.ts      # Pure responsive panel solver
 │   ├── DeckView.ts        # Flight deck instruments
-│   └── BriefingScreen.ts  # Boot sequence, briefing, help, debrief
+│   ├── BriefingScreen.ts  # Boot sequence, briefing (stars, career line), help
+│   ├── DebriefView.ts     # v2.0.0 debrief: stars, count-up score, XP bar, FLY AGAIN
+│   ├── KillFx.ts          # Shockwave ring + rising score text at the wreck
+│   └── SpeedStreaks.ts    # Vector dust streaming past the canopy
 ├── audio/
 │   ├── AudioMix.ts        # Bus levels, spatialisation, beds (pure)
-│   └── SoundFX.ts         # Web Audio synthesis and the bus graph
+│   ├── MusicPattern.ts    # SCRAMBLE soundtrack arrangement (pure)
+│   └── SoundFX.ts         # Web Audio synthesis, the bus graph, the music scheduler
 └── main.ts                # Entry point and input dispatch
 ```
 
@@ -645,7 +726,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**1,029 headless tests** across 57 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, and a full GameLoop integration smoke test that drives every phase through a stubbed Canvas2D context.
+**1,107 headless tests** across 65 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -658,7 +739,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ### In a real browser
 
 ```bash
-npm run playtest              # 33 checks, screenshots + report in playtest-output/
+npm run playtest              # 48 checks, screenshots + report in playtest-output/
 PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
 ```
 
@@ -667,9 +748,10 @@ suites and 921 green tests missed four HUD elements printed on top of each other
 because nothing ever looked at a frame. `scripts/playtest.mjs` starts its own
 dev server and plays the first session in headless Chromium - desktop, laptop,
 two phones, portrait, and a forced crash - asserting what a player would feel
-(a new pilot on the small HUD, no contradictory orders, a held bank that
-actually turns, chaff that works on a phone, a crash that shows a recovery
-screen). Run it before every release; it is not in the deploy gate because its
+(a new pilot airborne the moment they press ENTER and scoring a kill within
+10 s, a medal debrief whose ENTER flies again, a veteran spared the beginner
+checklist, no contradictory orders, a held bank that actually turns, chaff
+that works on a phone, a crash that shows a recovery screen). Run it before every release; it is not in the deploy gate because its
 turn-rate check is timed against the wall clock.
 
 ## Documentation
@@ -680,10 +762,11 @@ turn-rate check is timed against the wall clock.
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#87, status summary at the top) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#96, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [**docs/reviews/v1.11.0/**](docs/reviews/v1.11.0/README.md) | **Current suite** — a pilot menu, plain-language coaching, and two measured bugs (a climb that stalled the jet, a recovery that flew away) fixed and tested |
+| [**docs/reviews/v2.0.0/**](docs/reviews/v2.0.0/README.md) | **Current suite** — a frank "would this be a hit?" review, the research behind it, the SCRAMBLE renovation, bot-measured evidence, and a self-critique of what is still weak |
+| [docs/reviews/v1.11.0/](docs/reviews/v1.11.0/README.md) | A pilot menu, plain-language coaching, and two measured bugs fixed |
 | [docs/reviews/v1.10.0/](docs/reviews/v1.10.0/README.md) | How the v1.9.0 review was implemented, measured first |
 | [docs/reviews/v1.9.0/](docs/reviews/v1.9.0/README.md) | The first browser-instrumented playtest review |
 | [docs/reviews/](docs/reviews/README.md) | Review hub: version registry, score trend, and the standing rules every review must follow |
@@ -693,6 +776,18 @@ turn-rate check is timed against the wall clock.
 ---
 
 ## Future Roadmap
+
+Shipped in v2.0.0 ("Scramble") - a renovation of the player experience around
+one question, *would a stranger play this twice?*: SCRAMBLE as the front door
+(first kill in ~4 s), kill chains with hit-stop and score pops, three medal
+stars per mission, career XP and levels, unlockable palettes, a debrief built
+around FLY AGAIN, a daily SCRAMBLE with a shareable card, speed streaks and a
+procedural soundtrack, and challenge links that let any shared card carry its
+exact run to beat - plus the bugs the review found (a beginner checklist
+pinned over every veteran's run, an "IN RANGE" call at twice the missile's
+reach, a climb-out told to "line up with the deck", the deck title under the
+menu button). See [`docs/reviews/v2.0.0/`](docs/reviews/v2.0.0/README.md) for
+what is next, starting - still - with real players.
 
 Shipped in v1.11.0 ("Click, Fly, Have Fun") - a desktop-focused fix round from
 four verbatim complaints (no menu, no idea what to do, too many keys, "let

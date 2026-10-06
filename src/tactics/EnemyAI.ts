@@ -43,6 +43,10 @@ export function isBomber(target: AirborneTarget): boolean {
  */
 export function decideBehavior(target: AirborneTarget, distanceToPlayer: number): EnemyBehavior {
     if (isBomber(target)) return 'RTB';
+    // A SCRAMBLE fighter is sent for the jet, not the boat: it never wanders
+    // off toward the carrier and leaves a wave stuck on one bandit nobody
+    // can find (v2.0.0 bot playtest).
+    if (target.huntsPlayer) return 'ENGAGE';
     if (distanceToPlayer < AI_TUNING.ENGAGE_RANGE) return 'ENGAGE';
     if (distanceToPlayer < AI_TUNING.DETECTION_RANGE) return 'INGRESS';
     return 'INGRESS';

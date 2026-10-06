@@ -65,7 +65,14 @@ export const DESIGNATION_TUNING = {
     seekerAspect: 0.64,
     /** Minimum arming range for the Sidewinder, metres. */
     missileMinRange: 300,
-    missileMaxRange: 8000,
+    /**
+     * What the round can actually reach. This said 8 km - so the HUD read
+     * SIDEWINDER and the coach said "IN RANGE - FIRE" at twice the distance a
+     * seven-second motor can fly (~3.8 km at a standing target, ~2.5 km at
+     * one running away). The v2.0.0 bot run spent 12 missiles for 3 kills
+     * obeying it. 3.5 km is a shot that lands from any aspect but a tail chase.
+     */
+    missileMaxRange: 3500,
     /** Effective 20mm range, metres. */
     gunRange: 1800,
     /** How tight the tracking solution has to be for a gun kill. */

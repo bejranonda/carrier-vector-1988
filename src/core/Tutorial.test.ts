@@ -241,3 +241,23 @@ describe('arbitrateHint - one instruction at a time', () => {
         expect(arbitrateHint(info, null, null)).toBe(info);
     });
 });
+
+describe('approach coaching (v2.0.0)', () => {
+    it('does not tell a pilot climbing away from the catapult to line up with the deck', () => {
+        const hint = getContextualHint({
+            isStalled: false, rwrState: 'SILENT', altitudeAgl: 300, verticalSpeed: 20,
+            fuel: 4000, airSpeed: 200, damage: 0, distanceToCarrier: 900,
+            isAirborne: true, bayOpen: false, closingOnCarrier: false
+        });
+        expect(hint?.text ?? '').not.toMatch(/APPROACH/);
+    });
+
+    it('still coaches a pilot genuinely closing on the boat', () => {
+        const hint = getContextualHint({
+            isStalled: false, rwrState: 'SILENT', altitudeAgl: 300, verticalSpeed: -3,
+            fuel: 4000, airSpeed: 80, damage: 0, distanceToCarrier: 1800,
+            isAirborne: true, bayOpen: false, closingOnCarrier: true
+        });
+        expect(hint?.text).toMatch(/APPROACH/);
+    });
+});

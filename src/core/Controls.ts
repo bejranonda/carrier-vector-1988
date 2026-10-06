@@ -67,10 +67,10 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['arrowup', 'arrowdown'], display: '↑ / ↓', label: 'Change map (endless mode only)', context: 'BRIEFING', group: 'MISSION SELECT' },
-    { keys: ['1', '2', '3', '4', '5', '6'], display: '1-6', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['1', '2', '3', '4', '5', '6', '7'], display: '1-7', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
-    { keys: ['d'], display: 'D', label: "Today's daily sortie (one seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['d'], display: 'D', label: "Today's daily SCRAMBLE (one seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['v'], display: 'V', label: 'Threat level: CADET / REGULAR / VETERAN', context: 'BRIEFING', group: 'MISSION SELECT' },
 
     // --- System (available everywhere) ---

@@ -16,6 +16,7 @@ import { soundFX } from './audio/SoundFX';
 import { SCENARIOS } from './core/Scenarios';
 import { normalizeKey } from './core/Controls';
 import { feedbackUrl } from './core/Feedback';
+import { parseChallenge } from './core/Challenge';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -91,6 +92,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (game.helpVisible) {
                 game.helpVisible = false;
+                return;
+            }
+            if (game.phase === 'DEBRIEF') {
+                if (game.debriefAcceptsInput()) game.returnToBriefing();
                 return;
             }
             // Otherwise ESC is the pilot menu's own key: open it from the
@@ -181,8 +186,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (game.phase === 'DEBRIEF') {
-            if (key === 'enter') game.restartFromDebrief();
-            else if (key === 'c') game.copyDailyCard();
+            // ENTER is FLY AGAIN (v2.0.0) - straight back into the same
+            // mission. ESC or BACKSPACE goes to mission select. Both wait out
+            // a short beat so a key still held from the fight cannot skip
+            // the payout.
+            if (key === 'c') game.copyDailyCard();
+            else if (e.repeat || !game.debriefAcceptsInput()) return;
+            else if (key === 'enter') game.flyAgain();
+            else if (key === 'backspace') game.returnToBriefing();
             return;
         }
         if (game.phase !== 'ACTIVE') return;
@@ -458,5 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reload?.focus();
     };
 
+    // A shared card's link carries a run to beat (?c=seed.score.waves).
+    game.acceptChallenge(parseChallenge(window.location.search));
     game.start();
 });

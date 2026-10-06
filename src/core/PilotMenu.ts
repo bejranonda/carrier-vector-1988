@@ -24,6 +24,7 @@ export type PilotMenuItemId =
     | 'CONTROLS'
     | 'INSTRUMENTS'
     | 'SOUND'
+    | 'MUSIC'
     | 'RESTART'
     | 'MISSION_SELECT';
 
@@ -49,6 +50,16 @@ export interface PilotMenuContext {
     /** Current HUD density, for the label - see `HUD_DENSITY_LABEL`. */
     hudDensityLabel: string;
     muted: boolean;
+    /**
+     * Whether there is a deck to recover to. SCRAMBLE has none, so "take me
+     * home" would be a menu item that does nothing. Defaults to true.
+     */
+    canRecover?: boolean;
+    /**
+     * The music switch's state, when there is music to switch (SCRAMBLE).
+     * Undefined hides the item - it would do nothing anywhere else.
+     */
+    musicOn?: boolean;
 }
 
 /**
@@ -75,15 +86,23 @@ export function pilotMenuItems(ctx: PilotMenuContext): PilotMenuItem[] {
             ? { id: 'FLY_FOR_ME', label: 'TAKE BACK THE STICK', detail: 'Switch off the autopilot and fly by hand.', key: '2' }
             : { id: 'FLY_FOR_ME', label: 'LET THE AUTOPILOT FLY', detail: "Ghost-Lead holds her steady. Press F anytime to take her back.", key: '2' });
 
-        items.push(ctx.recoveryOn
-            ? { id: 'TAKE_ME_HOME', label: 'RECOVERY: ON', detail: 'Already flying you back to the boat.', key: '3' }
-            : { id: 'TAKE_ME_HOME', label: 'TAKE ME HOME', detail: 'Fly the approach back to the carrier for you.', key: '3' });
+        if (ctx.canRecover !== false) {
+            items.push(ctx.recoveryOn
+                ? { id: 'TAKE_ME_HOME', label: 'RECOVERY: ON', detail: 'Already flying you back to the boat.', key: '3' }
+                : { id: 'TAKE_ME_HOME', label: 'TAKE ME HOME', detail: 'Fly the approach back to the carrier for you.', key: '3' });
+        }
     }
 
     items.push(
         { id: 'CONTROLS', label: 'SHOW ALL CONTROLS', detail: 'Every key, for later. You only need a few now.', key: '4' },
         { id: 'INSTRUMENTS', label: `INSTRUMENTS: ${ctx.hudDensityLabel}`, detail: 'More or fewer numbers on the screen.', key: '5' },
         { id: 'SOUND', label: ctx.muted ? 'SOUND: OFF' : 'SOUND: ON', detail: 'Mute or unmute the game.', key: '6' },
+        ...(ctx.musicOn === undefined ? [] : [{
+            id: 'MUSIC' as const,
+            label: ctx.musicOn ? 'MUSIC: ON' : 'MUSIC: OFF',
+            detail: 'The soundtrack only. Effects stay on.',
+            key: '9'
+        }]),
         { id: 'RESTART', label: 'RESTART THIS SORTIE', detail: 'Start the same mission over from the deck.', key: '7' },
         { id: 'MISSION_SELECT', label: 'MISSION SELECT', detail: 'Back to the briefing to fly something else.', key: '8' }
     );

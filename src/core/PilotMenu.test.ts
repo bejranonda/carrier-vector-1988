@@ -90,3 +90,23 @@ describe('wrapMenuIndex', () => {
         expect(wrapMenuIndex(5, 0)).toBe(0);
     });
 });
+
+describe('pilot menu in SCRAMBLE (v2.0.0)', () => {
+    it('offers no TAKE ME HOME when there is no deck to recover to', () => {
+        const items = pilotMenuItems({
+            airborne: true, onDeckReady: false, autopilotFlying: false, recoveryOn: false,
+            hudDensityLabel: 'ARCADE', muted: false, canRecover: false
+        });
+        expect(items.some(i => i.id === 'TAKE_ME_HOME')).toBe(false);
+        expect(items[0].id).toBe('RESUME');
+    });
+});
+
+describe('pilot menu music switch (v2.0.0)', () => {
+    const base = { airborne: true, onDeckReady: false, autopilotFlying: false, recoveryOn: false, hudDensityLabel: 'ARCADE', muted: false };
+    it('appears only where there is music, and says its state', () => {
+        expect(pilotMenuItems(base).some(i => i.id === 'MUSIC')).toBe(false);
+        expect(pilotMenuItems({ ...base, musicOn: true }).find(i => i.id === 'MUSIC')?.label).toBe('MUSIC: ON');
+        expect(pilotMenuItems({ ...base, musicOn: false }).find(i => i.id === 'MUSIC')?.label).toBe('MUSIC: OFF');
+    });
+});

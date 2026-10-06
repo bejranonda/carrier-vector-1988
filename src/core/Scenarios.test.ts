@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { scrambleWave } from './Scramble';
 import {
     DEFAULT_SCENARIO,
     MissionDirector,
@@ -60,9 +61,12 @@ function run(scenario: ScenarioDef, states: Partial<MissionSnapshot>[]) {
 }
 
 describe('scenario catalogue', () => {
-    it('defaults to the carrier defence scenario', () => {
+    it('defaults to the carrier defence scenario, with SCRAMBLE as the front door', () => {
         expect(DEFAULT_SCENARIO).toBe('CARRIER_DEFENSE');
-        expect(SCENARIOS[0].id).toBe('CARRIER_DEFENSE');
+        // v2.0.0: key 1 on the briefing is the arcade mode a new pilot starts in.
+        expect(SCENARIOS[0].id).toBe('SCRAMBLE');
+        expect(SCENARIOS[1].id).toBe('TRAINING_SORTIE');
+        expect(SCENARIOS[2].id).toBe('CARRIER_DEFENSE');
     });
 
     it('offers a spread of difficulties rather than five of the same thing', () => {
@@ -538,12 +542,18 @@ describe('progression guidance', () => {
     // first-time pilot was being routed into combat, and the guided
     // TRAINING_SORTIE built for exactly this purpose was unreachable.
     // Assert the mission, not the flag.
-    it('sends a brand-new player to the guided sortie, not into combat', () => {
+    // v2.0.0 changed the first flight from the guided TRAINING_SORTIE (first
+    // kill after four instructions, 13.9 s for a perfect bot) to SCRAMBLE (first kill inside ten
+    // seconds). What the old test protected still holds: no SAM belt, and
+    // nothing in the opening waves can shoot back.
+    it('sends a brand-new player into SCRAMBLE, where the opening cannot shoot back', () => {
         const first = recommendScenario({});
-        expect(first.id).toBe('TRAINING_SORTIE');
+        expect(first.id).toBe('SCRAMBLE');
         expect(first.setup.isFirstFlight).toBe(true);
         expect(first.setup.noSamSites).toBe(true);
-        expect(first.setup.combatShielded).toBe(true);
+        expect(first.setup.startAirborne).toBe(true);
+        expect(scrambleWave(1).spawns.every(sp => sp.passive)).toBe(true);
+        expect(scrambleWave(2).spawns.every(sp => sp.passive)).toBe(true);
     });
 
     it('marks exactly one scenario as the first flight', () => {
@@ -555,7 +565,7 @@ describe('progression guidance', () => {
             CARRIER_DEFENSE: { best: 300, completions: 0, attempts: 1 }
         };
         const next = recommendScenario(records);
-        expect(next.id).toBe('CARRIER_QUALS');
+        expect(next.id).toBe('SCRAMBLE');
         expect(next.difficulty).toBe(Math.min(...SCENARIOS.map(s => s.difficulty)));
     });
 
@@ -575,7 +585,8 @@ describe('progression guidance', () => {
             CARRIER_DEFENSE: { best: 10, completions: 1, attempts: 1 },
             CANYON_STRIKE: { best: 10, completions: 1, attempts: 1 },
             IRON_HAND: { best: 10, completions: 1, attempts: 1 },
-            TRAINING_SORTIE: { best: 10, completions: 1, attempts: 1 }
+            TRAINING_SORTIE: { best: 10, completions: 1, attempts: 1 },
+            SCRAMBLE: { best: 10, completions: 1, attempts: 1 }
         };
         expect(recommendScenario(withHarderOnly).id).toBe('LAST_STAND');
     });

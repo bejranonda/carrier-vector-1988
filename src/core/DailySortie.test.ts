@@ -225,3 +225,20 @@ describe('persistence', () => {
         });
     });
 });
+
+describe('SCRAMBLE share card (v2.0.0)', () => {
+    it('names the mode and brags about waves, kills and the chain - no traps', () => {
+        const card = formatShareCard({
+            date: '2026-10-06', score: 12400, rank: 'COMMANDER', wave: 7,
+            fighterKills: 14, bomberKills: 4, samKills: 0, traps: 0, perfectTraps: 0,
+            hullRemaining: 70, attempts: 2, completed: true, mode: 'SCRAMBLE', bestChain: 4
+        });
+        const lines = card.split('\n');
+        expect(lines).toHaveLength(4);
+        expect(lines[0]).toContain('DAILY SCRAMBLE #');
+        expect(lines[1]).toBe('WAVE 7 · 12,400 PTS · COMMANDER');
+        expect(lines[2]).toContain('18 splashed · chain x4 · hull 70%');
+        expect(card).not.toContain('trap');
+        expect(lines[3]).toBe('attempt 2 · bejranonda.github.io/carrier-vector-1988');
+    });
+});

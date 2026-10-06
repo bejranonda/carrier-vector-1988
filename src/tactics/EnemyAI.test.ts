@@ -182,3 +182,13 @@ describe('enemy guns fairness', () => {
         expect(f.aiAimTimer).toBe(0);
     });
 });
+
+describe('SCRAMBLE hunters (v2.0.0)', () => {
+    it('a hunting fighter engages from any range; a bomber still drives for the boat', () => {
+        const mig = { id: 'W3-MIG-0', name: 'MiG-23 FLOGGER #1', position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, isAlive: true, huntsPlayer: true };
+        expect(decideBehavior(mig, 20000)).toBe('ENGAGE');
+        expect(decideBehavior({ ...mig, huntsPlayer: false }, 20000)).toBe('INGRESS');
+        const bomber = { ...mig, id: 'W3-TU-22-0', name: 'Tu-22M BACKFIRE' };
+        expect(decideBehavior(bomber, 100)).toBe('RTB');
+    });
+});

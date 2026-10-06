@@ -32,6 +32,12 @@ export interface Callout {
     life: number;
     /** Seconds it started with, so the renderer can fade and scale it. */
     span: number;
+    /**
+     * Callouts sharing a group replace one another instead of stacking. A kill
+     * chain is one escalating banner - SPLASH, DOUBLE SPLASH, TRIPLE SPLASH -
+     * not three banners on top of each other (v2.0.0 playtest screenshot).
+     */
+    group?: string;
 }
 
 export const CALLOUT_TUNING = {
@@ -47,8 +53,15 @@ export const CALLOUT_TUNING = {
 export class Callouts {
     private queue: Callout[] = [];
 
-    public push(text: string, tone: CalloutTone = 'KILL', detail?: string, seconds: number = CALLOUT_TUNING.defaultSeconds) {
-        this.queue.unshift({ text, detail, tone, life: seconds, span: seconds });
+    public push(
+        text: string,
+        tone: CalloutTone = 'KILL',
+        detail?: string,
+        seconds: number = CALLOUT_TUNING.defaultSeconds,
+        group?: string
+    ) {
+        if (group !== undefined) this.queue = this.queue.filter(c => c.group !== group);
+        this.queue.unshift({ text, detail, tone, life: seconds, span: seconds, group });
         if (this.queue.length > CALLOUT_TUNING.maxVisible) {
             this.queue.length = CALLOUT_TUNING.maxVisible;
         }

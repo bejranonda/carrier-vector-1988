@@ -93,6 +93,15 @@ export interface AirborneTarget {
     /** Enemy AI state, stored on the contact itself to avoid a parallel map. */
     aiBehavior?: 'INGRESS' | 'ENGAGE' | 'RTB';
     aiFireCooldown?: number;
+    /**
+     * Never opens fire. SCRAMBLE's first two waves are a shooting gallery:
+     * a new pilot's first contact with the game should be a kill, not a death.
+     */
+    passive?: boolean;
+    /** 0..1: share of this fighter's connecting bursts that land. Undefined = all. */
+    accuracy?: number;
+    /** Always engages the player, at any range (SCRAMBLE fighters). */
+    huntsPlayer?: boolean;
     /** Seconds this fighter has held a guns solution on the player. */
     aiAimTimer?: number;
     aiTurnDemand?: number;
@@ -117,6 +126,11 @@ export interface HudContext {
     callouts?: readonly Callout[];
     /** Seconds left on the cannon hit marker, 0 when no round has connected. */
     hitMarker?: number;
+    /**
+     * The live kill chain (core/Combo.ts), shown only once it is a chain -
+     * two kills or more. `fraction` is how much of the window is left.
+     */
+    combo?: { chain: number; multiplier: number; fraction: number } | null;
     /** Wire grade to stamp over the deck while the trap payoff plays. */
     trapStamp?: string | null;
     /** Screen edges the thumb controls occupy, in touch mode. */
@@ -381,6 +395,7 @@ export class HUD {
         if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
         if (context.hitMarker) this.drawHitMarker(ctx, layout, context.hitMarker);
         this.drawCallouts(ctx, context.callouts ?? [], layout);
+        if (context.combo && context.combo.chain >= 2) this.drawComboMeter(ctx, context.combo, layout);
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         if (context.goHere) this.drawGoHereCue(ctx, physics, context.goHere, layout);
         this.drawMissileCarets(ctx, physics, sensors, layout);
@@ -1340,6 +1355,38 @@ export class HUD {
 
             y += h + 6;
         }
+        ctx.restore();
+    }
+
+    /**
+     * The live chain: multiplier and a draining bar for the window left to
+     * extend it. Drawn just above the callout band - where the eye already is
+     * after a kill - so "kill again, quickly" is a visible offer, not a rule
+     * buried in the help screen.
+     */
+    private drawComboMeter(
+        ctx: CanvasRenderingContext2D,
+        combo: { chain: number; multiplier: number; fraction: number },
+        layout: HudLayout
+    ) {
+        ctx.save();
+        noGlow(ctx);
+        const w = 168;
+        const x = layout.cx - w / 2;
+        const y = layout.cy + 84;
+        const urgent = combo.fraction < 0.3;
+        const color = urgent ? THEME.alert : THEME.caution;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(15, 700);
+        ctx.fillStyle = color;
+        glow(ctx, color, 8);
+        ctx.fillText(`x${combo.multiplier} CHAIN · ${combo.chain} KILLS`, layout.cx, y);
+        noGlow(ctx);
+        ctx.fillStyle = 'rgba(6,13,17,0.72)';
+        ctx.fillRect(x, y + 12, w, 5);
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y + 12, w * Math.max(0, Math.min(1, combo.fraction)), 5);
         ctx.restore();
     }
 

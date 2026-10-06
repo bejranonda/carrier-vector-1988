@@ -5,6 +5,123 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-10-06
+
+**"Scramble."** A renovation of the player experience around one question the
+previous eleven releases never asked directly: *would a stranger play this
+twice?* The v2.0.0 review ([`docs/reviews/v2.0.0/`](docs/reviews/v2.0.0/README.md))
+found a new player's first kill sitting behind a deck screen, a catapult,
+"climb to 2,500 ft" and "engage the autopilot" - 13.9 s for a scripted pilot
+obeying every order instantly, four different correct actions, and far longer
+for a person reading them - and no reason in the game to come back after a run
+except a bigger number. v2.0.0 puts the fight first and gives every run a
+payout. **Measured in Chromium: first kill 4.2 s after pressing ENTER, one key.**
+
+### SCRAMBLE - the new front door
+
+- **A new first mission (#95):** airborne on the first frame, Sidewinders
+  selected, a bomber auto-locked dead ahead. Endless waves that teach one idea
+  each (fire / turn / they shoot back / kill the bomber first / check six /
+  everything). The first two waves cannot fire; fighters' accuracy ramps with
+  the waves. Wave clears rearm, patch and pay a speed bonus; bombers that reach
+  the boat cost hull; three jets that respawn in the air. `Scramble.ts`.
+  A wave that times out is survived but pays no bonus.
+- **It can never stall:** every bandit is on the scope (AEW datalink), SCRAMBLE
+  fighters hunt the player instead of wandering off to the boat, the lock
+  re-acquires itself, and a wave alive after 75 s bugs out.
+- **The daily is now a SCRAMBLE**, with its own card ("DAILY SCRAMBLE #n -
+  WAVE 7 · 12,400 PTS · chain x4"), and **every** SCRAMBLE run leaves a
+  pasteable card. Cards now end in the playable address, not a bare name.
+- **Challenge links** (`Challenge.ts`): every SCRAMBLE card ends in
+  `…/?c=<seed>.<score>.<waves>`. Opening it puts `CHALLENGE · BEAT 12,400 PTS
+  (7 WAVES) ON THE SAME WAVES` on the briefing, flies the sharer's exact waves,
+  and the debrief gives the verdict ("BEATEN by 600 pts" / "2,400 pts short").
+  No backend.
+- **A procedural synthwave soundtrack** for SCRAMBLE that layers up with the
+  fight (`MusicPattern.ts`, scheduled in `SoundFX`), with its own `MUSIC`
+  switch in the pause menu (remembered; effects unaffected).
+- Selector order is the suggested path: SCRAMBLE, TRAINING SORTIE, then the
+  campaign. `1`-`7` pick directly.
+
+### Feel
+
+- **Kill chains** (`Combo.ts`): kill again within 4.5 s for DOUBLE / TRIPLE /
+  QUAD SPLASH and ACE STREAK, up to x5 - in every mission. One escalating
+  banner instead of a stack (#92), a chain meter under the gunsight, a kill
+  chime that climbs a whole tone per link.
+- **Kill effects** (`KillFx.ts`): an expanding shockwave ring and the points
+  earned (`+500 x2`) rising off the wreck, with a minimum on-screen size so a
+  far kill still reads.
+- **Hit-stop**: the world runs at 12% speed for 90-160 ms after a kill.
+  Applied in the real-time loop only; the fixed-step simulation is untouched.
+- **Speed streaks** (`SpeedStreaks.ts`): vector dust past the canopy, scaled
+  with airspeed, thinned under reduced motion.
+- The wave-clear payout waits a beat after the last kill so it does not land
+  on the kill banner.
+
+### Progression
+
+- **Three named medal stars per mission** (`Medals.ts`), each earned on its own,
+  shown on every selector pill with the next one to go for.
+- **Career XP and levels** (`Career.ts`): every run pays score + a bounty per
+  new star; NUGGET -> WINGMAN -> ... -> ACE -> LEGEND. Shown on the masthead
+  and filled live on the debrief.
+- **Unlockable palettes** priced in stars: AMBER VECTOR (3), ARCTIC WHITE (8),
+  SYNTHWAVE (14). Equipped on unlock (never over the colour-blind palette,
+  which is never locked); `C` cycles only what you own.
+
+### Debrief
+
+- **Rebuilt around FLY AGAIN** (`DebriefView.ts`): headline and post-mortem,
+  stars popping in one at a time, a count-up score, a six-stat grid, the XP bar
+  and any promotion, unlocks or the next-unlock teaser, the share card - then
+  `ENTER FLY AGAIN` (same mission, straight back in) and `ESC MISSIONS`.
+  Sections shed on short windows so a landscape phone keeps the XP bar.
+  Input is held off for 0.7 s and key-repeat is ignored, so a held trigger
+  cannot skip the payout.
+
+### Fixed
+
+- **#88** The six-step "hold W" flight checkout was pinned over every CARRIER
+  DEFENSE run, veterans included, and its coach line replaced combat hints a
+  minute into the fight. It now runs only for pilots who have completed nothing.
+- **#89** "ON APPROACH - LINE UP WITH THE DECK" fired on every catapult
+  climb-out (range-only check). It now needs the jet to be closing on the boat.
+- **#90** The HUD and coach called a contact "IN RANGE - FIRE" at 8 km; the
+  AIM-9 reaches ~3.8 km at a standing target. The envelope is now 3.5 km.
+- **#91** On desktop, the deck screen's title was drawn under the DOM
+  `MENU (ESC)` button.
+- **#93** SPACE before a wave spawned launched Sidewinders at empty sky; the
+  bot run emptied the rails before the first bomber appeared. No target, no
+  launch (`NO TARGET`), and an empty rail falls back to guns (`GUNS`).
+- **#94** A ripple-fired Sidewinder whose target died under it flew on blind -
+  the bot log showed "misses" passing 3-7 m from a wreck. Rounds now
+  re-acquire the nearest contact in a 45° cone.
+- **#96** A share card could survive into the next, unrelated run's debrief.
+
+### Measured, then reverted
+
+- The review suspected the AIM-9's pure-pursuit guidance for a low bot hit
+  rate. A headless sweep (80 geometries, cruising and hunting fighters) hit
+  80/80 with both the old law and lead pursuit, so the guidance change was
+  reverted; the real causes were #90, #93 and #94.
+
+### Engineering
+
+- 1,107 tests (was 1,029), 65 suites. Browser harness: **48/48** (was 33),
+  rewritten for the new flow - airborne on ENTER, a kill within 10 s, the medal
+  debrief and FLY AGAIN, a veteran spared the checkout, the training deck via
+  key 2, the deck on phones, a challenge link flying the sharer's waves.
+- Bundle: 284.7 kB raw / 93.4 kB gzip (was 253.6 / 82.0). Zero runtime deps.
+- `KNOWN_ISSUES.md`: #88-#97. Review suite: `docs/reviews/v2.0.0/`.
+
+### Still open, deliberately
+
+#97 (SCRAMBLE difficulty and medal thresholds are calibrated against a crude
+bot, not people), #53, #41, #82. **No new human has played this build** - the
+fourth release running to say that the next step is five strangers and a
+recorder, not more features.
+
 ## [1.11.0] — 2026-09-24
 
 **"Click, Fly, Have Fun."** A desktop-focused fix round from four verbatim
