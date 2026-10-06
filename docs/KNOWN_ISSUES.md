@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v1.11.0
+## Status at v2.3.0
 
 **Open, deliberately:**
 
@@ -10,7 +10,14 @@
 | 41 | No key-remapping screen (P2) | Layout independence shipped; build the screen only if feedback asks |
 | 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
 | — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
-| — | A `FIRST_FLIGHT` briefing, a `TURN_TO_DRONE` training step, a full "ghost-lead flies the whole climb" autopilot | Scoped out of v1.11.0 for time; see the v1.11.0 review's frank notes |
+| 97 | SCRAMBLE difficulty and medal thresholds are calibrated against bots, not people | Eight-minute runs now behind them; needs the pilot-customer round |
+| 103 | Phone menus do not grow with the text size | In-flight words do since v2.2.0; the briefing and debrief would need their own phone type scale |
+| 104 | Small labels stay below the Xbox guideline's 28 px-at-1080p even at EXTRA LARGE | A full type-scale pass, not a zoom |
+| 130 | The `/c/` page's Facebook behaviour is unverified | Needs the live page in Facebook's Sharing Debugger |
+| — | The share loop is untested on real phones and real chat apps | Headless browsers have no share sheet; see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md` P1 |
+| — | Saving the share picture by long-press on an iPhone is unverified | `-webkit-touch-callout: default` is Safari-only; Chromium cannot test it |
+| 132 | Every challenge link has the same preview card | By design while there is no server; the message above the preview carries the names |
+| — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
 
@@ -20,6 +27,39 @@
 menu, "what do I do now" on demand, an ASSIST climb-attitude limit, the "take me
 home flies away" bug, and a mixed-units training readout.
 Evidence: [`reviews/v1.11.0/`](reviews/v1.11.0/README.md).
+
+**Closed in v2.0.0:** #88–#96, found and fixed during the renovation - a
+beginner checklist pinned over veterans' runs, an approach hint on every
+climb-out, an "IN RANGE" call at twice the missile's reach, the deck title
+under the menu button, stacked kill banners, missiles fired at empty sky,
+ripple-fired missiles flying on blind, a first kill gated behind four instructions, and a
+stale share card. Evidence: [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
+
+**Closed in v2.2.0:** #105–#124, found by three code reviews and the
+eight-minute balance runs - enemy fighters that stopped in mid-air, bombers
+that flew away from the jet, waves that paid when let through, a death that
+carried into the next run, EASY runs that did not say so, nine phone controls
+where EASY needs one, a coach that spoke keyboard to phones, banners and a
+first screen that collapsed at large text, and more.
+Evidence: [`reviews/v2.2.0/`](reviews/v2.2.0/README.md).
+
+**Closed in v2.3.0:** #125–#131, from walking both ends of a share and a
+research brief on what chat apps do with one - a share nobody would send,
+links without `https://`, a friend landing on the mission menu, a win drawn
+as a loss, a picture-and-link share that loses one, Facebook following
+`og:url` home, and in-app browsers with no share sheet. #133–#139, from a UX
+review and a code review of the new loop before release - a stale picture on
+the second share, a panel that lost the keyboard after a mouse click, the
+score to beat under the FIRE button, names that slipped the cleaning, a first
+run shared as a boast, and a welcome screen and preview that a cautious
+non-gamer would close. #130 is unverified until the page is live; #132 is by
+design. Evidence: [`reviews/v2.3.0/`](reviews/v2.3.0/README.md).
+
+**Closed in v2.1.0:** #98–#102, found while building EASY flying and the
+text-size zoom - a fly-style question whose keys did not act, an EASY coach
+rule that misread its own input, banners running off a phone screen, a long
+pause menu overflowing its panel, and a menu item EASY made useless.
+Evidence: [`reviews/v2.1.0/`](reviews/v2.1.0/README.md).
 
 ---
 
@@ -1054,3 +1094,451 @@ instead. See `GameLoop.smoke.test.ts`'s "take me home from anywhere" test.
 The `CLIMB TO 2,500 FT` card's detail line read "Current altitude: X m" in
 metres, directly beside a HUD altimeter reading feet. Cheap, real confusion;
 now both read feet.
+
+## 88. The beginner flight checkout was pinned over every veteran's endless run **[Fixed in 2.0.0]**
+
+`CARRIER_DEFENSE` set `showTrainingChecklist`, so the six-step "hold W / roll /
+throttle..." panel and its `TRAINING 1/6` coach line appeared on every run of
+the endless mode - for a pilot with every mission cleared, and replacing combat
+hints a minute into the fight. Found in the v2.0.0 browser run. The checkout now
+runs only for a pilot who has completed nothing (`GameLoop.applyScenario`);
+`npm run playtest` asserts a veteran sees none of it.
+
+## 89. "Line up with the deck" on every catapult climb-out **[Fixed in 2.0.0]**
+
+The lowest-priority coach rule, `ON APPROACH - LINE UP WITH THE DECK, FLY THE
+MEATBALL`, matched on range alone (`< 2.5 km`), so it fired for the first seconds
+of every launch - the same class of bug as #77/#78. It now also requires
+`closingOnCarrier`. Regression tests in `Tutorial.test.ts`.
+
+## 90. "IN RANGE - FIRE" at twice the missile's reach **[Fixed in 2.0.0]**
+
+`DESIGNATION_TUNING.missileMaxRange` was 8 km. The AIM-9's seven-second motor
+reaches about 3.8 km at a standing target and about 2.5 km at one running away,
+so the HUD's SIDEWINDER recommendation and the coach's `IN RANGE` both told the
+pilot to waste missiles. Now 3.5 km (`TargetDesignation.test.ts`).
+
+## 91. The deck screen's title was drawn under the menu button **[Fixed in 2.0.0]**
+
+The DOM `MENU (ESC)` button (v1.11.0) shares the top-left corner with the deck
+header's `FLIGHT DECK`. Visible in the v1.11.0 harness's own screenshot
+(`desktop-02-deck.png`). The header now reserves the button's width on desktop.
+
+## 92. Kill banners stacked three deep in a furball **[Fixed in 2.0.0]**
+
+Four kills in two seconds produced `SPLASH FOUR / SPLASH THREE / SPLASH TWO`
+stacked over the bottom of the screen, plus `FIRST BLOOD!`. Kill callouts now
+share a group and replace one another, escalating as a chain (`DOUBLE SPLASH x2`
+...) - `Callouts.push(..., group)`.
+
+## 93. SPACE before the bandits arrived emptied the missile rails **[Fixed in 2.0.0]**
+
+A Sidewinder with no target flies straight and is gone. The v2.0.0 browser run
+launched all four at empty sky before SCRAMBLE's first wave spawned, then met
+the first bomber with the gun. With nothing designated or visible, the launch
+is refused (`NO TARGET`, relay click); an empty rail falls back to guns.
+
+## 94. Ripple-fired missiles flew on blind after their target died **[Fixed in 2.0.0]**
+
+Pilots fire a second round before the first lands. When the first killed the
+target, the second kept its dead target id and flew straight - the bot log
+recorded those as misses passing 3-7 m from the wreck. In-flight rounds now
+re-acquire the nearest live contact inside a 45° cone within 3 km
+(`WeaponsSystem.reacquire`). The guidance law itself was measured (80/80 hits
+across cruising and hunting fighters, old law and lead pursuit alike) and left
+alone.
+
+## 95. A new player's first kill was gated behind four instructions **[Fixed in 2.0.0]**
+
+Title -> briefing -> deck screen -> catapult -> "climb to 2,500 ft" -> "engage
+the autopilot" -> lock and fire. Measured with a scripted pilot that obeys the
+objective strip instantly: first kill at **13.9 s** after ENTER - four distinct
+correct actions read off the screen, before any human reading time. (The v2.0.0
+review first *estimated* this at "over two minutes"; the measurement corrected
+it.) SCRAMBLE is now the first-flight mission: airborne on ENTER with a passive
+bomber locked dead ahead. Measured: **4.2 s**, one key (`npm run playtest`
+asserts < 10 s).
+
+## 96. A share card could follow you into the next run **[Fixed in 2.0.0]**
+
+`dailyCard` was cleared only when a daily started, so a card could appear on a
+later, unrelated debrief. Every run now starts without one.
+
+## 97. SCRAMBLE's difficulty and the medal thresholds are bot-calibrated **[Open]**
+
+v2.2.0 replaced three-minute estimates with eight-minute runs on the fixed AI
+(#105, #106), 16 seeds each (`TL=1 npm run balance`). Holding FIRE on EASY,
+CLEAR WAVE 5 came at a median 1:46 (16 of 16 runs), SCORE 8,000 at 2:26 (16
+of 16) and CLEAR WAVE 10 at 7:16 (15 of 16 inside eight minutes). The crude
+STANDARD steering bot reached CLEAR WAVE 5 at a median 5:34 (16 of 16) and
+neither of the others (best score 5,053). That is still a floor, not a player:
+calibrate against the pilot-customer round's recordings before tuning further.
+
+## 98. The fly-style question's keys highlighted a card but did not choose it **[Fixed in 2.1.0]**
+
+`1` and `2` moved the highlight and waited for `ENTER` - a highlight-then-
+confirm step that is exactly what trips up a player who is not used to games.
+Found by the relaxed-player bot, which pressed `1` and then sat on the
+question for three minutes. The keycap on a card now means "this one, now";
+arrows still move the highlight for players who prefer it.
+
+## 99. The EASY coach misread "turn toward it ... until it says FIRE NOW" **[Fixed in 2.1.0]**
+
+The plain-language locked hint contains the words FIRE NOW, and the EASY
+rewrite tested for FIRE NOW first - so it told a pilot to fire while the plane
+was still turning. Caught by `EasyMode.test.ts` before it ever ran in a
+browser; the rules are now ordered, with a comment saying why.
+
+## 100. Banners could run off the bottom of a phone screen **[Fixed in 2.1.0]**
+
+With EASY's 1.7× longer hold, three stacked callouts on a 390 px phone ran the
+third over the fuel/hull strip. `HUD.drawCallouts` now stops where the room
+ends; newest first, so the oldest banner is the one that waits.
+
+## 101. A long pause menu overflowed its panel on a short or zoomed screen **[Fixed in 2.1.0]**
+
+EASY FLYING and TEXT SIZE took the menu to ten items; at 150% text on a
+900 px window (a 600 px virtual screen) the last rows fell out of the panel.
+`pilotMenuLayout` now compresses rows to fit and drops the detail line below
+36 px (`compact`).
+
+## 102. "TAKE BACK THE STICK" did nothing while EASY was on **[Fixed in 2.1.0]**
+
+EASY forces the autopilot, so the autopilot switch was a menu item with no
+effect - against the menu's own rule. Hidden while EASY is on; TAKE ME HOME
+stays, because it still does something.
+
+## 103. Phones cannot enlarge text **[Mostly fixed in 2.2.0]**
+
+Text size is a UI zoom that never lays a screen out below 720 × 400, so a
+landscape phone was never zoomed (at 1.08 the objective strip already crowded
+the instruments) - and the setting did nothing at all on the device AARP finds
+84% of players over 50 use. Since v2.2.0 a phone (touch, under 500 CSS px
+tall; `Theme.textScaling`) is still not zoomed, but LARGE and EXTRA LARGE grow
+the order strip, the coach line and the banners in place (up to 1.4×), the
+compass gives way to the grown strip, and the coach line moved under the strip
+(its old band was the middle of the screen, where the target is). **Still
+open:** the briefing and the debrief on a phone do not grow.
+
+## 104. Small labels are below the 28 px-at-1080p guideline even at EXTRA LARGE **[Open]**
+
+The Xbox Accessibility Guidelines recommend 28 px at 1080p (a TV-distance
+figure) as a *minimum*. At EXTRA LARGE the game's 10 px labels become 15 px,
+its headings 30-60 px. Meeting the guideline for every label needs a type-scale
+pass (fewer, larger labels), not a bigger zoom - the zoom is already at the
+smallest layout every screen is tested at.
+
+## 105. Enemy fighters stopped in mid-air **[Fixed in 2.2.0]**
+
+`EnemyAI.steerToward` blended the velocity straight toward `direction × speed`
+with the dogfight's climb component halved. A straight-line blend between two
+vectors is shorter than either, a reversal after a head-on pass shrinks the
+vector almost to nothing before it swings round, and the speed was re-read
+from the shrunken vector every frame - so every turn bled speed for good.
+Measured in SCRAMBLE: fighters fell from 185 m/s to 1-8 m/s within half a
+minute of their first pass and hung a kilometre below the jet, out of reach,
+until the wave timed out - 56% of all stalled wave time on EASY. Fighters now
+turn about an axis at a capped rate (`AI_TUNING.MAX_TURN_RATE`, ~16°/s) and
+hold their own speed (`aiCruiseSpeed`). The shared AI: every mission was
+affected. The bank cue also read the world x axis, banking a south-bound
+contact the wrong way. Four regression tests fail on the old law.
+
+The stall log on the fixed AI then showed the next wall: with their speed
+kept and a better turn than the jet's, fighters sat 50-300 m on an EASY jet's
+tail - inside missile minimum range, outside the gun cone. A fighter that
+closes inside `EXTEND_RANGE` (450 m) now extends straight, guns cold, for
+`EXTEND_SECONDS` (4 s) before coming round again: a strafing pass.
+
+A second rule - break off after 4 s anywhere in the jet's rear half inside
+1.2 km - was added after a headless run showed a MiG holding 300-700 m on the
+tail of a circling EASY jet for a minute, and removed after `npm run balance`
+measured it with the rule switched on and off: worse for every profile (EASY
+hold-fire 39.9 -> 33.2 kills in 8 min, STANDARD runs ending early 2/16 ->
+6/16, relaxed EASY 18.1 -> 12.5 kills in 3 min). That minute was the coach's
+fault, not the MiG's (#119): FIRE NOW had been hidden the whole time.
+
+## 106. SCRAMBLE bombers flew away from the jet, or appeared on the boat **[Fixed in 2.2.0]**
+
+Bombers were placed off the jet's nose and fly to the carrier. A jet that had
+drifted 8-11 km out with its nose toward home chased them from behind at
+160-190 m/s and never closed (35% of stalled time on EASY). Bombers are now
+placed off the far side of the jet from the carrier (`spawnReference`), so
+their run passes it; escalation bombers come from within 60° of that line;
+and none appears within 2.5 km of the boat (`keepClearOfBoat` - one could
+spawn inside the strike radius and cost 15% hull on its first tick). Seeds
+give different waves than in v2.1.0: old challenge links open, on new waves.
+
+## 107. A wave let through paid like a wave shot down **[Fixed in 2.2.0]**
+
+A bomber that reached the boat was removed like a kill, so the wave ended in
+the normal payout: `WAVE CLEARED`, the wave bonus with its speed bonus (~600
+points on wave 1 for never firing), and a step toward CLEAR WAVE 5. A run
+that never fired could earn the first star and a SUCCESS debrief. Waves now
+end CLEARED (all shot down: full bonus), HELD (some shot down: counts, no
+bonus) or OVER (none: does not count).
+
+## 108. Switching EASY mid-run changed the jets the run allowed **[Fixed in 2.2.0]**
+
+The allowance was re-read from the fly style every tick: an EASY pilot with
+three of five jets gone who switched EASY off ended the run at once (and read
+"All three jets shot down."). It is fixed when the run starts; switching EASY
+on part way raises it (the run is then marked EASY, #111).
+
+## 109. A jet's death carried into the next run **[Fixed in 2.2.0]**
+
+`applyScenario` never cleared the MAYDAY sequence or the loss cause - only the
+deck's `beginSortie` did. RESTART during the 2.6 s death sequence, the daily
+from the menu, or any airborne start began the new run with dead controls, the
+world in slow motion, and jet 1 written off on arrival. Found by review;
+regression test fails without the fix.
+
+## 110. A SCRAMBLE day lost its mode on reload **[Fixed in 2.2.0]**
+
+`DailySortie.sanitise` rebuilt each stored day without v2.0.0's `mode` and
+`bestChain`. After a reload, a weaker attempt kept the stored record - which
+then printed the old deck card ("no trap") and was saved back that way.
+
+## 111. Nothing said a run was flown on EASY **[Fixed in 2.2.0]**
+
+EASY has five jets, half damage and a 90° missile cone, so its scores are
+easier to reach - but cards, challenge links, the daily and the debrief did not
+say so. Now: `SCRAMBLE · EASY` on cards, `· EASY` on the daily card, `.e` on
+challenge links, `FLOWN ON EASY` on the challenger's briefing and the debrief,
+and `(they flew EASY)` / `(you flew EASY)` in the verdict.
+
+## 112. Banners vanished on short screens at large text **[Fixed in 2.2.0]**
+
+The banner stack started at the screen's centre + 118 px and stopped where
+the room ended - including for the newest banner. Below a 436 px layout (any
+laptop window under ~600 px tall at EXTRA LARGE) no two-line banner was drawn:
+kills, WAVE, NOT YET, MAYDAY. The newest banner now always gets room; on a
+phone with a coach line up, the stack starts below it.
+
+## 113. The briefing collapsed at large text on a laptop window **[Fixed in 2.2.0]**
+
+At 1080 × 650 and EXTRA LARGE (a 720 × 433 layout) the FLY button sat on the
+phase cards, the options wrapped to three rows with the first through the
+button, and the loss line printed through both. `briefingHitAreas` now places
+the button above every row of options (`briefingOptionRows`) and shows the
+cards only where they and the loss line clear it.
+
+## 114. The pause menu ran off a landscape phone **[Fixed in 2.2.0]**
+
+#101's compression floored rows at 24 px, so ten items needed 490 px: on an
+844 × 390 phone MISSION SELECT sat below the screen. Where one column does not
+fit, the rows now go into two.
+
+## 115. A phone could not share its result **[Fixed in 2.2.0]**
+
+Any tap on the debrief outside MISSIONS flew again - including a tap on the
+card labelled "copy result", which then threw the card away; copying was only
+on the C key. A tap on the card now opens the phone's share sheet (or copies
+it), and "copied" appears only once the clipboard took it.
+
+## 116. Text size changed the control scheme **[Fixed in 2.2.0]**
+
+Device detection was given the zoomed layout size: a 1366 × 1024 touch tablet
+read as a keyboard device at NORMAL and as a touch device at LARGE - switching
+on the touch defaults (autopilot, recovery) with it. Safe-area insets were
+converted for the old zoom after a text-size change. Both now use CSS px.
+
+## 117. EASY on a phone showed nine controls where it needs one **[Fixed in 2.2.0]**
+
+Stick, throttle, four weapon pills (two always empty in SCRAMBLE), chaff (no
+missile is ever fired at the jet in SCRAMBLE), target and FIRE - plus a lit
+RCVY button with no deck to recover to, whose tap forced the stored assist to
+AUTO. Touch layouts now carry a kit (`touchKitFor`): EASY in SCRAMBLE shows a
+bigger FIRE and the menu, and a tap anywhere fires; hidden controls are not hit
+targets. L, the touch recovery button and the BOAT cue do nothing in SCRAMBLE.
+
+## 118. The coach spoke keyboard to phones **[Fixed in 2.2.0]**
+
+`FIRE NOW - PRESS SPACE OR CLICK`, `(HOLD A OR D)`, `PRESS ESC AND TURN ON
+EASY FLYING` - on a phone. `Controls.touchWording` rewrites them (`TAP FIRE`,
+`(STICK HARD LEFT OR RIGHT)`, `TAP THE MENU BUTTON`) wherever a phone reads
+them: the coach, the wave briefs, the pause menu's restated order, the offer.
+
+## 119. EASY still asked for skills it removes **[Fixed in 2.2.0]**
+
+Outside SCRAMBLE the EASY coach passed through "come left and return to the
+boat", "descend into the canyon", "break behind a ridge"; `GUNS TRACKING`
+said `BREAK TURN`; the training checkout's prompt outranked FIRE NOW for a
+whole CARRIER DEFENSE sortie; a dropped stall hint took FIRE NOW with it; and
+"enemy behind you - the plane will turn to fight" (which asks for nothing)
+held the coach while a shot sat in the cone - FIRE NOW now outranks every
+line but a missile in the air. That last one was found by `npm run balance`:
+a scripted relaxed EASY player (fires only when told) stalled for a minute a
+wave; with the fix it went from 8 to 17.1 kills in three minutes (16 seeds).
+The old unit test fed a shortened coach string; the new one feeds every real
+one.
+
+## 120. The EASY trigger promised shots it would not take **[Fixed in 2.2.0]**
+
+With a bomb or HARM selected it still showed FIRE NOW for a MiG (and SPACE
+dropped the bomb); with an empty gun it offered the cannon; with a ground
+target locked it said "wait for FIRE NOW", which could never come.
+
+## 121. Held keys and a stuck mouse trigger **[Fixed in 2.2.0]**
+
+ENTER held from the briefing auto-repeated through the once-only fly-style
+question; a held E or T flickered EASY and the text size; EASY's mouse trigger
+stayed on after a release over the MENU button or a right-click, across runs.
+
+## 122. Music played on in a hidden tab **[Fixed in 2.2.0]**
+
+The soundtrack's scheduler is a timer, stopped only from the frame loop - which
+stops when the tab is hidden. A hidden tab now stops the music and pauses a
+live flight, so a pilot who took a call comes back to the menu.
+
+## 123. An upright phone ignored every tap on the menus **[Fixed in 2.2.0]**
+
+The rotate prompt swallowed input on the briefing, the fly-style question and
+the debrief - which draw fine upright - with no prompt shown. Only a flight
+now waits for the phone to turn.
+
+## 124. Smaller findings **[Fixed in 2.2.0]**
+
+RESTART turned the daily into an unrecorded random run; the SCRAMBLE debrief
+said SHOT DOWN when the carrier sank, with a stale cause; VETERAN gave CARRIER
+DEFENSE wave stars for free (medals now count waves from the run's start);
+a rewind after a respawn put the new jet on the dead one's path, and was
+refused on EASY with a stored MANUAL; missile re-acquisition ignored terrain; a
+corrupt career save could freeze the briefing (level is now closed-form) and
+prototype keys counted as medal stars; the chooser came back before every
+flight with storage blocked; the simulation stepped a few times after the
+debrief opened; highlight glows never drew; `PRESS C TO CHANGE LOOKS` on the
+one screen where C copies; the deck's menu-button reserve ignored the zoom;
+SCRAMBLE's loss line and third card said "three jets" on EASY and offered
+chaff.
+
+
+## 125. The share was a text box nobody would send **[Fixed in 2.3.0]**
+
+The debrief's share was three lines of 10-12 px text near the bottom of the
+screen - "5 WAVES HELD · 2,200 PTS · 1 splashed", "beat it: <link>" - with the
+action as a key hint, "C copy result". Pilot slang, written for the person who
+flew; no picture; no name; on a desktop it copied silently. SHARE is now a
+button beside FLY AGAIN that opens a panel with a plain-words challenge, a
+picture of the run's best moment and an optional name. See
+`reviews/v2.3.0/SHARE_REVIEW.md`.
+
+## 126. Shared links had no `https://` **[Fixed in 2.3.0]**
+
+`PLAY_URL` was `bejranonda.github.io/carrier-vector-1988`. Some chat apps turn
+a bare host/path into a link and some leave it as text - and none builds a
+preview card for it. Every link now starts with `https://`.
+
+## 127. A friend opening a challenge landed on the mission menu **[Fixed in 2.3.0]**
+
+The challenge was one line of small yellow text under the title of the full
+mission select (seven tabs, a daily banner, three cards, eleven key hints).
+The link now opens on its own screen - who sent it, the score to beat, one
+sentence on the game, PLAY - IT'S FREE - and an EASY challenge flies a
+newcomer on EASY without the fly-style question.
+
+## 128. Beating a friend was a grey line under a red headline **[Fixed in 2.3.0]**
+
+SCRAMBLE always ends in a loss, so the debrief said CARRIER LOST or SHOT DOWN
+in red, with "CHALLENGE BEATEN by 55 pts." in small grey type underneath. A
+beaten challenge is now the headline, in gold, and the share button reads
+REPLY TO <name>. Passing the score is also celebrated in flight, as it
+happens, and every SCRAMBLE run chases a visible number (the challenger's, or
+the pilot's own best).
+
+## 129. A picture and a link in one share lose one or the other **[Avoided in 2.3.0]**
+
+Not a shipped bug - the first v2.3.0 build had it. A Web Share call with a
+file, text and a url reaches each chat app as separate items, and the app
+keeps what it likes: WhatsApp on iPhone keeps the text and drops the picture;
+Facebook and Messenger on Android keep the picture and drop the text, link
+included. Some iPhone apps have been reported cutting the query string off
+`url`. The challenge (text, link on its last line) and the picture are two
+separate shares; nothing uses `url`.
+
+## 130. Facebook could send a challenge to the home page **[Fixed in 2.3.0 - unverified]**
+
+`og:url` and `rel=canonical` pointed at the home page, and Facebook treats
+`og:url` as where a link really goes - dropping the `?c=` that carries the
+run. Challenge links now open `/c/`, the same page emitted by the build
+without either tag and with preview text addressed to the friend. Not yet
+checked with Facebook's Sharing Debugger (needs the page live).
+
+## 131. No share sheet inside Facebook's, Messenger's and Instagram's browsers **[Platform limit - worked around in 2.3.0]**
+
+Their Android in-app browsers have no `navigator.share`, nor does Firefox on a
+desktop or Chrome on Linux. Where there is none, the share panel offers
+WhatsApp, LINE, a text message (phone) or an email (computer), COPY MESSAGE,
+SAVE PICTURE and, on a computer, COPY PICTURE.
+
+## 132. Every challenge link has the same preview card **[By design - no server]**
+
+Link previews are built by the chat app's server from the page's static meta
+tags; it does not run JavaScript. Without a server of our own, the preview
+cannot say "Anna challenged you - 12,345"; the message above it does.
+
+## 133. The second share in a session showed the first run's picture **[Fixed in 2.3.0 - code review]**
+
+The share panel cleared its picture file on opening but not the picture on
+show or its object URL, and SAVE PICTURE only checked the URL: share run 1,
+fly run 2, open SHARE, and run 1's picture stayed up - and was saved under run
+2's score - until run 2's had been encoded (for the whole session, had that
+encode failed). Everything of the old picture is now cleared on open, and the
+picture buttons are disabled until the picture for this run and this name is
+ready.
+
+## 134. The share panel lost the keyboard after a mouse click **[Fixed in 2.3.0 - code review]**
+
+The game ignores every key while the panel is open, and only the panel's own
+listener handled ESC - so focus outside the panel meant ESC did nothing. A
+mouse click on SHARE always put it there: the press ends by focusing the
+canvas under it, after the panel had focused its button. Rebuilding the quick
+links when the picture finished encoding dropped focus too. Keys that reach
+the page now go to the panel (ESC closes, TAB goes back in), focus is taken
+back after the click, and the links are updated in place.
+
+## 135. The score to beat ran under the FIRE button on a small phone **[Fixed in 2.3.0 - code review]**
+
+The touch systems line was clamped at its left edge only: at 568 × 320 "...
+GRANDPA MARGARET 5,000 · YOU 0" ran under FIRE for the whole run. The desktop
+chip, now shown on the first-flight HUD for a challenge, covered the
+objective's text on a 720 px window. Both now take the longest of several
+versions that fits - the touch line drops the G meter and fuel first, then
+the name - and the chip stays clear of the objective strip.
+
+## 136. Names slipped the cleaning, or were cut **[Fixed in 2.3.0 - code review]**
+
+Letters that pass for a dot ("paypalꓸcom") got through a rule meant to keep
+web addresses off a friend's screen; Hangul filler letters made a name of
+nothing; a no-break or Japanese space was deleted instead of kept; accents
+could stack fifteen high. A name typed less than a quarter-second before a
+press was left off the link; ENTER confirming a Japanese conversion was taken
+as "done"; a long Chinese, Japanese or Korean name was measured as Latin and
+cut on the welcome screen; an apostrophe could end a link in a chat app's
+link finder. All fixed (`cleanPilotName`, `SharePanel`, `ChallengeView`).
+
+## 137. Every first run was shared as "my best yet" **[Fixed in 2.3.0 - code review]**
+
+A first run is always a new personal best, so it was shared as a boast ("My
+best yet: 3,000 points and 0 planes shot down") with SHARE lit. Only a run
+that beats a best that existed is shared as one now; a first run is an
+invitation, and a message never prints zero kills.
+
+## 138. Smaller code-review findings **[Fixed in 2.3.0]**
+
+A kill photographed just before the menu opened was taken from whatever frame
+followed the menu, minutes later (now dropped after 0.5 s); the build's `/c/`
+step would have kept `og:url` silently had `index.html` changed shape (it now
+fails the build); the canvas's screen-reader label kept the welcome's text all
+session; a failed share left a phone with no way to the picture; a double tap
+on the main button said "That did not work here" while the sheet was still
+open.
+
+## 139. What a cautious non-gamer would close **[Fixed in 2.3.0 - UX review]**
+
+The link preview read "You have been challenged" - the shape of a scam text;
+the welcome screen cut "GRANDMA MARGARET CHALLENGES YOU" on an upright phone;
+two equal send buttons invited the picture first, and a picture alone carries
+no link; "your name on the card" meant nothing to someone who does not play
+games; a mid-run "YOU BEAT ANNA!" could be followed by "25 pts short"; a lit
+SHARE after every new best read as nagging. See
+`reviews/v2.3.0/SELF_CRITIQUE.md` §3.

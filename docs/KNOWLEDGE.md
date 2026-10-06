@@ -1498,3 +1498,209 @@ already had, rather than writing new reward text.
 | Browser checks | 33 (`npm run playtest`) |
 | Runtime dependencies | 0 |
 | Bundle | 253.6 kB raw / 82.0 kB gzip |
+
+## 23. SCRAMBLE, Chains, Progression and EASY (v2.0.0–v2.1.0)
+
+### 23.1 SCRAMBLE (`core/Scramble.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `lives` | 3 (EASY 5) | Jets per run |
+| `clearWave` | 5 | Waves cleared that count the run as completed |
+| `firstWaveDelay` / `breatherSeconds` | 1.0 s / 3.2 s | Before wave 1 / between waves |
+| `waveBonusPerWave` + `speedBonusPerSecond` × (`parSeconds` − t) | 150 + 15 × (30 − t) | Wave-clear bonus, never negative |
+| `bomberHullDamage` | 15 % (EASY 8) | Hull lost to a bomber within 650 m of the boat |
+| `repairPerWave` | 35 | Airframe damage patched per wave clear |
+| `waveTimeoutSeconds` | 75 | A wave still alive bugs out (no bonus) |
+| `fighterAccuracy(w)` | 0.45 (w ≤ 4), 0.7 (≤ 7), 1 | Share of connecting bursts that land |
+| `escalationCount(w)` | min(9, 4 + ⌊(w−5)/2⌋) | Contacts per wave after the scripted five |
+
+Waves are a pure function of `(wave, seed)` (`mulberry32`), which is what makes
+the daily and challenge links (`?c=seed.score.waves`) work without a server.
+
+### 23.2 Kill chains (`core/Combo.ts`) and kill effects
+
+Window 4.5 s; multiplier = chain length, capped at 5; bonus = base × (m − 1),
+so a lone kill is paid exactly its table value. Hit-stop: world at 12 % for
+0.09 s (0.16 s on a chain of 3+), applied in the real-time loop only.
+
+### 23.3 Medals and career (`core/Medals.ts`, `core/Career.ts`)
+
+Three independent star criteria per mission (bitmask, only ever gained).
+Career XP per run = max(0, score) + 100 + 400 × new stars; level n+1 needs
+1500 × n(n+1)/2 XP. Palettes: AMBER 3★, ARCTIC 8★, SYNTHWAVE 14★.
+
+### 23.4 EASY flying (`core/EasyMode.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `timeScale` | 0.8 | World speed |
+| `damageTaken` / `carrierDamage` | 0.5 / 0.5 | Damage multipliers |
+| `fighterAccuracy` | 0.5 | Extra share of fighter hits that miss |
+| `calloutHold` / `shake` | 1.7 / 0.5 | Message hold / camera shake multipliers |
+| `triggerInterval` | 0.9 s | Held-trigger cadence |
+| `missileTrickleSeconds` | 6 s | One Sidewinder back on the rail (SCRAMBLE) |
+| Missile cone | cos ≥ 0 (90°), 300-3500 m | Against STANDARD's cos ≥ 0.64 (~50°), 300-3500 m |
+
+Smart trigger: MISSILE if in the cone, a round is free and none is inbound to
+that target; else GUN if in the gun envelope (1.8 km, cos ≥ 0.985); else NOT YET.
+
+### 23.5 Text size (`Theme.uiZoomFor`)
+
+zoom = max(1, min(requested, w/720, h/400)); requested = 1, 1.25, 1.5. The
+canvas transform is `dpr × zoom`; layouts see `viewWidth = cssWidth / zoom`;
+pointer input is divided by the zoom in `main.ts`.
+
+## 24. Validation Pass: AI, Waves, Phones (v2.2.0)
+
+### 24.1 Enemy steering (`tactics/EnemyAI.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `MAX_TURN_RATE` | 0.28 rad/s (~16°/s) | Fastest any contact swings its velocity |
+| `ENGAGE_TURN_RATE` / `INGRESS_TURN_RATE` | 1.1 / 0.4 per s | Proportional gain below the cap |
+| `aiCruiseSpeed` | the speed at first steer | Held through every turn |
+| `EXTEND_RANGE` / `EXTEND_SECONDS` | 450 m / 4 s | Inside this range a fighter breaks off and extends, guns cold - a strafing pass |
+
+Turn step = min(angle, min(MAX_TURN_RATE, gain × angle) × dt), as a rotation
+about v × d (the vertical when dead astern). Bank cue = signed horizontal turn
+rate / MAX_TURN_RATE. The player's held bank is ~12°/s in ARCADE.
+
+Tried and taken out: a second break-off for a fighter sitting in the jet's
+rear half (1.2 km, 4 s). Over 8-16 seeds per profile it cost the EASY hold-fire bot a sixth
+of its kills, ended three times as many STANDARD runs early, and cut a relaxed
+EASY player's kills by a third; the stall it was built for was the coach's
+(§23.4, `EasyMode.easyHint`: FIRE NOW now outranks everything but MISSILE
+INBOUND). Measure with `npm run balance` (`scripts/balance/balance.sim.ts`).
+
+### 24.2 SCRAMBLE waves (`core/Scramble.ts`, `GameLoop.updateScramble`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `bomberOutboundFrom` | 2000 m | Beyond this from the boat, bombers are placed off the far side of the jet |
+| `bomberArcDeg` | 60° | Escalation bombers' spread about that line |
+| `bomberSpawnClear` | 2500 m | No bomber appears closer to the boat |
+
+Wave outcomes: **CLEARED** (no leak, no bug-out) pays `waveClearBonus` +
+`WAVE_SURVIVED`; **HELD** (≥1 kill) pays `WAVE_SURVIVED` and counts toward
+`wavesCleared`; **OVER** (no kill) pays nothing and does not count. The jets a
+run allows (`scramble.jets`) are set at its start and only rise (EASY on).
+
+### 24.3 Phones (`renderer/TouchLayout.ts`, `Theme.textScaling`, `Controls.touchWording`)
+
+| Item | Value |
+| :-- | :-- |
+| Touch kit, EASY in SCRAMBLE | FIRE (radius × 1.45, ≤ 20% of height) + menu; a WORLD tap/hold fires |
+| Touch kit, STANDARD in SCRAMBLE | stick, throttle, GUN, AIM9, TGT, FIRE, menu |
+| Phone | touch and < 500 CSS px tall: zoom 1, in-flight text boost = min(1.4, text scale) |
+| Boosted elements | order strip, coach line (moved under the strip on touch), banners; compass hidden when boosted |
+
+### 24.4 Records
+
+- Challenge links: `?c=seed.score.waves[.e]` - `.e` when the run was flown on EASY.
+- `DailyResult.easy`; `sanitise` keeps `mode`, `bestChain`, `easy`.
+- `careerLevel` is closed-form; stored XP is capped at 1e12 (`MAX_CAREER_XP`).
+
+## 25. Bring a Friend: Links, Shares and the Picture (v2.3.0)
+
+### 25.1 Challenge links (`core/Challenge.ts`)
+
+```
+https://bejranonda.github.io/carrier-vector-1988/c/?c=<seed>.<score>.<waves>[.e]#n=<name>
+```
+
+| Part | Rule |
+| :-- | :-- |
+| `/c/` | The same page and bundle, emitted by `vite.config.ts` (`challengePage`) with challenge preview copy ("Can you beat my score? Carrier Vector: 1988 - a free jet game") and **no `og:url` / `canonical`** - Facebook treats `og:url` as the destination and would drop the query. The build **fails** (`this.error`) if `index.html` is missing or the output still carries either tag |
+| `c` | seed ≤ 2³¹−1, score ≤ 99,999,999, waves ≤ 999, all integers; `.e` = flown on EASY; anything else → no challenge |
+| `#n=` | The challenger's name, in the fragment (never sent to a server); `encodeURIComponent` plus `'` → `%27` (a chat app's link finder can stop at an apostrophe); a query `&n=` is also read |
+| `cleanPilotName` | NFC; every whitespace (tab, no-break, ideographic) → one space; removes `LOOKALIKES` (Hangul fillers U+115F/1160/3164/FFA0, and letters that pass for `.` `/` `:` - U+A4F8-A4FB, U+1427, U+141F/1420, U+02D0/02D1, U+0971); keeps `\p{L}\p{M}\p{N}`, space, `'`, `’`, `-`; drops accents with no letter; caps accents at 4 per letter; ≤ 16 characters (`MAX_PILOT_NAME`) but never cuts an accent from its letter; needs a letter or digit |
+
+Displayed as `challengerLabel` (upper-cased name, or `A FRIEND`). The tab title
+becomes `<name> challenges you - Carrier Vector: 1988`; the canvas's
+`aria-label` says the same until the welcome closes (`onChallengeWelcomeClose`
+puts the usual one back).
+
+### 25.2 What a share sends (`core/ShareCard.ts`, `core/Share.ts`)
+
+| Share | Payload | Why |
+| :-- | :-- | :-- |
+| CHALLENGE A FRIEND / REPLY TO ANNA / TELL ANNA / INVITE A FRIEND | `{ text: message + "\n" + link }` | The link inside `text`, alone on the last line; never in `url` (some iPhone apps cut the query string from it) |
+| ALSO SEND (OR SAVE) THE PICTURE | `{ files: [png] }` | No text or title: an app given both keeps one and drops the other. Offered only after the main share returns (any outcome but `BUSY`): side by side, the picture invites the first press, and a picture alone carries no link |
+| No share sheet | `wa.me/?text=`, `line.me/R/share?text=`, `sms:?&body=` (touch) / `mailto:` (desktop), COPY MESSAGE (primary), SAVE PICTURE, COPY PICTURE (desktop, `ClipboardItem` with a `Promise<Blob>`) | In-app browsers on Android, Firefox desktop, Chrome on Linux |
+
+`shareToSheet` outcomes: `SHARED` (an app was chosen - nothing may say
+"sent"), `CANCELLED` (`AbortError`), `BUSY` (`InvalidStateError`: a second
+tap while the sheet is up - ignored), `FAILED` (anything else; the panel
+then shows SAVE on a phone too).
+
+| Run | Message (the link follows on its own line) | Button |
+| :-- | :-- | :-- |
+| Beat a named challenge | "I beat your score, Anna! 12,400 to your 12,345 in Carrier Vector: 1988. Your turn to win it back - it's a free jet game in your browser, a few minutes:" | REPLY TO ANNA |
+| Tied | "We're tied, Anna - 12,345 points each..." | REPLY TO ANNA |
+| Lost | "You're still ahead, Anna - 15,000 to my 12,345 in Carrier Vector: 1988. I'll get you next time!" | TELL ANNA |
+| The daily | "Daily Scramble #279 (first try): 12,345 points in Carrier Vector: 1988, a free jet game. Everyone gets the same planes today - can you beat me? It plays in your browser:" | CHALLENGE A FRIEND |
+| Beat a previous best (`beatPreviousBest`: a best > 0 existed) | "My best yet: 12,345 points and 21 planes shot down in Carrier Vector: 1988, a free jet game. Can you beat me? It plays in your browser, no download:" | CHALLENGE A FRIEND |
+| A fresh star | "I scored 12,345 points and shot down 21 planes in..." | CHALLENGE A FRIEND |
+| Anything else, a first run included | "Try Carrier Vector: 1988, a free jet game - it plays in your browser, nothing to install. EASY mode flies the plane; you just press FIRE. I got 12,345 - can you beat me?" | INVITE A FRIEND |
+
+" (I flew on EASY)" follows any claimed score flown on EASY; a zero kill count
+is left out rather than printed. `shareNudge`: a win → "YOU BEAT ANNA - LET ANNA
+KNOW" (lit); fresh stars → lit; a beaten best → lit once a session
+(`bestNudgedThisSession`); otherwise "SHARE: YOUR FRIEND GETS THE SAME PLANES".
+
+### 25.3 The share panel (`ui/SharePanel.ts`, `index.html #share`)
+
+| Rule | Why |
+| :-- | :-- |
+| Picture drawn and encoded on open (and 250 ms after a name edit); the old picture, file and object URL are cleared on open; SEND/SAVE/COPY PICTURE are disabled until `ready` | A press must open the sheet inside the tap; the first build showed and saved the previous run's picture until the new one was encoded |
+| `flushName()` at the top of every button handler, on `change` and on close | A name typed less than 250 ms before a press was left off the link |
+| ENTER in the name field is "done" only when `!e.isComposing && keyCode !== 229` | ENTER confirms a Japanese or Chinese conversion |
+| File support asked with an empty `image/png` probe file | The buttons do not jump about while the real picture encodes |
+| Quick links rebuilt only when the set of apps changes; otherwise `href`/text updated in place | A rebuild dropped keyboard focus, and could swap a link out from under the tap following it |
+| Keys stop at the panel; `main.ts` sends any key that still arrives to `strayKey` (ESC closes, TAB re-enters); focus is re-taken on the next task after open | A mouse press on SHARE ends by focusing the canvas under it, and ESC then did nothing |
+| Clicks in the first 500 ms after opening are swallowed (capture phase) | A phone delivers the opening tap's click to whatever is under the finger - the panel |
+| CLOSE in the title row; the backdrop closes too; `.share-note` hidden on landscape ≤ 400 px tall | At the bottom, CLOSE was below the fold on a 568 × 320 phone |
+| `-webkit-touch-callout: default` on the picture | The page turns the long-press menu off; on an iPhone it is how a picture is saved to Photos |
+
+### 25.4 The picture (`renderer/ShareImage.ts`)
+
+1080 × 1080, drawn in the pilot's palette; every word ≥ 30 px (≈ 8 px in a
+270 px chat thumbnail). `SHARE_IMAGE_LAYOUT` (y): game name 62, headline 152
+(76 px, shrunk to fit down to 44 px, never cut), moment 192-572 (900 × 380,
+cover-cropped at `MOMENT_ZOOM` 1.3 and drawn twice, the second `lighter` at
+0.6, to brighten a dark frame), stars 632, score 770 (120 px) - or, after a
+challenge, a two-row scoreboard at 692 / 790 (64 px, higher score on top, the
+leader in gold) - stats 856 (non-zero numbers only), title and tags 904, footer
+band from 940 ("FREE GAME - PLAYS IN YOUR BROWSER" 996, address 1048). No
+moment (no kill) → a radar scope. Headlines: "CAN YOU BEAT TOM?" / "CAN YOU
+BEAT ME?", "TOM BEAT ANNA!" / "I BEAT ANNA!" / "CHALLENGE BEATEN!", "TIED WITH
+ANNA!" / "DEAD HEAT!". The "NEW PERSONAL BEST" tag only with a beaten best,
+never beside a lost challenge.
+
+### 25.5 In the run (`GameLoop`, `HUD`)
+
+| Item | Rule |
+| :-- | :-- |
+| `scoreTarget` | SCRAMBLE only: the challenge's score (not on the daily), else the mission best if > 0 |
+| Passing it | Live both ways (`scoreTargetPassed`); once a run, the banner ("AHEAD OF ANNA!" / "AHEAD OF THE CHALLENGE!" / "PAST YOUR BEST!", group `RECORD`, 2.8 s) and fanfare - held up to 2.5 s while another banner is up. Never "YOU BEAT": the run is not over |
+| HUD | `scoreTargetOptions`, longest first: `ANNA 12,345 · YOU 4,200` → `TO BEAT 12,345 · YOU 4,200` → `BEAT 12,345 · YOU 4,200` → `YOU 4,200`; once past, `YOU 13,100 · AHEAD OF ANNA` → `· AHEAD` → `YOU 13,100`; own best `BEST 8,000 · NOW 4,200` / `NOW 9,000 · NEW BEST`. Desktop chip: 13 px then 11 px, kept clear of the objective strip (`objectiveRect`); shown on the first-flight HUD for a challenge. Touch: in the systems line, which drops G, then FUEL, before shortening the score, and never exceeds the gap between the thumb clusters |
+| Moment | On a kill, weight = chain × 10 + base value / 100; ≥ the best so far schedules a capture 0.3 s later, before overlays and thumb controls; downscaled to ≤ 960 px wide. Held back by the menu, help or rotate prompt for more than 0.5 s, it is dropped rather than taken from a later frame |
+| Welcome (`renderer/ChallengeView.ts`) | `challengeWelcomeOpen` from `acceptChallenge`; PLAY → `requestFlight` (an EASY challenge sets EASY for a pilot never asked); SEE ALL MISSIONS → the briefing, challenge kept. Text measured as monospace (`monoWidth`: 0.6 em, 1 em for CJK, 0 for an accent), wrapped then balanced (`wrapMono`), a too-wide word set smaller (≥ 60%) then broken; four modes from roomy to compact |
+| Debrief | A beaten challenge is the headline (`celebrate`, gold) over "YOU 12,400 · ANNA 12,345 - you won by 55!"; the SHARE button reads `REPLY TO ANNA`, `REPLY TO …` with a first name, or `REPLY` - whichever fits |
+
+### 25.6 Verification baselines (v2.3.0)
+
+The numbers a change is checked against; a change that should not touch
+gameplay must leave the first two rows identical.
+
+| Check | Value |
+| :-- | :-- |
+| `npm run balance`, `easy-hold` (8 seeds × 480 s) | 40.6 kills (32-51), mean score 19,146, 0 jets lost, 0/8 runs over |
+| `npm run balance`, `std-steer` | 10.4 kills (8-13), mean score 3,547, 3/8 runs over |
+| `npm run test` | 1,228 tests in 72 files |
+| `npm run playtest` | 81 checks |
+| `npm run build` | 330.0 kB JS / 109.4 kB gzip; `dist/c/index.html` without `og:url` or `canonical` |
+
+The hand-over page, [`HANDOFF.md`](HANDOFF.md), keeps these current with the
+release.

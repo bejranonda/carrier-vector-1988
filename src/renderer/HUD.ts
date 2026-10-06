@@ -93,14 +93,32 @@ export interface AirborneTarget {
     /** Enemy AI state, stored on the contact itself to avoid a parallel map. */
     aiBehavior?: 'INGRESS' | 'ENGAGE' | 'RTB';
     aiFireCooldown?: number;
+    /**
+     * Never opens fire. SCRAMBLE's first two waves are a shooting gallery:
+     * a new pilot's first contact with the game should be a kill, not a death.
+     */
+    passive?: boolean;
+    /** 0..1: share of this fighter's connecting bursts that land. Undefined = all. */
+    accuracy?: number;
+    /** Always engages the player, at any range (SCRAMBLE fighters). */
+    huntsPlayer?: boolean;
     /** Seconds this fighter has held a guns solution on the player. */
     aiAimTimer?: number;
     aiTurnDemand?: number;
+    /** The speed the AI holds through every turn, set the first time it steers. */
+    aiCruiseSpeed?: number;
+    /** Seconds left extending straight after a close pass. */
+    aiExtendTimer?: number;
 }
 
 export interface HudContext {
     hint: Hint | null;
     score: ScoreKeeper;
+    /**
+     * The score this run is chasing (v2.3.0): a challenger's, or the pilot's
+     * best. Shown beside the score until it is passed.
+     */
+    scoreTarget?: { score: number; who: string; challenge: boolean; passed: boolean } | null;
     objective: ObjectiveStep;
     checklist: ChecklistItem[];
     /** Hardened ground targets the active scenario wants destroyed. */
@@ -117,6 +135,11 @@ export interface HudContext {
     callouts?: readonly Callout[];
     /** Seconds left on the cannon hit marker, 0 when no round has connected. */
     hitMarker?: number;
+    /**
+     * The live kill chain (core/Combo.ts), shown only once it is a chain -
+     * two kills or more. `fraction` is how much of the window is left.
+     */
+    combo?: { chain: number; multiplier: number; fraction: number } | null;
     /** Wire grade to stamp over the deck while the trap payoff plays. */
     trapStamp?: string | null;
     /** Screen edges the thumb controls occupy, in touch mode. */
@@ -301,8 +324,17 @@ export class HUD {
     public hudDensity: HudDensity = 'ARCADE';
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
+    private touchTarget?: HudContext['scoreTarget'];
+    /** Where this frame's objective strip went (the score chip keeps clear). */
+    private objectiveRect: { x: number; y: number; w: number; h: number } | null = null;
     /** Flash and motion limits for this frame. */
     private motion: MotionSettings = motionSettings({ reducedMotion: false });
+    /**
+     * In-place growth of the words a pilot reads in flight - the order strip,
+     * the coach line, the banners - on a phone that cannot zoom (v2.2.0, see
+     * Theme.textScaling). 1 everywhere the UI zoom already does the job.
+     */
+    public textBoost = 1;
 
     constructor(width: number, height: number) {
         this.width = width;
@@ -356,11 +388,19 @@ export class HUD {
         }
 
         // --- Instruments (all on backplates, all outside the centre box) ---
+        this.objectiveRect = null;
         this.drawObjectiveStrip(ctx, context.objective, layout.cx, layout.touchMode);
-        if (layout.showCompass && vis.compass) this.drawCompassTape(ctx, physics, layout.cx);
-        this.drawSpeedBlock(ctx, physics, layout);
-        this.drawAltitudeBlock(ctx, physics, sensors, layout);
+        // A grown order strip needs the tape's band on a tall phone.
+        const compassShown = layout.showCompass && vis.compass && this.textBoost <= 1;
+        if (compassShown) this.drawCompassTape(ctx, physics, layout.cx);
+        // EASY flies the aeroplane: speed and height are numbers its pilot
+        // cannot act on, so they go unless the full PRO set is asked for.
+        if (context.assistLabel !== 'EASY' || this.hudDensity === 'PRO') {
+            this.drawSpeedBlock(ctx, physics, layout);
+            this.drawAltitudeBlock(ctx, physics, sensors, layout);
+        }
         this.touchScore = layout.touchMode ? context.score : undefined;
+        this.touchTarget = context.scoreTarget;
         this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
         if (layout.showRwr && vis.radar) {
             this.drawRWR(
@@ -377,14 +417,28 @@ export class HUD {
             (shown.rwr && /MISSILE|RADAR LOCK/.test(context.hint.text)) ||
             (shown.stall && /STALL/.test(context.hint.text))
         );
-        if (context.hint && !duplicated) this.drawCoachTicker(ctx, context.hint, layout.cx);
+        const coachShown = context.hint !== null && !duplicated;
+        // On a phone the coach line sits under the order strip: its own band
+        // is the middle of a 390 px screen, which is where the target is.
+        let coachTop: number | undefined;
+        if (layout.touchMode) {
+            const above = compassShown ? BAND.compass - 20 + BAND_H.compass
+                : BAND.objective + Math.round(BAND_H.objective * this.textBoost);
+            coachTop = (shown.rwr ? Math.max(above, BAND.warning + BAND_H.warning) : above) + 6;
+        }
+        if (coachShown) this.drawCoachTicker(ctx, context.hint!, layout.cx, coachTop);
         if (layout.showChecklist) this.drawChecklist(ctx, context.checklist);
         if (context.hitMarker) this.drawHitMarker(ctx, layout, context.hitMarker);
-        this.drawCallouts(ctx, context.callouts ?? [], layout);
+        this.drawCallouts(ctx, context.callouts ?? [], layout, coachShown);
+        if (context.combo && context.combo.chain >= 2) this.drawComboMeter(ctx, context.combo, layout);
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         if (context.goHere) this.drawGoHereCue(ctx, physics, context.goHere, layout);
         this.drawMissileCarets(ctx, physics, sensors, layout);
-        if (!layout.touchMode && vis.scoreChip) this.drawScoreChip(ctx, context.score, layout);
+        // A challenge's score to beat shows even on the first-flight HUD: it
+        // is the reason a friend's link was opened.
+        if (!layout.touchMode && (vis.scoreChip || context.scoreTarget?.challenge)) {
+            this.drawScoreChip(ctx, context.score, layout, context.scoreTarget);
+        }
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
             context.terrainFollowing ?? false, context.recovery ?? null, layout,
@@ -481,7 +535,9 @@ export class HUD {
             showApproach: HUD.isOnApproach(physics),
             hasChecklist,
             reserve,
-            touchMode
+            touchMode,
+            // The grown order strip and the coach line under it (phones).
+            topExtra: touchMode ? Math.round(BAND_H.objective * (this.textBoost - 1)) : 0
         });
     }
 
@@ -517,11 +573,13 @@ export class HUD {
 
         ctx.save();
         noGlow(ctx);
-        ctx.font = font(17, 700);
+        const k = this.textBoost;
+        const px = (n: number) => Math.round(n * k);
+        ctx.font = font(px(17), 700);
         const titleW = ctx.measureText(objective.title).width;
-        ctx.font = font(11);
+        ctx.font = font(px(11));
         const detailW = ctx.measureText(objective.detail).width;
-        ctx.font = font(22, 700);
+        ctx.font = font(px(22), 700);
         const clockW = showClock ? ctx.measureText(clockText).width + 22 : 0;
 
         const keyW = showKey ? 58 : 0;
@@ -540,9 +598,10 @@ export class HUD {
             this.width - 2 * (HUD_METRICS.edge + sideReserve),
             Math.max(titleW + keyW, detailW) + 36 + clockW
         );
-        const h = BAND_H.objective;
+        const h = px(BAND_H.objective);
         const x = cx - w / 2;
         const y = BAND.objective;
+        this.objectiveRect = { x, y, w, h };
 
         plate(ctx, { x, y, w, h }, { fill: 'rgba(6,13,17,0.78)', border: accent, radius: 5 });
 
@@ -553,37 +612,40 @@ export class HUD {
 
         let textX = x + 16;
         if (showKey && objective.key) {
-            textX += keycap(ctx, textX, y + 20, objective.key, { size: 12 }) + 10;
+            textX += keycap(ctx, textX, y + px(20), objective.key, { size: 12 }) + 10;
         }
 
         const textLimit = x + w - 14 - clockW;
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.font = font(17, 700);
+        ctx.font = font(px(17), 700);
         ctx.fillStyle = objective.urgency === 'NORMAL' ? THEME.ink : accent;
-        ctx.fillText(fitText(ctx, objective.title, textLimit - textX), textX, y + 25);
+        ctx.fillText(fitText(ctx, objective.title, textLimit - textX), textX, y + px(25));
 
-        ctx.font = font(11);
+        ctx.font = font(px(11));
         ctx.fillStyle = THEME.muted;
-        ctx.fillText(fitText(ctx, objective.detail, textLimit - (x + 16)), x + 16, y + 43);
+        ctx.fillText(fitText(ctx, objective.detail, textLimit - (x + 16)), x + 16, y + px(43));
 
         if (showClock) {
             ctx.textAlign = 'right';
-            ctx.font = font(22, 700);
+            ctx.font = font(px(22), 700);
             ctx.fillStyle = clockColor;
             if (countdown < 60 && blinkVisible(Date.now(), this.motion, 500)) glow(ctx, clockColor, 8);
-            ctx.fillText(clockText, x + w - 14, y + 28);
+            ctx.fillText(clockText, x + w - 14, y + px(28));
             noGlow(ctx);
-            ctx.font = font(9, 600);
+            ctx.font = font(px(9), 600);
             ctx.fillStyle = THEME.muted;
-            ctx.fillText('WINDOW', x + w - 14, y + 44);
+            ctx.fillText('WINDOW', x + w - 14, y + px(44));
         }
         ctx.restore();
     }
 
     /** Single-channel contextual coaching line (immediate threats/actions). */
-    private drawCoachTicker(ctx: CanvasRenderingContext2D, hint: Hint, cx: number) {
+    /** Bottom edge of the coach plate drawn this frame, for the banners below it. */
+    private coachBottom = 0;
+
+    private drawCoachTicker(ctx: CanvasRenderingContext2D, hint: Hint, cx: number, top?: number) {
         const color = hint.severity === 'CRITICAL' ? THEME.alert
             : hint.severity === 'WARNING' ? THEME.caution
                 : THEME.phosphor;
@@ -594,16 +656,21 @@ export class HUD {
 
         ctx.save();
         noGlow(ctx);
-        ctx.font = font(13, 600);
+        const k = this.textBoost;
+        ctx.font = font(Math.round(13 * k), 600);
         const text = fitText(ctx, hint.text, this.width - 80);
         const w = ctx.measureText(text).width + 26;
         const x = cx - w / 2;
+        // Grows about the band's centre line (or hangs from `top` on a phone).
+        const h = Math.round(BAND_H.coach * k);
+        const mid = top !== undefined ? top + h / 2 : BAND.coach + BAND_H.coach / 2;
+        this.coachBottom = mid + h / 2;
 
-        plate(ctx, { x, y: BAND.coach, w, h: BAND_H.coach }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: 13 });
+        plate(ctx, { x, y: mid - h / 2, w, h }, { fill: 'rgba(6,13,17,0.7)', border: color, radius: h / 2 });
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, cx, BAND.coach + BAND_H.coach / 2);
+        ctx.fillText(text, cx, mid);
         ctx.restore();
     }
 
@@ -859,12 +926,19 @@ export class HUD {
         // The score rides here too: a separate chip in the top-right corner
         // collided with the objective strip on a narrow screen, and this
         // plate is already paid for.
-        const text = `FUEL ${Math.round(physics.fuel)}L   HULL ${Math.round(100 - physics.damage)}%   ${physics.gLoad.toFixed(1)}G`
-            + (score ? `   ${score.totalScore} PTS` : '');
-        const w = ctx.measureText(text).width + 20;
-        // Centred in the free gap between the thumb clusters, at the bottom.
+        // Centred in the free gap between the thumb clusters, at the bottom -
+        // and never wider than it. A score to beat outranks the G meter and
+        // the fuel gauge, so those go before the score line shortens.
         const gapLeft = layout.reserve.left;
         const gapRight = this.width - layout.reserve.right;
+        const room = gapRight - gapLeft - 8;
+        const systems = [`FUEL ${Math.round(physics.fuel)}L`, `HULL ${Math.round(100 - physics.damage)}%`, `${physics.gLoad.toFixed(1)}G`];
+        const targets = score ? scoreTargetOptions(score.totalScore, this.touchTarget) : [''];
+        const candidates = targets.flatMap(t => [systems, systems.slice(0, 2), systems.slice(1, 2)]
+            .map(parts => [...parts, t].filter(Boolean).join('   ')));
+        const fitting = candidates.find(c => ctx.measureText(c).width + 20 <= room);
+        const text = fitting ?? fitText(ctx, candidates[candidates.length - 1], Math.max(0, room - 20));
+        const w = ctx.measureText(text).width + 20;
         const x = Math.max(gapLeft, (gapLeft + gapRight) / 2 - w / 2);
         const y = this.height - bottomAnchor(layout.reserve) - TOUCH_SYSTEMS_LINE_TOP;
 
@@ -1302,7 +1376,7 @@ export class HUD {
      * waterline and above the systems block: the warning band answers "what is
      * about to kill me" and must never queue behind "that worked".
      */
-    private drawCallouts(ctx: CanvasRenderingContext2D, callouts: readonly Callout[], layout: HudLayout) {
+    private drawCallouts(ctx: CanvasRenderingContext2D, callouts: readonly Callout[], layout: HudLayout, coachShown = false) {
         if (callouts.length === 0) return;
 
         ctx.save();
@@ -1310,7 +1384,18 @@ export class HUD {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        let y = layout.cy + 118;
+        // The newest banner always gets room: on a short screen the stack
+        // starts higher instead. Below ~436 px of layout height - EXTRA LARGE
+        // text on any laptop window under 600 px - no two-line banner was
+        // drawn at all, kills and NOT YET included (v2.2.0 review).
+        const k = this.textBoost;
+        const px = (n: number) => Math.round(n * k);
+        const bottom = this.height - 56;
+        const firstH = px(callouts[0].detail ? 44 : 30);
+        let y = Math.min(layout.cy + 118, bottom - firstH);
+        // Below the coach line when one is up - a phone's grown coach plate
+        // ran into the top of the banner - unless that leaves no room at all.
+        if (coachShown && y < this.coachBottom + 6) y = Math.min(this.coachBottom + 6, bottom - firstH);
         for (const c of callouts) {
             const progress = 1 - c.life / c.span;
             // Hold, then fade in the last third.
@@ -1323,23 +1408,60 @@ export class HUD {
 
             ctx.globalAlpha = alpha;
             if (isKill) glow(ctx, THEME.caution, 10);
-            ctx.font = font(c.tone === 'PRAISE' || isKill ? 22 : 18, 700);
-            const w = Math.max(ctx.measureText(c.text).width, c.detail ? ctx.measureText(c.detail).width : 0) + 34;
-            const h = c.detail ? 44 : 30;
+            ctx.font = font(px(c.tone === 'PRAISE' || isKill ? 22 : 18), 700);
+            const w = Math.min(this.width - 16,
+                Math.max(ctx.measureText(c.text).width, c.detail ? ctx.measureText(c.detail).width : 0) + 34);
+            const h = px(c.detail ? 44 : 30);
+            // Newest first, so on a short screen the oldest banner is the one
+            // that waits rather than running off the bottom over the gauges
+            // (v2.1.0 phone screenshot, with EASY's longer hold).
+            if (y + h > bottom && c !== callouts[0]) break;
             plate(ctx, { x: layout.cx - w / 2, y, w, h },
                 { fill: 'rgba(6,13,17,0.72)', border: color, radius: 4 });
 
             ctx.fillStyle = color;
-            ctx.fillText(c.text, layout.cx, y + (c.detail ? 17 : 15));
+            ctx.fillText(fitText(ctx, c.text, w - 20), layout.cx, y + px(c.detail ? 17 : 15));
             if (isKill) noGlow(ctx);
             if (c.detail) {
-                ctx.font = font(10, 600);
+                ctx.font = font(px(10), 600);
                 ctx.fillStyle = THEME.muted;
-                ctx.fillText(fitText(ctx, c.detail, w - 20), layout.cx, y + 33);
+                ctx.fillText(fitText(ctx, c.detail, w - 20), layout.cx, y + px(33));
             }
 
             y += h + 6;
         }
+        ctx.restore();
+    }
+
+    /**
+     * The live chain: multiplier and a draining bar for the window left to
+     * extend it. Drawn just above the callout band - where the eye already is
+     * after a kill - so "kill again, quickly" is a visible offer, not a rule
+     * buried in the help screen.
+     */
+    private drawComboMeter(
+        ctx: CanvasRenderingContext2D,
+        combo: { chain: number; multiplier: number; fraction: number },
+        layout: HudLayout
+    ) {
+        ctx.save();
+        noGlow(ctx);
+        const w = 168;
+        const x = layout.cx - w / 2;
+        const y = layout.cy + 84;
+        const urgent = combo.fraction < 0.3;
+        const color = urgent ? THEME.alert : THEME.caution;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(15, 700);
+        ctx.fillStyle = color;
+        glow(ctx, color, 8);
+        ctx.fillText(`x${combo.multiplier} CHAIN · ${combo.chain} KILLS`, layout.cx, y);
+        noGlow(ctx);
+        ctx.fillStyle = 'rgba(6,13,17,0.72)';
+        ctx.fillRect(x, y + 12, w, 5);
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y + 12, w * Math.max(0, Math.min(1, combo.fraction)), 5);
         ctx.restore();
     }
 
@@ -1502,17 +1624,35 @@ export class HUD {
         ctx.restore();
     }
 
-    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout) {
+    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout, target?: HudContext['scoreTarget']) {
         ctx.save();
         noGlow(ctx);
-        ctx.font = font(11, 600);
-        const text = `${score.totalScore} PTS · ${score.rank}`;
-        const w = ctx.measureText(text).width + 22;
         // The menu button lives in the top-right corner in touch mode; the
         // chip has to clear it rather than sit underneath it.
-        const x = this.width - w - 20 - (layout.touchMode ? 58 : 0);
+        const right = this.width - 20 - (layout.touchMode ? 58 : 0);
         // Below the button row, never under it.
         const y = layout.touchMode ? 18 : SCORE_CHIP_Y;
+        // Nor over the objective strip in the same band: with a challenge the
+        // chip shows on the first-flight HUD too, and covered "PLANE" at 720 px.
+        const o = this.objectiveRect;
+        const room = o && y < o.y + o.h && y + 26 > o.y ? right - (o.x + o.w) - 8 : 360;
+        // 13 px with a target: it is a score to read at a glance in a fight.
+        // Both numbers at 13, then both at 11, then just the pilot's own.
+        const options = target ? scoreTargetOptions(score.totalScore, target) : [`${score.totalScore} PTS · ${score.rank}`, `${score.totalScore} PTS`];
+        const head = options.length > 1 ? options.slice(0, -1) : options;
+        const tail = options.length > 1 ? options.slice(-1) : [];
+        const tries: [string, number][] = target
+            ? [...head.map((t): [string, number] => [t, 13]), ...head.map((t): [string, number] => [t, 11]),
+                ...tail.map((t): [string, number] => [t, 13]), ...tail.map((t): [string, number] => [t, 11])]
+            : options.map((t): [string, number] => [t, 11]);
+        const pick = tries.find(([t, size]) => {
+            ctx.font = font(size, 600);
+            return ctx.measureText(t).width + 22 <= room;
+        }) ?? tries[tries.length - 1];
+        ctx.font = font(pick[1], 600);
+        const text = fitText(ctx, pick[0], Math.max(0, room - 22));
+        const w = ctx.measureText(text).width + 22;
+        const x = right - w;
         plate(ctx, { x, y, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
         ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
@@ -2412,4 +2552,37 @@ export class HUD {
 /** "MiG-23 FLOGGER #2" -> "MIG-23". Keeps target tags to a glance. */
 function shortName(name: string): string {
     return name.split(' ')[0].toUpperCase();
+}
+
+/**
+ * A scoreboard, not a fraction ("-80 / 12,345 PTS" read as a sum): "ANNA
+ * 12,345 · YOU 4,200" while a run chases a friend, "YOU 13,100 · AHEAD OF
+ * ANNA" once past; "BEST 12,345 · NOW 4,200" / "NOW 13,100 · NEW BEST".
+ *
+ * Longest first; the HUD takes the first that fits. The name goes first,
+ * the score to beat next, the pilot's own score never: "AHEAD OF GRANDPA
+ * MARGARE" ran off a small phone, and under its FIRE button (v2.3.0 review).
+ */
+export function scoreTargetOptions(score: number, target: HudContext['scoreTarget'] | undefined): string[] {
+    const pts = (n: number) => n.toLocaleString('en-US');
+    const you = `YOU ${pts(score)}`;
+    if (!target) return [`${pts(score)} PTS`];
+    if (target.challenge) {
+        const named = target.who !== 'A FRIEND';
+        if (target.passed) return [...(named ? [`${you} · AHEAD OF ${target.who}`] : []), `${you} · AHEAD`, you];
+        return [
+            ...(named ? [`${target.who} ${pts(target.score)} · ${you}`] : []),
+            `TO BEAT ${pts(target.score)} · ${you}`,
+            `BEAT ${pts(target.score)} · ${you}`,
+            you
+        ];
+    }
+    return target.passed
+        ? [`NOW ${pts(score)} · NEW BEST`, `NOW ${pts(score)}`]
+        : [`BEST ${pts(target.score)} · NOW ${pts(score)}`, `NOW ${pts(score)}`];
+}
+
+/** The full line (the longest option). */
+export function scoreWithTarget(score: number, target: HudContext['scoreTarget'] | undefined): string {
+    return scoreTargetOptions(score, target)[0];
 }

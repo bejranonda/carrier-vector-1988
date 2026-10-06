@@ -364,3 +364,11 @@ describe('pickTargetAt', () => {
         expect(pickTargetAt(100, 100, [])).toBeNull();
     });
 });
+
+describe('missile envelope is what the round can reach (v2.0.0)', () => {
+    it('does not call a 6 km contact IN RANGE for a seven-second motor', () => {
+        expect(solveTarget(shooter(), target({ position: { x: 0, y: 1000, z: 6000 } })).inMissileEnvelope).toBe(false);
+        expect(solveTarget(shooter(), target({ position: { x: 0, y: 1000, z: 3000 } })).inMissileEnvelope).toBe(true);
+        expect(DESIGNATION_TUNING.missileMaxRange).toBeLessThanOrEqual(4000);
+    });
+});

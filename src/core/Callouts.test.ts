@@ -81,3 +81,14 @@ describe('splashLine', () => {
         expect(splashLine(-4)).toBe('SPLASH ONE');
     });
 });
+
+describe('Callouts groups', () => {
+    it('replaces a callout of the same group instead of stacking it', () => {
+        const c = new Callouts();
+        c.push('SPLASH ONE', 'KILL', undefined, 1.6, 'CHAIN');
+        c.push('FIRST BLOOD!', 'PRAISE');
+        c.push('DOUBLE SPLASH x2', 'KILL', undefined, 1.6, 'CHAIN');
+        const texts = c.active().map(x => x.text);
+        expect(texts).toEqual(['DOUBLE SPLASH x2', 'FIRST BLOOD!']);
+    });
+});

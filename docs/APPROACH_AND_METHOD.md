@@ -689,3 +689,120 @@ than shipping thinner versions of them under the same names. `LET THE
 AUTOPILOT FLY` in the pilot menu does exactly what its own copy says
 ("Ghost-Lead holds her steady") and no more, so the feature's description and
 its behaviour cannot drift apart.
+
+## 14. Design for the Player Who Is Not a Gamer — and Measure Them (v2.0.0–v2.1.0)
+
+v2.0.0 asked "would a stranger play this twice?" and moved the fight to the
+front (SCRAMBLE). v2.1.0 asked the harder version: *what if the stranger is
+older, and not quick with their hands?* Both were answered with the same
+method, which is now the project's default for any audience question:
+
+1. **Name the profile, then script it.** Not "a player" but "slow reactions
+   (1.5 s), never steers, presses SPACE only when told" - a 60-line Playwright
+   bot. It is crude on purpose: a floor, not a ceiling.
+2. **Find the wall with the profile, not with intuition.** The relaxed bot
+   scored its first kill in 5 s, then sat for minutes on "turn toward the
+   bandit". The wall was steering - not difficulty, not damage, not speed.
+3. **Remove the wall, then re-measure the same profile.** EASY's first build
+   did *not* help the bot (5 kills vs 6). Its diagnostics showed why - targets
+   behind the wing line the standard missile cone never offered - and the
+   second build did (11-12 kills, first medal star, no jets lost).
+4. **Validate across perspectives, not just the target one.** Every release
+   now runs: brand-new standard player, veteran, EASY/older player (mouse
+   only, EXTRA LARGE text), phone, tablet, colour-blind palette, reduced
+   motion, and performance under a busy wave. A fix for one profile that
+   breaks another is not a fix.
+5. **Let the measurement overrule the reviewer.** Across v2.0.0-v2.1.0 the
+   instruments overruled four confident claims: "first kill takes 2+
+   minutes" (13.9 s), "the AIM-9 guidance misses" (80/80 hits), "a font
+   multiplier is enough for big text" (overlaps at 150%), and "EASY obviously
+   helps" (it did not, until the cone changed). Each correction is kept in the
+   review suite on purpose.
+
+## 15. Validate by Adversarial Review and Long Runs (v2.2.0)
+
+v2.2.0 was asked a short question - *validate anything to improve else?* - and
+answered it with four instruments, each finding things the others could not:
+
+1. **Three independent code reviews in parallel**, split by area (game loop
+   and input; core logic; rendering and audio), each told to prove a finding
+   with a concrete failure scenario and, where cheap, a throwaway test against
+   the real modules. About 40 findings came back. **Every one was re-read at
+   its code site before it was fixed**, and the serious ones got a regression
+   test that was run against the old code to confirm it fails there.
+2. **Long runs, not short ones.** Three-minute bot runs had looked healthy.
+   Eight-minute runs showed ~40% of an EASY run spent on one or two
+   stragglers until the wave timed out - invisible at three minutes.
+3. **A diagnostic bot for the symptom.** Instead of tuning timeouts, a bot
+   logged every live contact relative to the jet whenever 12 s passed without
+   a kill. The log showed the cause in the physics (fighters at 1-8 m/s) and
+   in the geometry (bombers flying away) - neither was a tuning problem.
+4. **Frames at the sizes the settings create.** The zoom makes 400-490 px
+   layouts that no device has; rendering the first screen at 1080 × 650 and
+   EXTRA LARGE found it collapsed, which no unit test had asserted.
+
+5. **Many seeds, not one run.** A single eight-minute browser run is one
+   draw from a noisy distribution - one said the strafing pass made EASY
+   worse. A headless simulation of the real game loop (stub canvas, no
+   rendering, ~50-100× real time; now `npm run balance`) ran 8-16 seeds per
+   variant in a few minutes and said the opposite, with a spread to show how
+   sure; its per-wave log then found the coach hiding FIRE NOW. Decide
+   balance on distributions; use single runs only to look.
+6. **One change per measurement.** The per-wave log showed two things at
+   once - a MiG circling on the jet's tail, and FIRE NOW hidden - and both
+   got a fix in the same build. Switched on and off separately, the tail
+   rule made every profile worse; the coach fix alone did all the good. Two
+   fixes measured together are one fix measured.
+
+Three rules came out of it. *Fix the cause the measurement names, then
+measure the same thing again* (the v2.2.0 AI took the STANDARD steering bot
+from 5.1 to 10.0 kills in the same eight minutes, 16-seed
+means). *Switch each change off once before believing it.* And *a finding is
+not a fix until a test that fails on the old code passes on the new*.
+
+## 16. Design Both Ends of a Share (v2.3.0)
+
+v2.3.0's brief was about feelings - *users should have a good experience and
+love to share it* - so the method was to make the feeling observable:
+
+1. **Walk both ends in a browser before designing anything.** The sender's
+   end (the debrief) and the receiver's end (opening the link) were
+   screenshotted at desktop, laptop-at-large-text and phone sizes. Neither
+   was what the code's authors pictured: the share was a small grey box, and
+   the friend arrived on the full mission menu.
+2. **Research the platforms, not just the players.** A research agent was
+   asked what chat apps actually keep from a share, with sources. The answer
+   reversed the first design - one share holding a picture, a message and a
+   link - before it shipped: iPhone WhatsApp keeps the text and drops the
+   picture, Facebook and Messenger keep the picture and drop the link.
+3. **Drive the whole loop end to end, with real taps.** The harness opens a
+   real link shape (`/c/?c=...#n=Anna`), accepts, passes the score, reads the
+   debrief, opens the panel, types a name and checks the link it produces.
+   The phone run found what no unit test could: the tap that opened the share
+   panel then clicked its own CLOSE button.
+4. **Fresh eyes on the result.** A code review and a UX review (as a
+   70-year-old receiving the link on WhatsApp) ran in parallel on the
+   finished screens and texts, and their findings were checked at the code
+   before anything was changed. The UX review changed words and hierarchy
+   (a scam-shaped preview, two equal buttons, "card", a premature "YOU
+   BEAT"); the code review found state and focus bugs no screenshot shows (a
+   stale picture on the second share, ESC lost after a mouse click). Twelve
+   code findings, none high - and every one was reproduced in a browser,
+   fixed, and re-driven by a script against the working tree before the
+   release went out.
+5. **Re-check what the reviewers checked, in their way.** The code reviewer
+   left its probe scripts; a consolidated script re-ran each scenario after
+   the fixes (desktop, a phone with a share sheet that refuses, a double tap,
+   CJK names, the HUD at 568 px). One check could not pass in Chromium at all
+   (`-webkit-touch-callout` is Safari's) - it is recorded as needing a real
+   iPhone, not as passed.
+
+6. **Hand over as you go.** The release ends with `docs/HANDOFF.md`: the
+   state, how to verify it (including the balance baseline that proves
+   gameplay unchanged), where the code lives, what is open, and the traps
+   that bit - so the next contributor starts from evidence, not from a
+   reading of 4,300 lines of `GameLoop.ts`.
+
+Rule from it: *a share is a product with two users*. The one who sends it
+wants to look good and do it in one tap; the one who gets it is a new player
+with no context, likely on a phone, likely wary of links.

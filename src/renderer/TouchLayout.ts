@@ -73,6 +73,61 @@ export interface TouchLayout {
     launch: TouchRect;
     /** Half-width of the centre band no control may enter. */
     centreKeepout: number;
+    /** Which controls exist in this layout - hidden ones cannot be hit either. */
+    kit: TouchKit;
+}
+
+/**
+ * Which flight controls a sortie actually uses (v2.2.0).
+ *
+ * A phone on EASY in SCRAMBLE showed nine controls - stick, throttle, four
+ * weapon pills (two of them permanently empty), chaff, target, fire - plus a
+ * lit recovery button, when the plane flies itself, no missile is ever fired
+ * at it and there is no deck to go home to. Only FIRE did anything a player
+ * needed. A control that does nothing is not neutral: it is something to read,
+ * to wonder about, and to rest a thumb on by accident.
+ */
+export interface TouchKit {
+    /** Stick and throttle. */
+    flight: boolean;
+    /** Weapon pills shown, bottom up: gun, missile, bomb, HARM. */
+    stores: [boolean, boolean, boolean, boolean];
+    /** The cycle-target button. */
+    target: boolean;
+    chaff: boolean;
+    recover: boolean;
+    /** FIRE drawn larger: on EASY it is the control. */
+    bigFire: boolean;
+}
+
+/** Everything, as every layout had before kits existed. */
+export const FULL_KIT: TouchKit = {
+    flight: true,
+    stores: [true, true, true, true],
+    target: true,
+    chaff: true,
+    recover: true,
+    bigFire: false
+};
+
+/** The kit for a sortie: what EASY and SCRAMBLE leave the pilot to do. */
+export function touchKitFor(opts: { easy: boolean; scramble: boolean }): TouchKit {
+    const { easy, scramble } = opts;
+    return {
+        // The plane flies itself on EASY - but only SCRAMBLE never asks for
+        // a landing, so deck missions keep the stick for the trap.
+        flight: !(easy && scramble),
+        // SCRAMBLE carries no bombs or HARMs; EASY's trigger picks between
+        // missile and gun itself. Elsewhere EASY never takes a weapon away.
+        stores: scramble ? (easy ? [false, false, false, false] : [true, true, false, false]) : [true, true, true, true],
+        // EASY locks on by itself (a tap on a contact still picks it).
+        target: !(easy && scramble),
+        // Nothing in SCRAMBLE fires a missile at the jet, and there is no
+        // deck to recover to.
+        chaff: !scramble,
+        recover: !scramble,
+        bigFire: easy
+    };
 }
 
 export const TOUCH_METRICS = {
@@ -109,7 +164,8 @@ export const NO_INSETS: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
 export function solveTouchLayout(
     width: number,
     height: number,
-    insets: SafeArea = NO_INSETS
+    insets: SafeArea = NO_INSETS,
+    kit: TouchKit = FULL_KIT
 ): TouchLayout {
     const m = TOUCH_METRICS;
     const safe: TouchRect = {
@@ -125,7 +181,11 @@ export function solveTouchLayout(
     const edge = m.edge * scale;
     const stickR = m.stickRadius * scale;
     const zone = m.stickZone * scale;
-    const fireR = m.fireRadius * scale;
+    // EASY's FIRE is half as big again, but never taller than a fifth of
+    // the screen - it still has to sit in the thumb's corner.
+    const fireR = kit.bigFire
+        ? Math.min(m.fireRadius * scale * 1.45, safe.h * 0.2)
+        : m.fireRadius * scale;
     const targetR = m.targetRadius * scale;
     const throttleW = m.throttleW * scale;
     const weaponW = m.weaponW * scale;
@@ -220,7 +280,8 @@ export function solveTouchLayout(
         menu,
         recover,
         launch,
-        centreKeepout: m.keepoutHalf * scale
+        centreKeepout: m.keepoutHalf * scale,
+        kit
     };
 }
 
@@ -256,19 +317,22 @@ export function hitTest(
         return inRect(layout.launch, x, y) ? 'LAUNCH' : 'WORLD';
     }
 
-    if (inRect(layout.recover, x, y)) return 'RECOVER';
+    const kit = layout.kit;
+    if (kit.recover && inRect(layout.recover, x, y)) return 'RECOVER';
 
     if (inCircle(layout.fire, x, y, slop)) return 'FIRE';
-    if (inCircle(layout.target, x, y, slop)) return 'TARGET';
-    if (inCircle(layout.chaff, x, y, slop)) return 'CHAFF';
+    if (kit.target && inCircle(layout.target, x, y, slop)) return 'TARGET';
+    if (kit.chaff && inCircle(layout.chaff, x, y, slop)) return 'CHAFF';
 
     const weaponIds: TouchControlId[] = ['WEAPON_GUN', 'WEAPON_MISSILE', 'WEAPON_BOMB', 'WEAPON_HARM'];
     for (let i = 0; i < layout.weapons.length; i++) {
-        if (inRect(layout.weapons[i], x, y)) return weaponIds[i];
+        if (kit.stores[i] && inRect(layout.weapons[i], x, y)) return weaponIds[i];
     }
 
-    if (inRect(layout.throttle, x, y)) return 'THROTTLE';
-    if (inRect(layout.stickZone, x, y)) return 'STICK';
+    // A hidden control is not an invisible click trap: where it would be is
+    // the world, like anywhere else.
+    if (kit.flight && inRect(layout.throttle, x, y)) return 'THROTTLE';
+    if (kit.flight && inRect(layout.stickZone, x, y)) return 'STICK';
     return 'WORLD';
 }
 

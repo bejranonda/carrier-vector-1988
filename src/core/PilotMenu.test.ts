@@ -90,3 +90,37 @@ describe('wrapMenuIndex', () => {
         expect(wrapMenuIndex(5, 0)).toBe(0);
     });
 });
+
+describe('pilot menu in SCRAMBLE (v2.0.0)', () => {
+    it('offers no TAKE ME HOME when there is no deck to recover to', () => {
+        const items = pilotMenuItems({
+            airborne: true, onDeckReady: false, autopilotFlying: false, recoveryOn: false,
+            hudDensityLabel: 'ARCADE', muted: false, canRecover: false
+        });
+        expect(items.some(i => i.id === 'TAKE_ME_HOME')).toBe(false);
+        expect(items[0].id).toBe('RESUME');
+    });
+});
+
+describe('pilot menu music switch (v2.0.0)', () => {
+    const base = { airborne: true, onDeckReady: false, autopilotFlying: false, recoveryOn: false, hudDensityLabel: 'ARCADE', muted: false };
+    it('appears only where there is music, and says its state', () => {
+        expect(pilotMenuItems(base).some(i => i.id === 'MUSIC')).toBe(false);
+        expect(pilotMenuItems({ ...base, musicOn: true }).find(i => i.id === 'MUSIC')?.label).toBe('MUSIC: ON');
+        expect(pilotMenuItems({ ...base, musicOn: false }).find(i => i.id === 'MUSIC')?.label).toBe('MUSIC: OFF');
+    });
+});
+
+describe('pilot menu with EASY on (v2.1.0)', () => {
+    it('shows no autopilot switch (EASY is always flying) but keeps TAKE ME HOME', () => {
+        const items = pilotMenuItems({
+            airborne: true, onDeckReady: false, autopilotFlying: true, recoveryOn: false,
+            hudDensityLabel: 'ARCADE', muted: false, easyOn: true, textSizeLabel: 'LARGE'
+        });
+        const ids = items.map(i => i.id);
+        expect(ids).not.toContain('FLY_FOR_ME');
+        expect(ids).toContain('TAKE_ME_HOME');
+        expect(ids[1]).toBe('EASY');
+        expect(ids).toContain('TEXT_SIZE');
+    });
+});

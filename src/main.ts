@@ -16,6 +16,11 @@ import { soundFX } from './audio/SoundFX';
 import { SCENARIOS } from './core/Scenarios';
 import { normalizeKey } from './core/Controls';
 import { feedbackUrl } from './core/Feedback';
+import { parseChallenge } from './core/Challenge';
+import { flyStyleLayout } from './renderer/FlyStyleView';
+import { debriefLayout } from './renderer/DebriefView';
+import { challengeWelcomeLayout } from './renderer/ChallengeView';
+import { setupSharePanel } from './ui/SharePanel';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -30,7 +35,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const dev = window as unknown as Record<string, unknown>;
         dev.__game = game;
         dev.__sfx = soundFX;
+        // Layout solvers, so the browser harness can click what a player sees.
+        dev.__ui = { flyStyleLayout, debriefLayout, challengeWelcomeLayout };
     }
+
+    // SHARE on the debrief opens a DOM panel (v2.3.0): name, picture, sheet.
+    const sharePanel = setupSharePanel(game, canvas);
 
     /**
      * Safe-area insets, read from CSS environment variables through a probe
@@ -52,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleResize = () => {
         game.resize(window.innerWidth, window.innerHeight);
+        // CSS px: the game converts them for the text size in force.
         game.applyControlScheme(readInsets());
     };
     window.addEventListener('resize', handleResize);
@@ -73,12 +84,52 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('pointerdown', unlockAudio);
 
     window.addEventListener('keydown', (e) => {
+        // The share panel's text field and buttons own the keyboard while it
+        // is open, and stop their own keys from bubbling here. A key that
+        // still arrives came from outside it - focus left the panel (a click
+        // on its text, say): ESC must still close it, TAB goes back in, and
+        // nothing reaches the game.
+        if (sharePanel?.isOpen()) {
+            sharePanel.strayKey(e);
+            return;
+        }
         // The stick cluster by physical position, everything else by label -
         // see Controls.normalizeKey. Keyup below MUST use the same mapping, or
         // a key pressed on one layout could be released under another name
         // and stick down.
         const key = normalizeKey(e.key, e.code);
         game.inputState[key] = true;
+
+        // The first-run "how would you like to fly?" screen owns every key -
+        // H included, which used to open the help screen invisibly behind it.
+        if (game.flyStyleChooserOpen) {
+            e.preventDefault();
+            // A held key must not answer a question asked once: ENTER held
+            // from the briefing used to auto-repeat straight through it.
+            if (e.repeat) return;
+            // The keycap on a card means "this one, now" - one press, not
+            // highlight-then-confirm. Arrows move; ENTER takes the highlight.
+            if (key === '1') game.chooseFlyStyle('EASY');
+            else if (key === '2') game.chooseFlyStyle('STANDARD');
+            else if (key === 'arrowleft' || key === 'arrowup') game.moveFlyStyleChoice('EASY');
+            else if (key === 'arrowright' || key === 'arrowdown') game.moveFlyStyleChoice('STANDARD');
+            else if (key === 't') game.cycleTextSize();
+            else if (key === 'enter' || key === ' ') game.chooseFlyStyle(game.flyStyleChoice);
+            else if (key === 'escape') game.closeFlyStyleChooser();
+            return;
+        }
+
+        // A friend's challenge (v2.3.0) owns the keys the same way: ENTER
+        // takes it up, ESC shows the missions instead.
+        if (game.challengeWelcomeOpen && game.phase === 'BRIEFING') {
+            e.preventDefault();
+            if (e.repeat) return;
+            if (key === 'enter' || key === ' ') game.acceptChallengeWelcome();
+            else if (key === 'escape') game.closeChallengeWelcome();
+            else if (key === 't') game.cycleTextSize();
+            else if (key === 'm') soundFX.toggleMute();
+            return;
+        }
 
         // --- Global overlay / system keys ---
         if (key === 'h' || key === 'f1') {
@@ -91,6 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (game.helpVisible) {
                 game.helpVisible = false;
+                return;
+            }
+            if (game.phase === 'DEBRIEF') {
+                if (game.debriefAcceptsInput()) game.returnToBriefing();
                 return;
             }
             // Otherwise ESC is the pilot menu's own key: open it from the
@@ -140,9 +195,11 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'enter' || key === ' ') {
                 e.preventDefault();
                 game.activateSelectedMenuItem();
-            } else if (key >= '1' && key <= '9') {
+            } else if ((key >= '1' && key <= '9') || key === 'e' || key === 't') {
                 e.preventDefault();
-                const picked = game.menuItems().find(i => i.key === key);
+                // One press, one switch: a held E flickered EASY on and off.
+                if (e.repeat) return;
+                const picked = game.menuItems().find(i => i.key.toLowerCase() === key);
                 if (picked) game.activateMenuItem(picked.id);
             }
             return;
@@ -152,7 +209,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (game.phase === 'BRIEFING') {
             if (key === 'enter') {
                 e.preventDefault();
-                game.confirmBriefing();
+                game.requestFlight('BRIEFING');
+            } else if (key === 't') {
+                e.preventDefault();
+                if (!e.repeat) game.cycleTextSize();
+            } else if (key === 'e') {
+                e.preventDefault();
+                if (!e.repeat) game.toggleFlyStyle();
             } else if (key === 'arrowup' || key === 'arrowdown') {
                 e.preventDefault();
                 game.cycleMapChoice(key === 'arrowup' ? -1 : 1);
@@ -172,17 +235,22 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (key === 'd') {
                 // Today's daily sortie: the same seeded run for everyone.
                 e.preventDefault();
-                game.startDailySortie();
+                game.requestFlight('DAILY');
             } else if (key === 's') {
                 // Quick start for returning players
-                game.confirmBriefing();
-                game.hotStartAirborne();
+                game.requestFlight('SKIP');
             }
             return;
         }
         if (game.phase === 'DEBRIEF') {
-            if (key === 'enter') game.restartFromDebrief();
-            else if (key === 'c') game.copyDailyCard();
+            // ENTER is FLY AGAIN (v2.0.0) - straight back into the same
+            // mission. ESC or BACKSPACE goes to mission select. Both wait out
+            // a short beat so a key still held from the fight cannot skip
+            // the payout.
+            if (key === 'c') { if (!e.repeat) game.requestShare(); }
+            else if (e.repeat || !game.debriefAcceptsInput()) return;
+            else if (key === 'enter') game.flyAgain();
+            else if (key === 'backspace') game.returnToBriefing();
             return;
         }
         if (game.phase !== 'ACTIVE') return;
@@ -305,7 +373,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === ' ' || e.code === 'Space') {
             e.preventDefault();
             if (game.currentView !== 'MICRO_FLIGHT') return;
-            game.fireSelectedWeapon();
+            if (e.repeat) return; // a held trigger is handled in the fixed update
+            if (game.easyMode) game.easyFire();
+            else game.fireSelectedWeapon();
         }
     });
 
@@ -320,10 +390,12 @@ document.addEventListener('DOMContentLoaded', () => {
      * wired into the deck or the cockpit, where a stray click must never
      * fire a catapult.
      */
-    /** Pointer position in CSS pixels, which is what every layout uses. */
+    /** Pointer position in layout pixels (CSS px / UI zoom), which is what every layout uses. */
     const pointAt = (e: PointerEvent) => {
         const rect = canvas.getBoundingClientRect();
-        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        // Layout pixels: the canvas is drawn zoomed when text is enlarged.
+        const z = game.uiZoom || 1;
+        return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
     };
 
     canvas.addEventListener('pointerdown', (e) => {
@@ -334,8 +406,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         // The rotate prompt swallows input: there is nothing to press until
-        // the device is turned.
-        if (game.awaitingRotation) return;
+        // the device is turned. It is drawn only over a flight, so only a
+        // flight waits for it - the briefing, the fly-style question and the
+        // debrief all work upright, and used to ignore every tap with no
+        // prompt at all (v2.2.0 review).
+        if (game.awaitingRotation && game.phase === 'ACTIVE') return;
 
         if (game.handlePilotMenuClick(x, y)) return;
         if (game.handleMenuTap(x, y)) return;
@@ -367,7 +442,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // and is the obvious thing to try with a mouse in hand.
         // Desktop button clicks (deck & HUD) take priority over designation.
         if (game.handleDesktopClick(x, y)) return;
-        if (game.currentView === 'MICRO_FLIGHT') game.designateAtPoint(x, y);
+        if (game.currentView === 'MICRO_FLIGHT') {
+            game.designateAtPoint(x, y);
+            // EASY: the mouse is a trigger. A click fires (if a shot is
+            // good), and holding the button keeps firing - so the game can be
+            // played with a mouse alone.
+            // The primary button only: a right-click opening a context menu
+            // never sends the pointerup that would let go of the trigger.
+            if (game.easyMode && e.button === 0) {
+                game.inputState['mousefire'] = true;
+                game.easyFire();
+            }
+        }
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -392,10 +478,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const releasePointer = (e: PointerEvent) => {
         game.touch.up(e.pointerId);
+        game.inputState['mousefire'] = false;
     };
     canvas.addEventListener('pointerup', releasePointer);
     canvas.addEventListener('pointercancel', releasePointer);
     canvas.addEventListener('lostpointercapture', releasePointer);
+    // A mouse is never captured, so a button let go over the MENU overlay
+    // (or anywhere off the canvas) never told the canvas: EASY's held
+    // trigger stayed on, across runs. Any release anywhere lets go of it.
+    window.addEventListener('pointerup', () => { game.inputState['mousefire'] = false; });
 
     // A phone browser will happily scroll, zoom or bounce the page out from
     // under a game that does not say otherwise.
@@ -406,6 +497,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('blur', () => {
         game.inputState = {};
         game.touch.clear();
+    });
+    // A hidden tab freezes the frame loop but not the music's timer.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) game.onHidden();
     });
     // An orientation change fires before the viewport settles on some
     // browsers, so re-solve once it has.
@@ -458,5 +553,19 @@ document.addEventListener('DOMContentLoaded', () => {
         reload?.focus();
     };
 
+    // A shared link carries a run to beat (?c=seed.score.waves) and, after
+    // the #, who sent it.
+    const challenge = parseChallenge(window.location.search, window.location.hash);
+    game.acceptChallenge(challenge);
+    if (challenge) {
+        const who = challenge.name ?? 'A friend';
+        document.title = `${who} challenges you - Carrier Vector: 1988`;
+        // The welcome card is pixels; a screen reader hears this instead -
+        // and the usual label again once it has gone.
+        const usual = canvas.getAttribute('aria-label') ?? '';
+        canvas.setAttribute('aria-label', `${who} challenges you to beat ${challenge.score.toLocaleString('en-US')} points `
+            + 'in Carrier Vector 1988, a free game, on the same waves. Press Enter, or tap Play, to fly.');
+        game.onChallengeWelcomeClose = () => canvas.setAttribute('aria-label', usual);
+    }
     game.start();
 });

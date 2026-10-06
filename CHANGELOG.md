@@ -5,6 +5,532 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-10-06
+
+**"Bring a Friend."** The owner's brief: *users should have a good experience,
+they will love to share this to friends.* So v2.3.0 walked both ends of a
+share in a browser - the player sending it, and the friend opening it - had a
+research brief written on what chat apps actually do with a share, rebuilt
+the loop around both people, then put the result through a UX review and a
+code review and fixed what they found. Evidence:
+[`docs/reviews/v2.3.0/`](docs/reviews/v2.3.0/README.md).
+
+### The friend who opens the link (#127, #128)
+
+- **"ANNA CHALLENGES YOU."** A challenge link opens on a screen of its own:
+  what the game is ("CARRIER VECTOR: 1988 · A FREE JET GAME"), who sent it,
+  the score to beat in big gold numbers, "They lasted 3 waves of planes on
+  EASY. You get the very same ones.", one sentence on the game, and one big
+  **PLAY - IT'S FREE**, with "No download, no sign-up. EASY mode flies the
+  plane - you tap FIRE." under it (and "Turn your phone sideways to play." on
+  an upright phone). SEE ALL MISSIONS opens everything else. It used to open
+  the full mission menu with the challenge in one line of small yellow text.
+  Every line wraps rather than being cut, in balanced lines; a long name in
+  any script is set smaller. The browser tab and the canvas's screen-reader
+  label say who sent it.
+- **Same fight, one tap sooner:** a newcomer accepting an EASY challenge
+  flies EASY without the fly-style question; a STANDARD challenge still asks.
+- **The score to beat is on the HUD** as a scoreboard - `ANNA 12,345 · YOU
+  4,200`, then `YOU 13,100 · AHEAD OF ANNA` - even on the first-flight HUD.
+  Passing it is a moment: **"AHEAD OF ANNA!"** and a fanfare, once a run, in
+  a quiet beat rather than on top of a kill banner. Not "YOU BEAT ANNA": the
+  run is not over, and a penalty can still take the lead back.
+- **A win is the headline.** Beating the challenge used to be a grey line
+  under a red CARRIER LOST; it is now the debrief's headline, in gold - "YOU
+  BEAT ANNA!" over "YOU 12,400 · ANNA 12,345 - you won by 55!" - and the share
+  button reads **REPLY TO ANNA**.
+- A run without a challenge chases the pilot's own best the same way:
+  `BEST 8,000 · NOW 4,200`, then "PAST YOUR BEST!".
+
+### The player who shares (#125, #126, #129, #131)
+
+- **SHARE** sits beside FLY AGAIN (C on a keyboard). It lights up for a win, a
+  new star, or a beaten best (once a session - not every run); otherwise its
+  line just says what it does ("SHARE: YOUR FRIEND GETS THE SAME PLANES"). It
+  used to be "C copy result" inside a small text box. A first run is not
+  shared as a "best yet" - everyone's first run is one - but as an invitation.
+- **The share panel**: the picture, an optional name ("so your friend knows
+  it's you" - kept on this device), and ONE main button - CHALLENGE A FRIEND,
+  REPLY TO ANNA, TELL ANNA or INVITE A FRIEND - through the share sheet. Once
+  that has gone, the picture is offered as a second share ("ALSO SEND OR SAVE
+  THE PICTURE"; on an iPhone the sheet's Save Image puts it in Photos). Where
+  there is no share sheet (in-app browsers, Firefox, Linux): WhatsApp, LINE
+  and a text message or email, with COPY MESSAGE; SAVE PICTURE, and COPY
+  PICTURE on a computer. CLOSE sits at the top, where a dialog's way out is
+  looked for.
+- **The picture**: a 1080 square in the game's look and the pilot's palette,
+  every word at least 30 px so it reads in a chat thumbnail - the game's name;
+  a headline with names in it ("CAN YOU BEAT TOM?", "TOM BEAT ANNA!"); the
+  run's best moment, brightened (a frame kept a beat after the best kill,
+  before the thumb controls are drawn); the stars and the score - or, after a
+  challenge, a two-row scoreboard; the numbers worth showing; and a footer
+  band, "FREE GAME - PLAYS IN YOUR BROWSER", with the address.
+- **The message**, in plain sentences with the link alone on its last line,
+  addressed to the friend: "I beat your score, Anna! 12,400 to your 12,345 in
+  Carrier Vector: 1988. Your turn to win it back - it's a free jet game in
+  your browser, a few minutes:"; after a loss, "You're still ahead, Anna -
+  15,000 to my 12,345... I'll get you next time!"; after a modest run, an
+  invitation ("Try Carrier Vector: 1988, a free jet game - it plays in your
+  browser, nothing to install. EASY mode flies the plane; you just press
+  FIRE."). It says what the link is, for friends who are wary of links.
+- **Two shares, not one.** The first build sent the picture, the message and
+  the link together; the research showed iPhone WhatsApp drops the picture
+  and Facebook/Messenger drop the link from such a share. The challenge goes
+  as text (never as a share `url`, which some iPhone apps cut the query string
+  from), the picture alone.
+- **Nothing says "sent"** - the browser is only told an app was chosen, so the
+  panel says "Thank you for sharing!".
+
+### Links (#126, #130)
+
+- `https://bejranonda.github.io/carrier-vector-1988/c/?c=seed.score.waves[.e]#n=Name`:
+  the scheme, so every app makes it a link; `/c/`, the same page emitted by
+  the build without the `og:url` and `canonical` that would send a Facebook
+  post to the home page, and with preview text addressed to the friend ("Can
+  you beat my score? Carrier Vector: 1988 - a free jet game" / "Plays in your
+  browser. No download, no sign-up, nothing to pay...") - the build now fails
+  if that page ever keeps them; the name after `#`, which never reaches a
+  server, cleaned so it cannot read as a web address (look-alike dots,
+  slashes and colons, and invisible "filler" letters, included), with an
+  apostrophe encoded so a chat app's link finder does not stop at it.
+
+### From the UX review
+
+A reviewer walked both ends again as a non-gamer and an older player:
+
+- The welcome screen cut "GRANDMA MARGARET CHALLENGES YOU" to "GRANDMA
+  MARGAR..." on an upright phone - the way most links are opened. It wraps.
+- The link preview said "You have been challenged", the shape of a scam text.
+  It now asks a question and says what the link is.
+- Two equal send buttons (the challenge and the picture) - people sent the
+  picture and no link. One main button; the picture is offered after.
+- "Card" meant nothing to a non-gamer ("Your name on the card"); a mid-run
+  "YOU BEAT ANNA!" could be followed by "25 pts short"; a lit SHARE after
+  every best felt like nagging. All fixed as above.
+- The picture led with a score and hid the names; it now leads with them.
+
+### From the code review
+
+- A second share in a session showed - and SAVE PICTURE saved - the previous
+  run's picture until the new one was drawn. The old one is cleared on open,
+  and the picture buttons wait for this run's.
+- ESC did nothing when focus had left the panel (a mouse click on SHARE ended
+  by focusing the canvas; the quick links were rebuilt under the keyboard).
+  Stray keys now reach the panel - ESC closes it, TAB goes back in - focus is
+  taken back after a click, and the links are updated in place.
+- A name typed less than a quarter-second before pressing a button was left
+  off the link; ENTER confirming a Japanese or Chinese conversion was taken as
+  "done". Both fixed.
+- The HUD's score to beat ran under the FIRE button on a small phone and over
+  the objective on a 720 px window. It now shortens to fit - the name first,
+  never the pilot's own score.
+- A long Chinese, Japanese or Korean name was measured as Latin text and cut.
+- A failed share left a phone with no way to the picture; a double tap on the
+  main button said "That did not work here" while the sheet was still open; a
+  kill photographed just before opening the menu was replaced by whatever
+  frame followed it. All fixed.
+
+### Fixed on the way
+
+- On a phone the share panel closed itself: it opened on the tap's
+  pointerdown, and the same tap's click then landed on its CLOSE button.
+- "5 WAVEs · 0 PLANEs DOWN" on the picture; "0 planes shot down" in a message.
+- The SCRAMBLE debrief says PLANES SHOT DOWN (was BANDITS SPLASHED) and
+  prints its bonus with a thousands separator.
+- After a rotation prompt has waited four seconds, it mentions the phone's
+  rotation lock.
+
+### Removed
+
+- The v2.0 text cards (`formatScrambleCard`, `formatShareCard`) and their
+  "C copy result" box - replaced by the share panel.
+
+### Engineering
+
+- 1,228 tests (was 1,185; the twelve text-card tests went with the cards).
+  Browser harness **81/81** (was 66): the whole friend loop from a real
+  `/c/?c=...#n=Anna` link to a reply, a STANDARD link asking a newcomer how to
+  fly, a mouse-opened panel closing on ESC, name isolation from the game's
+  keys, and a phone tapping SHARE.
+- Gameplay unchanged: `npm run balance` replays the same runs identically.
+- Bundle 330.0 kB (109.4 kB gzip), was 305.7 / 100.8. Zero runtime dependencies.
+- **`docs/HANDOFF.md`**, a hand-over page for whoever picks the project up:
+  state, how to run and verify it (with the balance baseline), where the code
+  lives, what is open, the traps, and how a release is made.
+
+### Still open
+
+Nothing here has been tried on a real phone or in a real chat app yet (#130
+needs the live page in Facebook's Sharing Debugger); every challenge shares
+the same preview card (#132, no server); and - seventh release running - no
+human playtest.
+
+## [2.2.0] — 2026-10-06
+
+**"Second Look."** The owner asked: *validate anything to improve else?* So
+v2.2.0 is a validation release: three independent code reviews of everything
+v2.0-v2.1 added (about 40 findings, every one checked against the code before
+it was fixed), eight-minute balance runs instead of three-minute ones, and a
+phone-first pass for the players v2.1.0 was built for. Evidence:
+[`docs/reviews/v2.2.0/`](docs/reviews/v2.2.0/README.md).
+
+### The fight no longer stalls (#105, #106)
+
+- **Enemy fighters stopped in mid-air.** The steering law blended the
+  velocity toward a vector shorter than the speed, so every turn bled speed
+  for good: after the first head-on pass a MiG fell from 185 m/s to 1-8 m/s
+  and hung a kilometre below the jet until the wave timed out. Measured on
+  EASY: **56% of all stalled wave time.** Fighters now turn at a capped rate
+  (~16°/s, a little better than the player's held bank) and keep their speed,
+  so they come back for another pass. This is the shared AI: every mission's
+  fighters were affected. A south-bound contact also banked the wrong way.
+- **...and then they sat on your tail.** Once they kept their speed, pure
+  pursuit parked MiGs 50-300 m behind an EASY jet - inside missile minimum
+  range, outside the gun cone - for most of a wave (the fixed AI's own stall
+  log). A fighter that closes inside 450 m now breaks off and extends for 4 s,
+  then comes round again: a **strafing pass**, with head-on shots both ways.
+- **On EASY, FIRE NOW outranks "enemy behind you"** - a line that asks
+  nothing of the pilot, and that held the coach for six seconds while a shot
+  sat in the cone. Only a missile in the air (chaff) still outranks it. The
+  stall this caused looked like an AI problem - a MiG circling on the jet's
+  tail - and a break-off rule for tail-sitters was built for it first. Over
+  8-16 seeds per profile that rule made every player worse; it was taken out.
+- **Bombers flew away from the jet.** SCRAMBLE placed them off the nose; a jet
+  that had drifted 8-11 km out, nose toward home, chased them from behind and
+  never closed - **35% of stalled time.** Bombers now come in from the far
+  side of the jet, so their run at the carrier passes it; and none appears
+  within 2.5 km of the boat (one could spawn inside the strike radius and hit
+  the carrier on its first tick).
+- **Measured with `npm run balance`** - 16 seeds a profile, the same harness
+  and seeds on both builds - v2.1.0 -> v2.2.0: EASY holding fire for 8 min,
+  **26.9 -> 39.8 kills**, hull left 73% -> 87%; the STANDARD steering bot for
+  8 min, **5.1 -> 10.0 kills**, runs shot down 16/16 -> 5/16; a relaxed EASY
+  player who fires only when told, 3 min, **9 -> 17.1 kills**. Waves are
+  counted more strictly now (#107) and the count still rose: 8.9 -> 10.3 on
+  EASY.
+
+### Waves mean what they say (#107, #108)
+
+- **CLEARED / HELD / OVER.** A wave let through used to pay like one shot
+  down - ~600 points, a WAVE CLEARED banner, and a step toward the CLEAR WAVE 5
+  star; a run that never fired could earn it and a SUCCESS debrief. Now
+  CLEARED (all shot down) pays the full bonus; HELD (some shot down, the rest
+  reached the ship or turned for home) counts without the speed bonus; OVER
+  (none shot down) does not count. The run carries on either way.
+- **The jets a run allows are fixed when it starts.** Switching EASY off with
+  three of five jets gone ended the run on the spot; switching it on part way
+  still raises the count (the run is then marked EASY).
+
+### Honest scores (#110, #111)
+
+- **EASY is on the record.** A run flown on EASY - or with EASY switched on at
+  any point - says so on its card (`SCRAMBLE · EASY`), on the daily card, in
+  its challenge link (`?c=seed.score.waves.e`; old links still open), on the
+  challenger's briefing (`FLOWN ON EASY`), in the verdict (`(they flew EASY)`)
+  and on the debrief.
+- **A SCRAMBLE day survived a reload** only in name: the stored record lost
+  its mode, and a weaker second attempt printed the old deck card ("no trap")
+  and saved it back that way.
+
+### Phones, for the players v2.1.0 was for (#103, #115, #117, #118, #123)
+
+- **EASY in SCRAMBLE shows one control.** It showed nine - stick, throttle,
+  four weapon pills (two always empty), chaff, target, fire - plus a lit
+  recovery button, while the plane flies itself, nothing fires a missile at
+  the jet and there is no deck to go home to. Now: a FIRE button half as big
+  again, which **lights up when a shot is good**, and the menu. **A tap
+  anywhere on the world fires** too, like a mouse click. STANDARD in SCRAMBLE
+  loses only what SCRAMBLE never uses; deck missions keep everything.
+- **The game speaks to a thumb.** `FIRE NOW - TAP FIRE`, not `PRESS SPACE OR
+  CLICK`; `(LEFT STICK)`, not `(A / D)`; `TAP THE MENU BUTTON`, not `PRESS
+  ESC` - across the coach, the wave briefs, the pause menu and the "having a
+  hard time?" offer.
+- **Text size works on phones.** A phone is never zoomed (that crowded the
+  cockpit), so the setting did nothing there; now LARGE and EXTRA LARGE grow,
+  in place, the three things read in flight - the order strip, the coach line
+  and the banners. On a phone the coach line also moved under the order
+  strip: its old band was the middle of the screen, where the target is.
+- **EASY hides speed and altitude** (numbers its pilot cannot act on) unless
+  the PRO instrument set is chosen.
+- **Share from the debrief.** A tap on the result card opens the phone's share
+  sheet (or copies it) - a tap there used to fly again and throw the card away,
+  so a phone could never send one. "Copied" now appears only once it was.
+- **Upright phones**: the briefing, the fly-style question and the debrief take
+  taps (they ignored every tap, with no prompt); the flight still asks you to
+  turn the phone.
+- **The pause menu fits a phone**: two columns where one does not (MISSION
+  SELECT was off the bottom of an 844 × 390 screen).
+
+### Fixed - big text on laptops (#112, #113)
+
+- **Kill banners vanished at EXTRA LARGE on any laptop window under ~600 px
+  tall**: below a 436 px layout no two-line banner was drawn at all - kills,
+  WAVE, NOT YET, MAYDAY. The newest banner now always gets room.
+- **The first screen collapsed at large text**: the FLY button sat on the
+  phase cards and the options ran through it. The button now sits above every
+  row of options, and the cards show only where they fit.
+
+### Fixed - everything else the reviews found (#109, #114, #116, #119-#124)
+
+- **HIGH: a jet's death carried into the next run** - RESTART during the
+  MAYDAY sequence (or the daily from the menu) began the new run with dead
+  controls, slow motion and a jet already written off.
+- Text size switched the control scheme on large tablets (and with it the
+  autopilot); safe-area insets went stale after a text-size change.
+- EASY: the training checkout hid FIRE NOW for a whole deck sortie; a
+  suppressed stall hint took FIRE NOW with it; the coach still said "come
+  left", "descend into the canyon", "break turn"; the trigger promised a shot
+  with a bomb selected, an empty gun or a ground target locked.
+- A held ENTER answered the once-only fly-style question; a held E flickered
+  EASY; the EASY mouse trigger stuck on after a release over the MENU button.
+- The soundtrack played on in a hidden tab over a frozen game; a hidden tab now
+  pauses the flight.
+- RESTART turned the daily into an unrecorded random run; the debrief said
+  SHOT DOWN when the carrier sank, with a stale "what got you"; VETERAN gave
+  CARRIER DEFENSE wave stars for free; a rewind after a respawn put the new jet
+  on the dead one's path; missiles could re-acquire through a ridge; a corrupt
+  career save could freeze the briefing; the chooser came back every flight
+  with storage blocked; the sim stepped a few times after the debrief opened;
+  highlight glows never drew; `PRESS C TO CHANGE LOOKS` on the one screen where
+  C copies.
+
+### Link preview
+
+- The page described itself as "6-DOF aerodynamics ... zero 3D engines" - and
+  that is what a friend saw when a challenge link was pasted into a chat. The
+  title, description and social cards now speak to players, and carry a
+  1200 × 630 preview image rendered from the game.
+
+### Engineering
+
+- 1,185 tests (was 1,134). Browser harness **66/66** (was 61): EASY's
+  phone controls, tap-anywhere fire, chaff kept in deck missions, an upright
+  phone taking taps.
+- **`npm run balance`**: whole SCRAMBLE runs through the real `GameLoop` with
+  a stub canvas, 16 seeds per profile in a few minutes, `Math.random` seeded
+  per run so any run replays exactly; `TL=1` and `DIAG_WAVE=n` for per-wave
+  logs. It decided the strafing pass and threw out the tail rule.
+- Bundle 305.7 kB (100.8 kB gzip), was 296.2 / 97.1. Zero runtime dependencies.
+
+### Still open
+
+#104 (small labels below the 28 px guideline), #97 (thresholds still
+bot-calibrated, now with 16-seed eight-minute runs behind them), menus on phones are not
+enlarged by the text size (#103, partly) - and, sixth release running, **no
+human playtest**.
+
+## [2.1.0] — 2026-10-06
+
+**"Every Pilot."** The owner's brief: *players are not professional gamers,
+and can be older people who are not good at technique.* v2.1.0 measures what
+stops that player and removes it - without touching the simulation underneath.
+Evidence: [`docs/reviews/v2.1.0/`](docs/reviews/v2.1.0/README.md).
+
+**The measured wall.** A scripted "relaxed" player - slow reactions, never
+steers, presses SPACE only when told - got its first kill in 5 s, then spent
+minute after minute on `LOCKED - TURN TOWARD THE BANDIT`. Steering was the
+barrier. Text was the other: almost every label was drawn at 9-12 px.
+
+### EASY flying (`EasyMode.ts`)
+
+- **The plane flies itself and aims for you; you decide when to fire.** The
+  autopilot flies every intercept and the lock is always on.
+- **A smart trigger** on SPACE, a mouse click or the FIRE button: the missile
+  when a missile shot will land (and none is already on its way), the cannon
+  when the target is close and on the nose, otherwise `NOT YET` with the reason
+  in plain words. **Holding** it keeps firing whenever a shot is good - the
+  game can be played with one button, or a mouse alone.
+- EASY's missile cone is anything ahead of the wing line (90°), against the
+  standard ~50° seeker cone; the coach says `FIRE NOW` exactly when the trigger
+  would fire, and never asks an EASY pilot to steer or lock.
+- **Forgiving:** world at 80% speed, half damage to you and from bombers to the
+  boat, fighters miss more, five jets in SCRAMBLE, Sidewinders trickle back
+  onto the rail, messages hold 1.7× longer, half the camera shake, no
+  autopilot jargon (`ALPHA LIMIT`) on screen.
+- **Measured, same relaxed player, 3 minutes:** STANDARD 6 kills / 4 waves;
+  EASY 11 kills / 5 waves (first medal star); EASY holding fire 12 kills, on
+  wave 6. No jets lost in any of them.
+
+### Text size (`Theme.uiZoomFor`)
+
+- **NORMAL / LARGE / EXTRA LARGE** (100 / 125 / 150%), on `T` from the very
+  first screen, in the fly-style question and in the pause menu. Remembered.
+- Implemented as a **UI zoom**, not a font multiplier: the first attempt scaled
+  fonts alone and every fixed line height overlapped at 150%. Zooming lays each
+  screen out for a smaller virtual viewport, so text, boxes and spacing grow
+  together; it stops at a 720 × 400 virtual screen, so landscape phones (whose
+  touch layout is already large) are not zoomed.
+
+### "How would you like to fly?"
+
+- **Asked once**, the first time a brand-new pilot presses FLY (or the daily,
+  or skip): two big plain-language cards - EASY (recommended if you are new to
+  games) and STANDARD - plus the text size. Keys `1` / `2` act at once,
+  arrows + ENTER, mouse or a tap. A returning pilot is never interrupted and
+  keeps STANDARD.
+- Pause menu: `EASY FLYING: ON/OFF` (second item - where a struggling player
+  looks) and `TEXT SIZE`. Briefing: `T text size`, `E EASY flying`.
+- **"Having a hard time?"** A STANDARD pilot who loses two jets in one run is
+  offered EASY once, in plain words (the guidelines' hint after repeated
+  failure). Never repeated, never on EASY, changes nothing by itself.
+
+### Plain words
+
+- Instructions drop the jargon: `SHOOT DOWN 2 PLANES` (was `SPLASH 2
+  BANDITS`), `FIRE NOW - PRESS SPACE`, `TARGET LOCKED - TURN TOWARD IT (A / D)
+  UNTIL IT SAYS FIRE NOW`, `ENEMY BEHIND YOU - TURN HARD (HOLD A OR D)`, wave
+  briefs such as `A BOMBER WITH GUARDS - SHOOT THE BOMBER FIRST`. Celebrations
+  keep their flavour (`SPLASH ONE`).
+
+### Fixed
+
+- **#98** The fly-style keycaps only highlighted a card and waited for ENTER -
+  found by the bot, which sat on the question for three minutes. They now act.
+- **#99** The EASY coach turned `TARGET LOCKED ... UNTIL IT SAYS FIRE NOW` into
+  `FIRE NOW` (the line contains the words) - caught by its unit test.
+- **#100** Kill/wave banners could run off the bottom of a phone screen over
+  the gauges; banners now stop where the room ends (oldest waits).
+- **#101** A long pause menu on a short or zoomed screen ran out of its panel;
+  rows now compress, dropping the detail line when they must.
+- **#102** The menu offered `TAKE BACK THE STICK` while EASY made it do
+  nothing; hidden while EASY is on.
+- A held SPACE no longer auto-repeats missile or bomb releases through key
+  repeat in STANDARD (the cannon is unaffected) - one press, one round.
+
+### Engineering
+
+- 1,134 tests (was 1,107), 66 files. Browser harness **61/61** (was 48): every
+  new-pilot path answers the fly-style question; a new **older-player session**
+  (EXTRA LARGE text, mouse only, EASY: 3 kills in 19.7 s holding the button,
+  never told to steer, FLY AGAIN by click); phones tap the EASY card.
+- Busy late wave (7 contacts, streaks, bloom): p50 16.7 ms, p95 16.8 ms in
+  Chromium. Reduced motion: zero shake.
+- Bundle 296.2 kB raw / 97.1 kB gzip (was 284.7 / 93.4). Zero runtime deps.
+
+### Still open
+
+#103 (phones cannot enlarge text - the zoom floor protects the touch layout,
+and 84% of 50+ players play on phones), #104 (small labels stay below the
+Xbox guideline's 28 px-at-1080p even at EXTRA LARGE), #97, and - fifth release
+running - **no human playtest**, which for this audience matters most of all.
+
+## [2.0.0] — 2026-10-06
+
+**"Scramble."** A renovation of the player experience around one question the
+previous eleven releases never asked directly: *would a stranger play this
+twice?* The v2.0.0 review ([`docs/reviews/v2.0.0/`](docs/reviews/v2.0.0/README.md))
+found a new player's first kill sitting behind a deck screen, a catapult,
+"climb to 2,500 ft" and "engage the autopilot" - 13.9 s for a scripted pilot
+obeying every order instantly, four different correct actions, and far longer
+for a person reading them - and no reason in the game to come back after a run
+except a bigger number. v2.0.0 puts the fight first and gives every run a
+payout. **Measured in Chromium: first kill 4.2 s after pressing ENTER, one key.**
+
+### SCRAMBLE - the new front door
+
+- **A new first mission (#95):** airborne on the first frame, Sidewinders
+  selected, a bomber auto-locked dead ahead. Endless waves that teach one idea
+  each (fire / turn / they shoot back / kill the bomber first / check six /
+  everything). The first two waves cannot fire; fighters' accuracy ramps with
+  the waves. Wave clears rearm, patch and pay a speed bonus; bombers that reach
+  the boat cost hull; three jets that respawn in the air. `Scramble.ts`.
+  A wave that times out is survived but pays no bonus.
+- **It can never stall:** every bandit is on the scope (AEW datalink), SCRAMBLE
+  fighters hunt the player instead of wandering off to the boat, the lock
+  re-acquires itself, and a wave alive after 75 s bugs out.
+- **The daily is now a SCRAMBLE**, with its own card ("DAILY SCRAMBLE #n -
+  WAVE 7 · 12,400 PTS · chain x4"), and **every** SCRAMBLE run leaves a
+  pasteable card. Cards now end in the playable address, not a bare name.
+- **Challenge links** (`Challenge.ts`): every SCRAMBLE card ends in
+  `…/?c=<seed>.<score>.<waves>`. Opening it puts `CHALLENGE · BEAT 12,400 PTS
+  (7 WAVES) ON THE SAME WAVES` on the briefing, flies the sharer's exact waves,
+  and the debrief gives the verdict ("BEATEN by 600 pts" / "2,400 pts short").
+  No backend.
+- **A procedural synthwave soundtrack** for SCRAMBLE that layers up with the
+  fight (`MusicPattern.ts`, scheduled in `SoundFX`), with its own `MUSIC`
+  switch in the pause menu (remembered; effects unaffected).
+- Selector order is the suggested path: SCRAMBLE, TRAINING SORTIE, then the
+  campaign. `1`-`7` pick directly.
+
+### Feel
+
+- **Kill chains** (`Combo.ts`): kill again within 4.5 s for DOUBLE / TRIPLE /
+  QUAD SPLASH and ACE STREAK, up to x5 - in every mission. One escalating
+  banner instead of a stack (#92), a chain meter under the gunsight, a kill
+  chime that climbs a whole tone per link.
+- **Kill effects** (`KillFx.ts`): an expanding shockwave ring and the points
+  earned (`+500 x2`) rising off the wreck, with a minimum on-screen size so a
+  far kill still reads.
+- **Hit-stop**: the world runs at 12% speed for 90-160 ms after a kill.
+  Applied in the real-time loop only; the fixed-step simulation is untouched.
+- **Speed streaks** (`SpeedStreaks.ts`): vector dust past the canopy, scaled
+  with airspeed, thinned under reduced motion.
+- The wave-clear payout waits a beat after the last kill so it does not land
+  on the kill banner.
+
+### Progression
+
+- **Three named medal stars per mission** (`Medals.ts`), each earned on its own,
+  shown on every selector pill with the next one to go for.
+- **Career XP and levels** (`Career.ts`): every run pays score + a bounty per
+  new star; NUGGET -> WINGMAN -> ... -> ACE -> LEGEND. Shown on the masthead
+  and filled live on the debrief.
+- **Unlockable palettes** priced in stars: AMBER VECTOR (3), ARCTIC WHITE (8),
+  SYNTHWAVE (14). Equipped on unlock (never over the colour-blind palette,
+  which is never locked); `C` cycles only what you own.
+
+### Debrief
+
+- **Rebuilt around FLY AGAIN** (`DebriefView.ts`): headline and post-mortem,
+  stars popping in one at a time, a count-up score, a six-stat grid, the XP bar
+  and any promotion, unlocks or the next-unlock teaser, the share card - then
+  `ENTER FLY AGAIN` (same mission, straight back in) and `ESC MISSIONS`.
+  Sections shed on short windows so a landscape phone keeps the XP bar.
+  Input is held off for 0.7 s and key-repeat is ignored, so a held trigger
+  cannot skip the payout.
+
+### Fixed
+
+- **#88** The six-step "hold W" flight checkout was pinned over every CARRIER
+  DEFENSE run, veterans included, and its coach line replaced combat hints a
+  minute into the fight. It now runs only for pilots who have completed nothing.
+- **#89** "ON APPROACH - LINE UP WITH THE DECK" fired on every catapult
+  climb-out (range-only check). It now needs the jet to be closing on the boat.
+- **#90** The HUD and coach called a contact "IN RANGE - FIRE" at 8 km; the
+  AIM-9 reaches ~3.8 km at a standing target. The envelope is now 3.5 km.
+- **#91** On desktop, the deck screen's title was drawn under the DOM
+  `MENU (ESC)` button.
+- **#93** SPACE before a wave spawned launched Sidewinders at empty sky; the
+  bot run emptied the rails before the first bomber appeared. No target, no
+  launch (`NO TARGET`), and an empty rail falls back to guns (`GUNS`).
+- **#94** A ripple-fired Sidewinder whose target died under it flew on blind -
+  the bot log showed "misses" passing 3-7 m from a wreck. Rounds now
+  re-acquire the nearest contact in a 45° cone.
+- **#96** A share card could survive into the next, unrelated run's debrief.
+
+### Measured, then reverted
+
+- The review suspected the AIM-9's pure-pursuit guidance for a low bot hit
+  rate. A headless sweep (80 geometries, cruising and hunting fighters) hit
+  80/80 with both the old law and lead pursuit, so the guidance change was
+  reverted; the real causes were #90, #93 and #94.
+
+### Engineering
+
+- 1,107 tests (was 1,029), 65 suites. Browser harness: **48/48** (was 33),
+  rewritten for the new flow - airborne on ENTER, a kill within 10 s, the medal
+  debrief and FLY AGAIN, a veteran spared the checkout, the training deck via
+  key 2, the deck on phones, a challenge link flying the sharer's waves.
+- Bundle: 284.7 kB raw / 93.4 kB gzip (was 253.6 / 82.0). Zero runtime deps.
+- `KNOWN_ISSUES.md`: #88-#97. Review suite: `docs/reviews/v2.0.0/`.
+
+### Still open, deliberately
+
+#97 (SCRAMBLE difficulty and medal thresholds are calibrated against a crude
+bot, not people), #53, #41, #82. **No new human has played this build** - the
+fourth release running to say that the next step is five strangers and a
+recorder, not more features.
+
 ## [1.11.0] — 2026-09-24
 
 **"Click, Fly, Have Fun."** A desktop-focused fix round from four verbatim

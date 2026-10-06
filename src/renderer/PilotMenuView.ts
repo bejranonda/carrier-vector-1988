@@ -26,13 +26,29 @@ export interface PilotMenuLayout {
     panel: Rect;
     objective: Rect;
     items: Rect[];
+    /** Rows too short for a detail line: labels only. */
+    compact: boolean;
 }
 
 /** The one layout both the renderer and the click handler read. */
 export function pilotMenuLayout(width: number, height: number, itemCount: number): PilotMenuLayout {
     const m = PILOT_MENU_METRICS;
     const panelW = Math.min(m.panelMaxW, width - m.sideMargin * 2);
-    const itemsH = itemCount * m.itemH + Math.max(0, itemCount - 1) * m.itemGap;
+    // A long menu (EASY, TEXT SIZE, MUSIC...) on a short or zoomed screen
+    // squeezes its rows; below 36 px a row drops its detail line and keeps
+    // the label (`compact`). Where even 30 px rows do not fit in one column
+    // - every landscape phone, ten items in 180 px - the rows go into two
+    // columns, top to bottom then the next, so up/down still walk a column.
+    // v2.2.0 review: one 24 px column ran MISSION SELECT off the bottom of an
+    // 844 x 390 screen, out of reach of a thumb.
+    const fixed = m.titleH + m.objectiveH + m.footerH + m.pad * 2 + 6;
+    const room = height - 40 - fixed;
+    const rowsFor = (cols: number) => Math.ceil(Math.max(1, itemCount) / cols);
+    const fitFor = (cols: number) => Math.floor((room + m.itemGap) / rowsFor(cols)) - m.itemGap;
+    const cols = fitFor(1) < 30 && panelW >= 440 ? 2 : 1;
+    const rows = rowsFor(cols);
+    const itemH = Math.max(24, Math.min(m.itemH, fitFor(cols)));
+    const itemsH = rows * itemH + Math.max(0, rows - 1) * m.itemGap;
     const panelH = Math.min(
         height - 40,
         m.titleH + m.objectiveH + itemsH + m.footerH + m.pad * 2
@@ -52,16 +68,23 @@ export function pilotMenuLayout(width: number, height: number, itemCount: number
     };
 
     const items: Rect[] = [];
-    let y = objective.y + objective.h + 6;
+    const top = objective.y + objective.h + 6;
+    const colW = (panel.w - m.pad * 2 - (cols - 1) * m.itemGap * 2) / cols;
     for (let i = 0; i < itemCount; i++) {
-        items.push({ x: panel.x + m.pad, y, w: panel.w - m.pad * 2, h: m.itemH });
-        y += m.itemH + m.itemGap;
+        const col = Math.floor(i / rows);
+        const row = i % rows;
+        items.push({
+            x: panel.x + m.pad + col * (colW + m.itemGap * 2),
+            y: top + row * (itemH + m.itemGap),
+            w: colW,
+            h: itemH
+        });
     }
 
-    return { panel, objective, items };
+    return { panel, objective, items, compact: itemH < 36 || cols > 1 };
 }
 
-/** Which item, if any, a point in CSS pixels lands on. */
+/** Which item, if any, a point in layout pixels lands on. */
 export function pilotMenuHitTest(x: number, y: number, layout: PilotMenuLayout): number | null {
     for (let i = 0; i < layout.items.length; i++) {
         const r = layout.items[i];
@@ -136,10 +159,12 @@ export function drawPilotMenu(
         ctx.textAlign = 'left';
         ctx.font = font(13, 600);
         ctx.fillStyle = isSelected ? THEME.phosphor : THEME.ink;
-        ctx.fillText(fitText(ctx, item.label, r.w - textX + r.x - 20), textX, r.y + r.h / 2 - 6);
-        ctx.font = font(10);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(fitText(ctx, item.detail, r.w - textX + r.x - 20), textX, r.y + r.h / 2 + 10);
+        ctx.fillText(fitText(ctx, item.label, r.w - textX + r.x - 20), textX, r.y + r.h / 2 - (layout.compact ? 0 : 6));
+        if (!layout.compact) {
+            ctx.font = font(10);
+            ctx.fillStyle = THEME.muted;
+            ctx.fillText(fitText(ctx, item.detail, r.w - textX + r.x - 20), textX, r.y + r.h / 2 + 10);
+        }
     });
 
     const footerY = layout.panel.y + layout.panel.h - PILOT_MENU_METRICS.footerH / 2;

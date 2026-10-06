@@ -26,6 +26,18 @@
  *    and tested; this file only makes sound.
  */
 
+import { musicStep, STEP_SECONDS } from './MusicPattern';
+
+const MUSIC_KEY = 'carrier-vector-1988.music';
+
+function loadMusicOn(): boolean {
+    try {
+        return globalThis.localStorage?.getItem(MUSIC_KEY) !== '0';
+    } catch {
+        return true;
+    }
+}
+import type { MusicNote } from './MusicPattern';
 import { MIX, airflow, buffet, spatial, threatBed } from './AudioMix';
 import type { Vec3Like } from './AudioMix';
 
@@ -60,6 +72,15 @@ export class SoundFX {
     private busAlerts: GainNode | null = null;
     private busWorld: GainNode | null = null;
     private busUi: GainNode | null = null;
+    private busMusic: GainNode | null = null;
+
+    // --- SCRAMBLE soundtrack (see MusicPattern.ts) ---
+    /** The player's music switch, separate from the master mute. Remembered. */
+    private musicOn = loadMusicOn();
+    private musicIntensity = 0;
+    private musicTimer: number | null = null;
+    private musicStep = 0;
+    private musicNextTime = 0;
 
     // --- Continuous beds ---
     private airflowGain: GainNode | null = null;
@@ -133,6 +154,7 @@ export class SoundFX {
         this.busAlerts = bus(MIX.alerts);
         this.busWorld = bus(MIX.world);
         this.busUi = bus(MIX.ui);
+        this.busMusic = bus(MIX.music);
 
         // Shared noise, allocated once.
         const bufferSize = this.ctx.sampleRate * 2;
@@ -521,6 +543,124 @@ export class SoundFX {
         }
     }
 
+    /**
+     * A short rising fanfare: a SCRAMBLE wave cleared, a medal star earned.
+     * `step` lifts the whole figure a semitone per step so consecutive waves
+     * (or the second and third star) are heard climbing.
+     */
+    public playFanfare(step = 0) {
+        const out = this.route(this.busUi);
+        if (!this.ctx || !out) return;
+        const now = this.ctx.currentTime;
+        const lift = 2 ** (Math.max(0, Math.min(12, step)) / 12);
+        for (const [i, base] of [523, 659, 784, 1046].entries()) {
+            const t = now + i * 0.09;
+            const osc = this.ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(base * lift, t);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(0.06, t + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + (i === 3 ? 0.5 : 0.16));
+            osc.connect(gain);
+            gain.connect(out);
+            osc.start(t);
+            osc.stop(t + (i === 3 ? 0.55 : 0.2));
+        }
+    }
+
+    public get musicEnabled(): boolean {
+        return this.musicOn;
+    }
+
+    /** Music on/off without touching the effects. Returns the new state. */
+    public toggleMusic(): boolean {
+        this.musicOn = !this.musicOn;
+        try {
+            globalThis.localStorage?.setItem(MUSIC_KEY, this.musicOn ? '1' : '0');
+        } catch {
+            // Best effort.
+        }
+        if (!this.musicOn) this.setMusicIntensity(0);
+        return this.musicOn;
+    }
+
+    /**
+     * How hard the soundtrack plays, 0..1 (0 = stopped). Cheap to call every
+     * frame: it only starts or stops the scheduler on a change of state.
+     */
+    public setMusicIntensity(intensity: number) {
+        this.musicIntensity = this.musicOn ? Math.max(0, Math.min(1, intensity)) : 0;
+        if (this.musicIntensity > 0 && this.musicTimer === null && this.ctx) {
+            this.musicStep = 0;
+            this.musicNextTime = this.ctx.currentTime + 0.06;
+            this.musicTimer = window.setInterval(() => this.pumpMusic(), 25);
+        } else if (this.musicIntensity === 0 && this.musicTimer !== null) {
+            window.clearInterval(this.musicTimer);
+            this.musicTimer = null;
+        }
+    }
+
+    /** Look-ahead scheduler: queue every step due in the next ~120 ms. */
+    private pumpMusic() {
+        if (!this.ctx || !this.busMusic) return;
+        // A throttled background tab can fall far behind; skip, never burst.
+        if (this.musicNextTime < this.ctx.currentTime - 0.25) this.musicNextTime = this.ctx.currentTime + 0.02;
+        while (this.musicNextTime < this.ctx.currentTime + 0.12) {
+            if (!this.isMuted) {
+                for (const note of musicStep(this.musicStep, this.musicIntensity)) this.playMusicNote(note, this.musicNextTime);
+            }
+            this.musicNextTime += STEP_SECONDS;
+            this.musicStep++;
+        }
+    }
+
+    private playMusicNote(note: MusicNote, t: number) {
+        const ctx = this.ctx!;
+        const out = this.busMusic!;
+        const gain = ctx.createGain();
+        gain.connect(out);
+        const peak = Math.max(0.0002, note.gain * 0.5);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + note.dur);
+
+        if (note.voice === 'HAT') {
+            if (!this.noiseBuffer) return;
+            const src = ctx.createBufferSource();
+            src.buffer = this.noiseBuffer;
+            const hp = ctx.createBiquadFilter();
+            hp.type = 'highpass';
+            hp.frequency.setValueAtTime(7000, t);
+            src.connect(hp);
+            hp.connect(gain);
+            src.start(t, Math.random() * 1.5);
+            src.stop(t + note.dur + 0.02);
+            return;
+        }
+        const osc = ctx.createOscillator();
+        if (note.voice === 'KICK') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(130, t);
+            osc.frequency.exponentialRampToValueAtTime(42, t + note.dur);
+            osc.connect(gain);
+        } else if (note.voice === 'BASS') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(note.freq, t);
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(700, t);
+            osc.connect(lp);
+            lp.connect(gain);
+        } else {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(note.freq, t);
+            osc.connect(gain);
+        }
+        osc.start(t);
+        osc.stop(t + note.dur + 0.02);
+    }
+
     public setRWRState(state: 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH') {
         if (this.currentRwrState === state) return;
         this.currentRwrState = state;
@@ -685,13 +825,19 @@ export class SoundFX {
     }
 
     /** Kill confirmation: a triumphant three-note arcade arpeggio, the dopamine reward sound. */
-    public playKillConfirm(place?: SoundPlacement) {
+    public playKillConfirm(place?: SoundPlacement, chain = 1) {
         const out = this.route(this.busImpacts, place);
         if (!this.ctx || !out) return;
         const now = this.ctx.currentTime;
 
-        // D5 (587Hz) -> A5 (880Hz) -> D6 (1174Hz) triumphant major triad
-        for (const [i, freq] of [587, 880, 1174].entries()) {
+        // D5 (587Hz) -> A5 (880Hz) -> D6 (1174Hz) triumphant major triad.
+        // A kill chain climbs a whole tone per link and gains a top note, so
+        // a DOUBLE and a TRIPLE SPLASH are heard as escalating, not repeated.
+        const link = Math.max(0, Math.min(4, chain - 1));
+        const transpose = 2 ** ((link * 2) / 12);
+        const notes = link > 0 ? [587, 880, 1174, 1480] : [587, 880, 1174];
+        for (const [i, base] of notes.entries()) {
+            const freq = base * transpose;
             const osc = this.ctx!.createOscillator();
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, now + i * 0.065);

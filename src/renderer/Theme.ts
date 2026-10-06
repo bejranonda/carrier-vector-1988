@@ -63,7 +63,7 @@ export interface WorldPalette {
     missile: string;
 }
 
-export type PaletteId = 'CLASSIC' | 'DEUTERAN';
+export type PaletteId = 'CLASSIC' | 'DEUTERAN' | 'AMBER' | 'ARCTIC' | 'SYNTHWAVE';
 
 export interface PaletteSpec {
     id: PaletteId;
@@ -152,8 +152,113 @@ export const PALETTES: readonly PaletteSpec[] = [
             hostile: '#ffae3a',
             missile: '#ff7a1f'
         }
+    },
+    /*
+     * Unlockable looks (v2.0.0, see core/Career.ts) - earned with medal stars.
+     * Every one holds the same 4.5:1 floor and the same key-vs-instrument
+     * separation as the two above; the tests run over all of them.
+     */
+    {
+        id: 'AMBER',
+        label: 'AMBER VECTOR',
+        blurb: 'The arcade cabinet look',
+        ui: {
+            ground: '#0d0a06',
+            panelFill: 'rgba(24, 17, 8, 0.82)',
+            plateFill: 'rgba(17, 12, 6, 0.62)',
+            ink: '#fff3dd',
+            phosphor: '#ffb547',
+            muted: '#b8a68c',
+            key: '#5fd8ff',
+            caution: '#fff07a',
+            alert: '#ff5e5e',
+            hostile: '#ff5e5e',
+            edge: 'rgba(255, 181, 71, 0.34)',
+            edgeSoft: 'rgba(184, 166, 140, 0.22)',
+            grid: 'rgba(255, 181, 71, 0.14)'
+        },
+        world: {
+            horizon: '#b07a24',
+            sea: '#5c3d0d',
+            terrain: '#d9952e',
+            valley: '#4a300a',
+            carrier: '#ffd08a',
+            hostile: '#ff4d6d',
+            missile: '#ff2d55'
+        }
+    },
+    {
+        id: 'ARCTIC',
+        label: 'ARCTIC WHITE',
+        blurb: 'Ice-blue strokes on polar night',
+        ui: {
+            ground: '#060b10',
+            panelFill: 'rgba(10, 18, 26, 0.82)',
+            plateFill: 'rgba(7, 13, 19, 0.62)',
+            ink: '#ffffff',
+            phosphor: '#d8f3ff',
+            muted: '#9fb2bd',
+            key: '#ffb86b',
+            caution: '#ffe066',
+            alert: '#ff5c7a',
+            hostile: '#ff5c7a',
+            edge: 'rgba(216, 243, 255, 0.32)',
+            edgeSoft: 'rgba(159, 178, 189, 0.22)',
+            grid: 'rgba(216, 243, 255, 0.12)'
+        },
+        world: {
+            horizon: '#7fa8bd',
+            sea: '#2a4552',
+            terrain: '#bfe6f7',
+            valley: '#22343d',
+            carrier: '#ffffff',
+            hostile: '#ff5c7a',
+            missile: '#ff3355'
+        }
+    },
+    {
+        id: 'SYNTHWAVE',
+        label: 'SYNTHWAVE',
+        blurb: 'Neon magenta over a violet sea',
+        ui: {
+            ground: '#0c0612',
+            panelFill: 'rgba(24, 10, 32, 0.82)',
+            plateFill: 'rgba(17, 7, 23, 0.62)',
+            ink: '#fff0fb',
+            phosphor: '#ff6ad5',
+            muted: '#b9a5c6',
+            key: '#5fd8ff',
+            caution: '#ffe066',
+            alert: '#ff9a3d',
+            hostile: '#ffd23f',
+            edge: 'rgba(255, 106, 213, 0.34)',
+            edgeSoft: 'rgba(185, 165, 198, 0.22)',
+            grid: 'rgba(255, 106, 213, 0.14)'
+        },
+        world: {
+            horizon: '#a03fb0',
+            sea: '#3b1450',
+            terrain: '#e05ad0',
+            valley: '#2c0d3d',
+            carrier: '#ffb3ec',
+            hostile: '#ffd23f',
+            missile: '#ff9a3d'
+        }
     }
 ];
+
+/**
+ * The next palette in the cycle that `available` allows. The cycle key skips
+ * looks that are still locked rather than showing one and refusing it.
+ */
+export function nextAvailablePalette(id: PaletteId, available: (p: PaletteId) => boolean): PaletteId {
+    let next = id;
+    for (let i = 0; i < PALETTES.length; i++) {
+        next = nextPalette(next);
+        if (available(next)) return next;
+    }
+    return id;
+}
 
 export const DEFAULT_PALETTE: PaletteId = 'CLASSIC';
 
@@ -235,6 +340,100 @@ export function savePalette(id: PaletteId) {
     }
 }
 
+/**
+ * Text size (v2.1.0). Almost every label in the game was drawn at 9-12 px -
+ * fine for a young eye at a desk, unreadable for many older players and on a
+ * laptop across a room.
+ *
+ * Implemented as a UI ZOOM, not a font multiplier. A first attempt scaled
+ * `font()` alone: at 150% every fixed line height overlapped (card bodies,
+ * menu rows, the stat grid, callout plates). Zooming instead lays every screen
+ * out for a smaller virtual viewport and scales the result up, so text,
+ * boxes and spacing grow together - and every layout is already tested down
+ * to a 640 x 360 phone, which is exactly the floor the zoom stops at.
+ */
+export type TextSizeId = 'NORMAL' | 'LARGE' | 'HUGE';
+
+export const TEXT_SIZES: readonly { id: TextSizeId; label: string; scale: number }[] = [
+    { id: 'NORMAL', label: 'NORMAL', scale: 1 },
+    { id: 'LARGE', label: 'LARGE', scale: 1.25 },
+    { id: 'HUGE', label: 'EXTRA LARGE', scale: 1.5 }
+];
+
+export function textSizeSpec(id: TextSizeId) {
+    return TEXT_SIZES.find(t => t.id === id) ?? TEXT_SIZES[0];
+}
+
+export function nextTextSize(id: TextSizeId): TextSizeId {
+    const i = TEXT_SIZES.findIndex(t => t.id === id);
+    return TEXT_SIZES[(i + 1) % TEXT_SIZES.length].id;
+}
+
+/**
+ * The smallest virtual viewport the zoom will lay a screen out for, CSS px.
+ * Layouts are tested down to 640 x 360; this keeps a margin above that, and
+ * it means a landscape phone - whose touch layout is already large - is never
+ * zoomed at all (checked: at 844 x 390 a 1.08 zoom crowded the cockpit).
+ */
+export const MIN_LAYOUT = { width: 720, height: 400 } as const;
+
+/**
+ * The zoom actually used for a screen: what the player asked for, but never
+ * so much that the virtual viewport drops below the smallest layout every
+ * screen is tested at. Never below 1.
+ */
+export function uiZoomFor(id: TextSizeId, cssWidth: number, cssHeight: number): number {
+    const requested = textSizeSpec(id).scale;
+    const fit = Math.min(cssWidth / MIN_LAYOUT.width, cssHeight / MIN_LAYOUT.height);
+    return Math.max(1, Math.min(requested, fit));
+}
+
+/** A touch screen shorter than this, in CSS px, is a phone. */
+export const PHONE_MAX_HEIGHT = 500;
+/** The most a phone's in-flight text grows in place. */
+export const PHONE_TEXT_BOOST_MAX = 1.4;
+
+/**
+ * How a screen honours the text size (v2.2.0, Known Issues #103): a zoom for
+ * the whole UI, and a boost for the in-flight words a phone cannot zoom.
+ *
+ * A phone is not zoomed - 1.08 already crowded its cockpit - so the setting
+ * did nothing there at all, on the device most older players use. Now on a
+ * phone LARGE and EXTRA LARGE enlarge, in place, the three things a pilot
+ * reads in flight: the order strip, the coach line and the banners. Anywhere
+ * else the zoom does everything and the boost is 1.
+ */
+export function textScaling(
+    id: TextSizeId,
+    cssWidth: number,
+    cssHeight: number,
+    touch: boolean
+): { zoom: number; boost: number } {
+    if (touch && cssHeight < PHONE_MAX_HEIGHT) {
+        return { zoom: 1, boost: Math.min(PHONE_TEXT_BOOST_MAX, textSizeSpec(id).scale) };
+    }
+    return { zoom: uiZoomFor(id, cssWidth, cssHeight), boost: 1 };
+}
+
+const TEXT_SIZE_KEY = 'carrier-vector-1988.textSize';
+
+export function loadTextSize(): TextSizeId {
+    try {
+        const raw = globalThis.localStorage?.getItem(TEXT_SIZE_KEY);
+        return TEXT_SIZES.some(t => t.id === raw) ? raw as TextSizeId : 'NORMAL';
+    } catch {
+        return 'NORMAL';
+    }
+}
+
+export function saveTextSize(id: TextSizeId) {
+    try {
+        globalThis.localStorage?.setItem(TEXT_SIZE_KEY, id);
+    } catch {
+        // Best effort.
+    }
+}
+
 export function font(size: number, weight: 400 | 500 | 600 | 700 = 400): string {
     return `${weight} ${size}px ${MONO}`;
 }
@@ -301,6 +500,21 @@ export function plate(
         ctx.lineWidth = 1;
         ctx.stroke();
     }
+    ctx.restore();
+}
+
+/**
+ * A glowing outline round a rect - a highlight. `plate()` clears the glow on
+ * purpose (a backplate must not bloom), so a glow set before calling it drew
+ * nothing: the chooser's selected card and FLY AGAIN never lit (v2.2.0 review).
+ */
+export function halo(ctx: CanvasRenderingContext2D, r: Rect, color: string, blur: number, radius = 6) {
+    ctx.save();
+    glow(ctx, color, blur);
+    roundRect(ctx, r.x, r.y, r.w, r.h, radius);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.restore();
 }
 

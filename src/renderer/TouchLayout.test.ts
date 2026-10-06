@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+    FULL_KIT,
     NO_INSETS,
     TOUCH_METRICS,
     hitTest,
     solveTouchLayout,
+    touchKitFor,
     stickDeflection,
     throttleFraction,
     type TouchLayout,
@@ -230,5 +232,66 @@ describe('NO_INSETS', () => {
         const a = solveTouchLayout(844, 390, NO_INSETS);
         const b = solveTouchLayout(844, 390);
         expect(a).toEqual(b);
+    });
+});
+
+describe('touch kits (v2.2.0)', () => {
+    const easyScramble = touchKitFor({ easy: true, scramble: true });
+    const standardScramble = touchKitFor({ easy: false, scramble: true });
+
+    it('leaves EASY in SCRAMBLE with nothing but FIRE (and the menu)', () => {
+        expect(easyScramble).toEqual({
+            flight: false, stores: [false, false, false, false], target: false,
+            chaff: false, recover: false, bigFire: true
+        });
+    });
+
+    it('drops only what SCRAMBLE never uses for a STANDARD pilot', () => {
+        expect(standardScramble).toEqual({
+            flight: true, stores: [true, true, false, false], target: true,
+            chaff: false, recover: false, bigFire: false
+        });
+    });
+
+    it('keeps the stick and every weapon in a deck mission, EASY or not', () => {
+        // EASY still ends a deck mission with a trap, and never takes a weapon away.
+        const easyDeck = touchKitFor({ easy: true, scramble: false });
+        expect(easyDeck.flight).toBe(true);
+        expect(easyDeck.stores).toEqual([true, true, true, true]);
+        expect(easyDeck.chaff).toBe(true);
+        expect(touchKitFor({ easy: false, scramble: false })).toEqual(FULL_KIT);
+    });
+
+    it('turns a hidden control into open world, not an invisible trap', () => {
+        for (const [name, w, h] of DEVICES) {
+            const full = solveTouchLayout(w, h);
+            const easy = solveTouchLayout(w, h, NO_INSETS, easyScramble);
+            const at = (r: TouchRect) => [r.x + r.w / 2, r.y + r.h / 2] as const;
+            expect(hitTest(easy, ...at(full.stickZone)), `${name}: stick`).toBe('WORLD');
+            expect(hitTest(easy, ...at(full.throttle)), `${name}: throttle`).toBe('WORLD');
+            expect(hitTest(easy, ...at(full.recover)), `${name}: recover`).toBe('WORLD');
+            for (const wpn of full.weapons) {
+                const id = hitTest(easy, ...at(wpn));
+                expect(['WORLD', 'FIRE'], `${name}: weapon pill`).toContain(id);
+            }
+            expect(hitTest(easy, easy.fire.cx, easy.fire.cy), `${name}: fire`).toBe('FIRE');
+            expect(hitTest(easy, easy.menu.x + 5, easy.menu.y + 5), `${name}: menu`).toBe('MENU');
+            const standard = solveTouchLayout(w, h, NO_INSETS, standardScramble);
+            expect(hitTest(standard, ...at(standard.weapons[2])), `${name}: bomb pill`).toBe('WORLD');
+            expect(hitTest(standard, standard.chaff.cx, standard.chaff.cy), `${name}: chaff`).toBe('WORLD');
+            expect(hitTest(standard, ...at(standard.weapons[1])), `${name}: missile pill`).toBe('WEAPON_MISSILE');
+        }
+    });
+
+    it('draws EASY\'s FIRE bigger, still in the corner, clear of the centre and the screen edge', () => {
+        for (const [name, w, h] of DEVICES) {
+            const normal = solveTouchLayout(w, h);
+            const easy = solveTouchLayout(w, h, NO_INSETS, easyScramble);
+            expect(easy.fire.r, name).toBeGreaterThan(normal.fire.r * 1.2);
+            expect(easy.fire.cx + easy.fire.r, name).toBeLessThanOrEqual(w + 0.001);
+            expect(easy.fire.cy + easy.fire.r, name).toBeLessThanOrEqual(h + 0.001);
+            expect(easy.fire.cx - easy.fire.r, `${name}: into the centre`).toBeGreaterThan(w / 2 + easy.centreKeepout);
+            expect(easy.fire.cy - easy.fire.r, `${name}: above the menu`).toBeGreaterThan(easy.menu.y + easy.menu.h);
+        }
     });
 });

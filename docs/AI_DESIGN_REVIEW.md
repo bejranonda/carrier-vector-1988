@@ -1,6 +1,11 @@
 # Carrier Vector 1988: Game Design Review & Development Roadmap
 
-> ## ⚠️ Superseded — read the v1.11.0 suite first
+> ## ⚠️ Superseded — read the current suite first
+>
+> **Current (v2.3.0, "Bring a Friend"):** [`docs/reviews/v2.3.0/`](reviews/v2.3.0/README.md);
+> every release since v1.9.0 is in the registry at [`docs/reviews/`](reviews/README.md),
+> and a project hand-over is in [`docs/HANDOFF.md`](HANDOFF.md). The v1.11.0
+> note below is kept as it was written.
 >
 > This document is kept as a historical snapshot. The current evaluation is
 > [**`docs/reviews/v1.11.0/`**](reviews/v1.11.0/README.md) (a real pilot pause
@@ -36,6 +41,14 @@
 > - [`v1.3.0 Archived Review`](reviews/v1.3.0/COMPREHENSIVE_GAME_REVIEW.md) (Multi-dimensional baseline critique)
 > - [`v1.9.0 Current Review Suite`](reviews/v1.9.0/README.md) (**current** — browser-instrumented playtest, 12 dimensions)
 > - [`Standard Review Template`](reviews/REVIEW_TEMPLATE.md) (Standardized 12-dimension protocol, cut from 25 in v1.9.0)
+
+
+> **Status at v2.1.0 (2026-10-06):** this executive summary dates from the
+> v1.x reviews. The game has since been renovated around reach: SCRAMBLE as
+> the front door, a progression and payout layer (v2.0.0), and EASY flying
+> plus text size for non-gamers and older players (v2.1.0). Current verdicts
+> and scores live in [`reviews/v2.1.0/`](reviews/v2.1.0/README.md) and
+> [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
 
 ## 1. Current State Critique & Scoring
 

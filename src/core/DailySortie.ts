@@ -43,6 +43,20 @@ export interface DailyResult {
     attempts: number;
     /** Whether the best run completed the mission objective. */
     completed: boolean;
+    /**
+     * Which mode the day was flown in. v2.0.0 moved the daily from the endless
+     * carrier defence to SCRAMBLE; results stored before that have no mode
+     * and keep their old card.
+     */
+    mode?: 'SCRAMBLE';
+    /** Longest kill chain in the run (SCRAMBLE cards). */
+    bestChain?: number;
+    /**
+     * The run was flown on EASY (v2.2.0). EASY has more jets, half damage and
+     * a wider missile cone, so its card says so: a score is never set beside
+     * one flown on STANDARD without the reader knowing.
+     */
+    easy?: boolean;
 }
 
 export type DailyResults = Record<string, DailyResult>;
@@ -90,40 +104,16 @@ export function mergeDailyResult(
     return { results: { ...results, [result.date]: today }, today, isBest };
 }
 
-const repeat = (glyph: string, n: number, cap = 8) => glyph.repeat(Math.max(0, Math.min(cap, n)));
-
 /**
- * The shareable card. Kept to four short lines: anything longer gets truncated
- * by the places people paste it.
+ * Where a share sends whoever reads it - the game's only way out of the tab
+ * (v2.0.0; it was a bare project name that went nowhere when pasted). With
+ * the scheme (v2.3.0): a bare "host/path" is turned into a link by some chat
+ * apps and left as plain text - with no preview card - by others.
  */
-export function formatShareCard(result: DailyResult, url = 'carrier-vector-1988'): string {
-    const kills = result.fighterKills + result.bomberKills;
-    // Geometric Shapes rather than emoji: an aircraft glyph is missing from
-    // most monospace faces, including the game's own, where it rendered as a
-    // stray arrow. These three exist everywhere and still read as a score
-    // grid when the card is pasted somewhere else.
-    const marks = [
-        repeat('●', kills),
-        repeat('◆', result.samKills),
-        repeat('▲', result.traps)
-    ].filter(Boolean).join(' ');
+export const PLAY_URL = 'https://bejranonda.github.io/carrier-vector-1988';
 
-    const detail = [
-        `${kills} splashed`,
-        result.samKills > 0 ? `${result.samKills} SAM` : '',
-        result.traps > 0
-            ? `${result.traps} trap${result.traps === 1 ? '' : 's'}${result.perfectTraps > 0 ? ` (${result.perfectTraps} perfect)` : ''}`
-            : 'no trap',
-        `hull ${Math.round(result.hullRemaining)}%`
-    ].filter(Boolean).join(' · ');
-
-    return [
-        `CARRIER VECTOR: 1988 — DAILY SORTIE #${dailyNumber(new Date(`${result.date}T00:00:00Z`))}`,
-        `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
-        `${marks ? marks + '  ' : ''}${detail}`,
-        `attempt ${result.attempts} · ${url}`
-    ].join('\n');
-}
+/** The same address without the scheme, for printing on a picture. */
+export const PLAY_HOST = PLAY_URL.replace(/^https?:\/\//, '');
 
 const STORAGE_KEY = 'carrier-vector-1988.daily';
 
@@ -146,7 +136,12 @@ function sanitise(raw: unknown): DailyResults {
             perfectTraps: num(v.perfectTraps),
             hullRemaining: num(v.hullRemaining),
             attempts: num(v.attempts),
-            completed: v.completed === true
+            completed: v.completed === true,
+            // v2.0.0's fields were dropped here, so after a reload a
+            // SCRAMBLE day printed the old deck card ("no trap") whenever
+            // a new attempt did not beat the stored one.
+            ...(v.mode === 'SCRAMBLE' ? { mode: 'SCRAMBLE' as const, bestChain: num(v.bestChain) } : {}),
+            ...(v.easy === true ? { easy: true } : {})
         };
     }
     return out;

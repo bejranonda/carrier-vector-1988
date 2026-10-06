@@ -192,7 +192,7 @@ describe('Contextual flight coach - the attack and the tail', () => {
 
     it('tells a locked pilot to steer in, then to fire once in range', () => {
         expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: false } })?.text).toContain('LOCKED');
-        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: true } })?.text).toContain('[SPACE]');
+        expect(getContextualHint({ ...base, bandit: { ahead: true, locked: true, inRange: true } })?.text).toContain('FIRE NOW - PRESS SPACE');
     });
 
     it('warns of a fighter on the tail ahead of any attack prompt', () => {
@@ -200,7 +200,8 @@ describe('Contextual flight coach - the attack and the tail', () => {
             ...base, gunsTracking: true, bandit: { ahead: true, locked: true, inRange: true }
         });
         expect(h?.severity).toBe('CRITICAL');
-        expect(h?.text).toContain('TAIL');
+        // Plain words since v2.1.0: "behind you", not "on your tail".
+        expect(h?.text).toContain('BEHIND YOU');
     });
 
     it('keeps a missile launch above a guns warning, and says chaff', () => {
@@ -239,5 +240,25 @@ describe('arbitrateHint - one instruction at a time', () => {
     it('shows routine coaching when the objective is only informational', () => {
         expect(arbitrateHint(info, null, { urgency: 'NORMAL' })).toBe(info);
         expect(arbitrateHint(info, null, null)).toBe(info);
+    });
+});
+
+describe('approach coaching (v2.0.0)', () => {
+    it('does not tell a pilot climbing away from the catapult to line up with the deck', () => {
+        const hint = getContextualHint({
+            isStalled: false, rwrState: 'SILENT', altitudeAgl: 300, verticalSpeed: 20,
+            fuel: 4000, airSpeed: 200, damage: 0, distanceToCarrier: 900,
+            isAirborne: true, bayOpen: false, closingOnCarrier: false
+        });
+        expect(hint?.text ?? '').not.toMatch(/APPROACH/);
+    });
+
+    it('still coaches a pilot genuinely closing on the boat', () => {
+        const hint = getContextualHint({
+            isStalled: false, rwrState: 'SILENT', altitudeAgl: 300, verticalSpeed: -3,
+            fuel: 4000, airSpeed: 80, damage: 0, distanceToCarrier: 1800,
+            isAirborne: true, bayOpen: false, closingOnCarrier: true
+        });
+        expect(hint?.text).toMatch(/APPROACH/);
     });
 });

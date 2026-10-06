@@ -31,8 +31,10 @@ import type { ObjectiveStep } from './Objectives';
 import { isCleared, recordFor } from './MissionRecords';
 import type { MissionRecords } from './MissionRecords';
 import { formatEta } from './Objectives';
+import { SCRAMBLE, SCRAMBLE_LOADOUT } from './Scramble';
 
 export type ScenarioId =
+    | 'SCRAMBLE'
     | 'CARRIER_DEFENSE'
     | 'CANYON_STRIKE'
     | 'IRON_HAND'
@@ -77,6 +79,8 @@ export interface MissionSnapshot {
     rwrState: 'SILENT' | 'SEARCH' | 'TRACK' | 'LAUNCH';
     /** Which control law is flying the aeroplane right now. */
     flightAssistMode: AssistLevel;
+    /** Jets a SCRAMBLE run may lose before it ends (more when flying EASY). */
+    jetsAllowed?: number;
 }
 
 export interface MissionPhase {
@@ -149,6 +153,12 @@ export interface ScenarioSetup {
      * routed anybody to it.
      */
     isFirstFlight?: boolean;
+    /**
+     * SCRAMBLE's arcade rules (core/Scramble.ts): waves spawned round the
+     * jet rather than from the deck's timeline, a rearm on every wave clear,
+     * three jets that respawn in the air, and no deck at all.
+     */
+    scramble?: boolean;
     /** Enforces absolute combat shielding: zero hostile fire and no SAM launches */
     combatShielded?: boolean;
     /** Payload the deck crew has already hung on the jet. */
@@ -294,6 +304,73 @@ function recoverPhase(): MissionPhase {
 // ---------------------------------------------------------------------
 // Scenarios
 // ---------------------------------------------------------------------
+
+/**
+ * The front door (v2.0.0). See core/Scramble.ts for why it exists and how its
+ * waves teach. It is the first-flight mission because it is the one place a
+ * brand-new pilot scores a kill inside ten seconds of pressing ENTER - and its
+ * first two waves cannot shoot back, so "not into combat" still holds for the
+ * moment that matters.
+ */
+const SCRAMBLE_MODE: ScenarioDef = {
+    id: 'SCRAMBLE',
+    name: 'SCRAMBLE',
+    tagline: 'Airborne in a second. Wave after wave. Chain the kills, beat your score.',
+    difficulty: 1,
+    duration: '2-8 min',
+    setup: {
+        threat: { openingTimeline: [], endlessWaves: false, plannedFuel: 5000 },
+        map: 'FJORD',
+        allowMapChoice: true,
+        noSamSites: true,
+        startAirborne: true,
+        scramble: true,
+        isFirstFlight: true,
+        loadout: { ...SCRAMBLE_LOADOUT }
+    },
+    cards: [
+        {
+            n: '1',
+            title: 'AIRBORNE NOW',
+            body: 'No deck, no checklist. You start in the air with a bomber locked dead ahead. Fire.',
+            keys: [['SPACE', 'fire'], ['WASD', 'fly']]
+        },
+        {
+            n: '2',
+            title: 'CHAIN THE KILLS',
+            body: 'Kill again within four seconds and the multiplier climbs: DOUBLE, TRIPLE, ACE STREAK.',
+            keys: [['T', 'next target'], ['1/2', 'gun / missile']]
+        },
+        {
+            n: '3',
+            title: 'HOLD THE SKY',
+            body: 'Every wave you clear rearms and patches the jet. Bombers that reach the boat hurt it.',
+            // No missile is ever fired at the jet in SCRAMBLE, so chaff was a
+            // key to learn for nothing; EASY is the one a struggling pilot needs.
+            keys: [['E', 'easy flying'], ['ESC', 'menu']]
+        }
+    ],
+    lossCondition: 'Losing all three jets, or the carrier.',
+    phases: [
+        {
+            id: 'SCRAMBLE',
+            title: 'SPLASH THE WAVE',
+            detail: (s) => `${s.contactsAlive} bandits up. Hull ${Math.round(s.carrierHealth)}%.`,
+            key: 'SPACE',
+            urgency: 'ACTION',
+            // Endless: the run ends on the failure condition, never on a phase.
+            isComplete: () => false
+        }
+    ],
+    failure: (s) => {
+        if (s.carrierHealth <= 0) return 'CV-68 was knocked out of the fight.';
+        const jets = s.jetsAllowed ?? SCRAMBLE.lives;
+        if (s.airframesLost >= jets) return jets === 3 ? 'All three jets shot down.' : `All ${jets} jets shot down.`;
+        return null;
+    },
+    victoryTitle: 'SKY HELD',
+    victoryDetail: 'Five waves and more. The boat is still afloat because of you.'
+};
 
 const CARRIER_DEFENSE: ScenarioDef = {
     id: 'CARRIER_DEFENSE',
@@ -629,7 +706,6 @@ const TRAINING_SORTIE: ScenarioDef = {
         map: 'FJORD',
         noSamSites: true,
         showTrainingChecklist: false,
-        isFirstFlight: true,
         combatShielded: true
     },
     cards: [
@@ -713,13 +789,19 @@ const TRAINING_SORTIE: ScenarioDef = {
     victoryDetail: 'Ghost-Lead: "Outstanding stick work, 201. Welcome to the squadron." Full instruments unlocked - U switches back any time.'
 };
 
+/**
+ * Selector order is the suggested path (v2.0.0): the arcade front door, then
+ * the guided flight that teaches the trap, then the campaign by difficulty.
+ * The number keys follow this order.
+ */
 export const SCENARIOS: readonly ScenarioDef[] = [
+    SCRAMBLE_MODE,
+    TRAINING_SORTIE,
     CARRIER_DEFENSE,
     CANYON_STRIKE,
     IRON_HAND,
     LAST_STAND,
-    CARRIER_QUALS,
-    TRAINING_SORTIE
+    CARRIER_QUALS
 ];
 
 export const DEFAULT_SCENARIO: ScenarioId = 'CARRIER_DEFENSE';

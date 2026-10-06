@@ -581,3 +581,134 @@ rendered frames. Five suites of source-reading review had missed all of them.
   callout written for it; the "step pays off" banner (`shortCallout`) derives
   its text from that instead of writing separate reward copy that could drift
   out of sync with what actually happened.
+
+## 16. Rules added in v2.0.0 and v2.1.0 (each one encodes a bug that already shipped)
+
+- **A harness screenshot nobody opens is not a check.** The v1.11.0 harness
+  photographed the deck title drawn under the menu button (#91) and passed.
+  Every new screen gets an assertion or a reviewer who looks at the picture.
+- **"In range" means what the round can reach.** The HUD called IN RANGE at
+  8 km for a 3.8 km missile (#90). A recommendation the weapon cannot honour
+  teaches the player to waste it.
+- **Never fire into an empty sky.** A heat-seeker with no target is a
+  thrown-away round (#93); refuse, and say why.
+- **A coach rule that matches on one condition will fire where it should not.**
+  "On approach" matched range alone and fired on every climb-out (#89). Give
+  every rule the full state it describes.
+- **Instructions in plain words; flavour in the celebrations.** "SHOOT DOWN 2
+  PLANES", "ENEMY BEHIND YOU" - not "SPLASH 2 BANDITS", "CHECK SIX". Jargon
+  is fine in a victory banner, never in an order.
+- **An assist must never ask for the skill it replaces.** EASY's coach is not
+  allowed to say "turn toward" or "press T to lock" (#99 shows how easily a
+  rewrite rule can misfire - order the rules and test them).
+- **One press, one action, for a choice.** A keycap on a card selects *and*
+  confirms (#98). Highlight-then-confirm is a gamer idiom.
+- **Text size is a zoom, not a font multiplier.** Fixed line heights overlap
+  the moment fonts grow alone; zoom the layout and stop at the smallest
+  viewport the layouts are tested at (`Theme.uiZoomFor`).
+- **A menu item that does nothing in the current state is hidden**, and a long
+  menu compresses rather than overflowing (#101, #102).
+- **Measure each player profile you design for.** EASY was not accepted until
+  a scripted relaxed player did measurably better with it (6 -> 11-12 kills
+  in 3 minutes); the first version did not, and the bot said why.
+
+## 17. Rules added in v2.2.0 (each one encodes a bug that already shipped)
+
+- **A steering law turns the velocity; it never brakes it.** Blending a
+  velocity toward a shorter vector bled the speed out of every enemy fighter
+  until they hung in the air (#105). Normalise the direction, rotate at a
+  capped rate, and hold the speed the contact was given - and test the speed
+  through a reversal, not just the heading.
+- **A reward is earned by the action it names.** "Wave cleared" paid out for
+  bombers the player let through (#107). If the player did not do it, the
+  banner must not say they did, and the points must not pay as if they had.
+- **A run's rules are fixed when the run starts.** A setting changed mid-run
+  may make the run kinder; it may never end it (#108).
+- **Every way into a run resets the run.** Airborne starts skipped the deck's
+  `beginSortie`, so a death carried into the next run (#109). Reset run state
+  in the one place every start passes through.
+- **A loader keeps every field the type has.** A field added to a stored
+  record must be added to its `sanitise` in the same change (#110), with a
+  round-trip test.
+- **A score that can be compared says how it was made** (#111).
+- **A control that does nothing here is not drawn - and is not a hit target**
+  (#117). Hidden controls become open world, never invisible traps.
+- **Words name the input the player has.** "PRESS SPACE" to a thumb is an
+  order nobody can follow (#118). Route every instruction through
+  `touchWording` on touch.
+- **Test layouts at every size the zoom produces, not just device sizes.**
+  The zoom created 400-490 px layouts nobody had drawn, and banners, the first
+  screen and the pause menu all broke there (#112-#114).
+- **Detection in CSS px, layout in layout px - never mixed** (#116).
+- **Anything that runs on its own timer stops when the tab hides** (#122).
+- **Balance and AI changes are decided by `npm run balance`, one change at a
+  time.** Run every profile, with the change switched off and on, before
+  believing it; a single browser run is for looking, not deciding. v2.2.0
+  shipped two fixes for one stall in one build, and only measuring them
+  apart showed that one of them made every profile worse (#105).
+- **A coach line that asks for nothing never hides one that asks for
+  something.** "The plane will turn to fight" sat over FIRE NOW for a minute
+  at a time (#119).
+
+## 18. Rules added in v2.3.0 (sharing - most of them learned before shipping)
+
+- **The link travels as text; the picture travels alone.** A share holding a
+  picture, a message and a link reaches each chat app as separate items, and
+  the app keeps what it likes - WhatsApp on an iPhone drops the picture,
+  Facebook and Messenger on Android drop the text. Never put the challenge
+  link in `ShareData.url`; put it on the last line of `text`.
+- **Every link starts with `https://`.** A bare `host/path` is a link in some
+  apps and plain text - with no preview - in others.
+- **Nothing says "sent".** The browser learns that an app was chosen, never
+  that a message went. Thank the player; do not report a delivery.
+- **A name never goes to a server.** It rides after `#`, is cleaned on the way
+  in and out (`cleanPilotName`), and may not contain what would make it read
+  as an address.
+- **A panel opened by a tap must survive the tap.** On a phone the opening
+  pointerdown is followed by that same tap's click, delivered to whatever is
+  now under the finger (the first build closed the share panel on its own
+  CLOSE button). Ignore clicks for a beat after opening.
+- **A share sheet opens inside the press that asked for it.** Prepare the
+  picture before the button can be pressed; no `await` before `share()`.
+- **A friend's first screen is the link's promise.** Who sent it, the score to
+  beat, what the game is in one sentence, one big button. Menus are one tap
+  away and never in the way.
+- **Offer sharing at the peaks, never force it.** No automatic share sheet,
+  no prompt after every run, no reward for sharing. The line above SHARE
+  lights only for a win, a new star, or a beaten best (once a session). A
+  first run is nobody's news.
+- **Read every word as a wary stranger would.** "You have been challenged"
+  is the shape of a scam text. A message or preview that reaches someone who
+  did not ask for it says who sent it, what the link is, and that it costs
+  nothing - in the words of someone who does not play games ("picture", not
+  "card").
+- **One main button.** Two equal buttons on a share panel invite the wrong
+  one first; the second share is offered after the first has gone.
+- **Do not call it before it is over.** Mid-run, the player is "ahead"; the
+  debrief says who won.
+- **Wrap, never cut, a name.** The line that says who sent a link must fit on
+  an upright phone, in any script: measure a full-width character as a full
+  em, set a long word smaller, balance the lines.
+- **State that outlives a panel is a bug waiting.** Anything a panel shows
+  for one run (a picture, a URL, a timer) is cleared when it opens for the
+  next, and a button that uses it waits until it is ready. A value still in
+  a typing pause is applied before any button acts on it.
+- **Keyboard focus is not where the code put it.** A mouse press ends by
+  focusing whatever was pressed (the canvas): take focus back after it, and
+  let ESC close a dialog wherever focus is.
+
+## 19. Release hygiene (v2.3.0)
+
+- **Every release updates the hand-over page** ([`HANDOFF.md`](HANDOFF.md)):
+  version, test and check counts, the balance baseline, what is open and the
+  traps. It is the page a new contributor reads first; a stale one is worse
+  than none.
+- **A claim about people needs people.** Write "a reviewer found", "the bot
+  measured" or "the research says" - never "players did" - until a human has
+  played it. The v2.3.0 docs briefly said "people pressed the picture first";
+  it was a reviewer's walk-through.
+- **A check that cannot run is recorded as not run**, not as passed (Safari's
+  `-webkit-touch-callout` cannot be tested in Chromium).
+- **Gameplay unchanged is a measurement**: the deterministic balance sim on
+  the last release and on the candidate, rows compared.
+

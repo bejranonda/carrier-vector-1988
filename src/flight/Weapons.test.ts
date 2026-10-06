@@ -436,3 +436,39 @@ describe('WeaponsSystem.fireHarm (AGM-88 anti-radiation missile)', () => {
         }).not.toThrow();
     });
 });
+
+describe('AIM-9 in-flight re-acquisition (v2.0.0)', () => {
+    const world = (targets: AirborneTarget[]): WeaponsWorld => ({
+        terrain: new TacticalTerrain('OPEN_SEA'), targets, samSites: [], threats: [], strikeTargets: []
+    });
+
+    it('a round whose target is already dead takes the next contact ahead of it', () => {
+        const w = new WeaponsSystem();
+        const p = new AircraftPhysics();
+        p.position = { x: 0, y: 1500, z: 0 };
+        p.velocity = { x: 0, y: 0, z: 230 };
+        const first: AirborneTarget = { id: 'A', name: 'MiG-23 A', isAlive: true, position: { x: 0, y: 1500, z: 1500 }, velocity: { x: 0, y: 0, z: 0 } };
+        const second: AirborneTarget = { id: 'B', name: 'MiG-23 B', isAlive: true, position: { x: 150, y: 1500, z: 2200 }, velocity: { x: 0, y: 0, z: 0 } };
+        w.fireSidewinder(p, [first, second], 'A');
+        first.isAlive = false; // splashed by the round before
+        for (let i = 0; i < 6 * 120 && second.isAlive; i++) w.update(1 / 120, world([first, second]));
+        expect(second.isAlive).toBe(false);
+    });
+
+    it('never re-acquires something behind the seeker', () => {
+        const behind: AirborneTarget = { id: 'Z', name: 'MiG-23 Z', isAlive: true, position: { x: 0, y: 0, z: -500 }, velocity: { x: 0, y: 0, z: 0 } };
+        expect(WeaponsSystem.reacquire({ pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 500 } }, [behind])).toBeUndefined();
+    });
+
+    it('never re-acquires through a ridge (v2.2.0 review)', () => {
+        // A wall 1 km high across the seeker's path, 500-600 m ahead.
+        const ridge = { getElevation: (_x: number, z: number) => (z > 500 && z < 600 ? 1000 : 0) };
+        const from = { x: 0, y: 200, z: 0 };
+        const masked: AirborneTarget = { id: 'M', name: 'MiG-23 M', isAlive: true, position: { x: 0, y: 200, z: 1500 }, velocity: { x: 0, y: 0, z: 0 } };
+        expect(WeaponsSystem.clearOfTerrain(ridge, from, masked.position)).toBe(false);
+        expect(WeaponsSystem.clearOfTerrain(ridge, from, { x: 0, y: 200, z: 400 })).toBe(true);
+        const seeker = { pos: from, vel: { x: 0, y: 0, z: 500 } };
+        expect(WeaponsSystem.reacquire(seeker, [masked], t => WeaponsSystem.clearOfTerrain(ridge, from, t.position))).toBeUndefined();
+        expect(WeaponsSystem.reacquire(seeker, [masked])).toBe(masked);
+    });
+});

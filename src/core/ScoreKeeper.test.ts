@@ -96,3 +96,15 @@ describe('ScoreKeeper', () => {
         });
     });
 });
+
+describe('ScoreKeeper bonus points', () => {
+    it('adds chain and wave bonuses on top of the table, ignoring junk', () => {
+        const s = new ScoreKeeper();
+        s.recordKill('FIGHTER');
+        s.recordBonus(200);
+        s.recordBonus(-50);
+        s.recordBonus(Number.NaN);
+        expect(s.bonusPoints).toBe(200);
+        expect(s.totalScore).toBe(300);
+    });
+});

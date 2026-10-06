@@ -42,6 +42,9 @@ import {
 } from './Theme';
 import type { Segment } from './Theme';
 
+/** Width of the DOM `MENU (ESC)` button (index.html) plus a gap, in CSS px. */
+export const DESKTOP_MENU_BUTTON_RESERVE = 118;
+
 export interface DeckViewContext {
     objective: ObjectiveStep;
     hint: Hint | null;
@@ -56,6 +59,11 @@ export interface DeckViewContext {
     touchReserveBottom?: number;
     /** Width reserved at the top right for the menu button. */
     touchReserveTopRight?: number;
+    /**
+     * Room for the DOM MENU button, in layout px. The button is CSS-sized, so
+     * under a text-size zoom it takes fewer layout px than its CSS width.
+     */
+    desktopMenuReserve?: number;
     /**
      * How much of the deck to show. BRIEF is what a first-time pilot sees on
      * any screen: the orders, the turnaround, the contact picture and a short
@@ -146,7 +154,10 @@ export class DeckView {
         noGlow(ctx);
 
         this.drawBackdrop(ctx, width, height);
-        this.drawHeader(ctx, layout.header, deck, score, context.touchReserveTopRight ?? 0);
+        // On a desktop the DOM `MENU (ESC)` button sits in the top-left corner
+        // over the canvas; the title used to be drawn underneath it.
+        this.drawHeader(ctx, layout.header, deck, score, context.touchReserveTopRight ?? 0,
+            context.touchMode ? 0 : context.desktopMenuReserve ?? DESKTOP_MENU_BUTTON_RESERVE);
 
         const p = layout.panels;
         if (p['ORDERS']) {
@@ -190,9 +201,10 @@ export class DeckView {
         r: Rect,
         deck: DeckManager,
         score: ScoreKeeper,
-        reserveRight = 0
+        reserveRight = 0,
+        reserveLeft = 0
     ) {
-        r = { ...r, w: Math.max(120, r.w - reserveRight) };
+        r = { ...r, x: r.x + reserveLeft, w: Math.max(120, r.w - reserveRight - reserveLeft) };
         ctx.save();
         noGlow(ctx);
 

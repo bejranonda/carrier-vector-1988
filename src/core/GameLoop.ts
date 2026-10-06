@@ -29,7 +29,29 @@ import { TimeRewindBuffer } from './TimeRewind';
 import { soundFX } from '../audio/SoundFX';
 import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
-import { ScoreKeeper } from './ScoreKeeper';
+import { ScoreKeeper, SCORE_VALUES } from './ScoreKeeper';
+import { ComboTracker, multiplierFor } from './Combo';
+import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, keepClearOfBoat, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus } from './Scramble';
+import { KillFxSystem, drawKillFx } from '../renderer/KillFx';
+import { SpeedStreaks } from '../renderer/SpeedStreaks';
+import { scrambleIntensity } from '../audio/MusicPattern';
+import { challengeLine, challengeUrl, challengeVerdict, challengerLabel } from './Challenge';
+import { shareContent, shareNudge } from './ShareCard';
+import type { ShareContent, ShareRun } from './ShareCard';
+import { loadPilotName, savePilotName } from './PilotName';
+import { SHARE_IMAGE_SIZE, drawShareImage } from '../renderer/ShareImage';
+import type { Moment } from '../renderer/ShareImage';
+import { challengeWelcomeHitTest, challengeWelcomeLayout, drawChallengeWelcome } from '../renderer/ChallengeView';
+import { EASY_TUNING, easyHint, easyTrigger, loadFlyStyle, saveFlyStyle, shouldAskFlyStyle } from './EasyMode';
+import type { FlyStyle } from './EasyMode';
+import type { Challenge } from './Challenge';
+import { MEDALS, earnedMask, loadMedals, mergeMedals, saveMedals, starCount, totalStars } from './Medals';
+import type { MedalRecords, RunSummary } from './Medals';
+import { awardRun, careerLevel, isPaletteUnlocked, loadCareer, newlyUnlocked, nextUnlock, saveCareer } from './Career';
+import type { Career, XpAward } from './Career';
+import { debriefLayout, drawDebriefView } from '../renderer/DebriefView';
+import type { DebriefData } from '../renderer/DebriefView';
+import { drawFlyStyleChooser, flyStyleHitTest, flyStyleLayout } from '../renderer/FlyStyleView';
 import { arbitrateHint, getContextualHint, TrainingSequence } from './Tutorial';
 import { HUD_DENSITY_LABEL, resolveHudDensity, saveHudDensity } from './HudDensity';
 import { pilotMenuItems, plainInstruction, wrapMenuIndex, type PilotMenuItem } from './PilotMenu';
@@ -42,7 +64,7 @@ import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
 import type { PostQuality } from '../renderer/PostProcess';
-import { DeckView } from '../renderer/DeckView';
+import { DeckView, DESKTOP_MENU_BUTTON_RESERVE } from '../renderer/DeckView';
 import { drawPilotMenu, pilotMenuHitTest, pilotMenuLayout } from '../renderer/PilotMenuView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
 import {
@@ -50,12 +72,17 @@ import {
     WORLD,
     applyPalette,
     loadPalette,
-    nextPalette,
+    nextAvailablePalette,
+    loadTextSize,
+    nextTextSize,
+    saveTextSize,
+    textSizeSpec,
+    textScaling,
     paletteSpec,
     savePalette,
     storedPalette
 } from '../renderer/Theme';
-import type { PaletteId } from '../renderer/Theme';
+import type { PaletteId, TextSizeId } from '../renderer/Theme';
 import {
     applyDisplayModeToDocument,
     displayModeSpec,
@@ -73,7 +100,7 @@ import {
     shortCallout
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
-import { loadPitchInversion, storedPitchInversion, savePitchInversion } from './Controls';
+import { loadPitchInversion, storedPitchInversion, savePitchInversion, touchWording } from './Controls';
 
 import { hitTestDeck, hitTestHud } from '../renderer/PointerInteractivity';
 import type { DeckStateSnapshot, HudStateSnapshot } from '../renderer/PointerInteractivity';
@@ -142,8 +169,8 @@ import {
 } from './Platform';
 import type { ControlScheme, SchemePreference } from './Platform';
 import { TouchInput } from './TouchInput';
-import { solveTouchLayout } from '../renderer/TouchLayout';
-import type { SafeArea, TouchControlId, TouchLayout } from '../renderer/TouchLayout';
+import { solveTouchLayout, touchKitFor } from '../renderer/TouchLayout';
+import type { SafeArea, TouchControlId, TouchKit, TouchLayout } from '../renderer/TouchLayout';
 import { drawLaunchButton, drawRotatePrompt, drawTouchControls } from '../renderer/TouchControls';
 import { pickTargetAt } from '../tactics/TargetDesignation';
 import type { ScreenTarget } from '../tactics/TargetDesignation';
@@ -162,7 +189,7 @@ import {
     dailyKey,
     dailyNumber,
     dailySeed,
-    formatShareCard,
+    PLAY_URL,
     loadDailyResults,
     mergeDailyResult,
     saveDailyResults
@@ -278,6 +305,8 @@ export class GameLoop {
      * red-green colour-blind player cannot read, so it is a setting.
      */
     public palette: PaletteId = loadPalette();
+    /** Text size for every label in the game - see Theme.TEXT_SIZES. */
+    public textSize: TextSizeId = loadTextSize();
     /**
      * Chosen map, for the scenarios that let one be chosen. Null means the
      * scenario's own terrain.
@@ -310,7 +339,10 @@ export class GameLoop {
     public controlScheme: ControlScheme = 'KEYBOARD';
     public touch = new TouchInput();
     public touchLayout: TouchLayout = solveTouchLayout(1280, 800);
+    /** Safe-area insets in layout px (CSS px / UI zoom), as the layouts use them. */
     private safeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+    /** The same insets as the browser reports them, in CSS px. */
+    private cssSafeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
     /** Analog stick demand, which overrides the keyboard axes when present. */
     private analog: { pitch: number; roll: number } | null = null;
     /**
@@ -380,6 +412,84 @@ export class GameLoop {
     public callouts = new Callouts();
     /** Kills this sortie, so the callout can say SPLASH ONE, SPLASH TWO. */
     private sortieKills = 0;
+    /** Kill chains and their multiplier - see Combo.ts. */
+    public combo = new ComboTracker();
+    /** Shockwave rings and rising score text at the wreck - see KillFx.ts. */
+    public killFx = new KillFxSystem();
+    /** Vector dust streaming past the canopy - see SpeedStreaks.ts. */
+    private streaks = new SpeedStreaks();
+    /**
+     * Real seconds of hit-stop left. While it runs the simulation advances at
+     * HIT_STOP_SCALE of real time: a kill lands with a beat of weight instead
+     * of sliding past at full speed. Applied in `frame()` - the real-time
+     * loop - so the fixed-step simulation itself stays deterministic.
+     */
+    private hitStop = 0;
+    public static readonly HIT_STOP_SCALE = 0.12;
+
+    /** EASY or STANDARD - see EasyMode.ts. Set in the constructor. */
+    public flyStyle: FlyStyle = 'STANDARD';
+    /** The first-run "how would you like to fly?" screen is up. */
+    public flyStyleChooserOpen = false;
+    /** Which option the chooser's keyboard cursor is on. */
+    public flyStyleChoice: FlyStyle = 'EASY';
+    /** The chooser was answered this session (storage may not remember it). */
+    private flyStyleAnswered = false;
+    /** What the pilot asked to fly when the chooser interrupted them. */
+    private pendingFlight: 'BRIEFING' | 'DAILY' | 'SKIP' = 'BRIEFING';
+    /** EASY: seconds until a held trigger tries again. */
+    private easyTriggerTimer = 0;
+    /** EASY: seconds the cannon keeps firing after one click. */
+    private easyGunBurst = 0;
+    /** EASY: throttle on the "not yet" message. */
+    private easyNotYetCooldown = 0;
+    /**
+     * The deck's wave counter when the run began. VETERAN starts it four
+     * waves on, so medals count the waves this run actually reached from
+     * there - "REACH WAVE 3" used to be met before a shot was fired.
+     */
+    private startWaveNumber = 0;
+    /** The "try EASY" offer has been made this run (once per run, never on EASY). */
+    public easyOffered = false;
+    /**
+     * EASY was on at some point in this run (v2.2.0). Switching it on half
+     * way still marks the run: the cards, the challenge link and the daily
+     * say EASY whenever any of the score was earned with its help.
+     */
+    public runFlownEasy = false;
+    /** Seconds between a wave's last kill and its WAVE CLEARED payout. */
+    public static readonly WAVE_CLEAR_BEAT = 1.1;
+
+    /**
+     * SCRAMBLE run state (core/Scramble.ts), or null on every other scenario.
+     * `breather` counts down to the next wave; `waveSeconds` times the live
+     * one for the speed bonus.
+     */
+    public scramble: {
+        wave: number;
+        breather: number;
+        waveSeconds: number;
+        wavesCleared: number;
+        /** EASY: seconds toward the next Sidewinder trickling back. */
+        trickle: number;
+        brief: string;
+        seed: number;
+        /** Seconds since the wave's last contact went down. */
+        clearTimer: number;
+        /** The live wave timed out rather than being shot down. */
+        bugOut: boolean;
+        /**
+         * Jets this run allows, fixed when it starts (v2.2.0). It used to be
+         * re-read from the fly style every tick, so switching EASY off with
+         * three of five jets lost ended the run on the spot. Switching EASY
+         * on part way raises it - the run is marked EASY anyway.
+         */
+        jets: number;
+        /** Bombers that reached the boat in the live wave. */
+        leaked: number;
+        /** Contacts the player shot down in the live wave. */
+        waveKills: number;
+    } | null = null;
     /** Seconds remaining on the cannon hit marker. */
     private hitMarker = 0;
     /** Last-seen missileActive per SAM, for launch-edge detection. */
@@ -402,6 +512,68 @@ export class GameLoop {
     private trapCinematic = 0;
     private trapGrade: string | null = null;
 
+    /** Three stars per mission, held across sessions - see Medals.ts. */
+    public medals: MedalRecords = loadMedals();
+    /** Career XP and runs flown - see Career.ts. */
+    public career: Career = loadCareer();
+    /**
+     * What the run that just ended earned, for the debrief: the stars it took
+     * for the first time, the XP award, and any unlock it crossed.
+     */
+    public lastRun: { fresh: number[]; award: XpAward; unlocks: string[]; summary: RunSummary } | null = null;
+    /**
+     * A run someone shared (`?c=seed.score.waves`): fly the same SCRAMBLE
+     * waves and beat their score. See Challenge.ts.
+     */
+    public challenge: Challenge | null = null;
+    /**
+     * The "Anna challenges you" screen (v2.3.0): up when the page opened on a
+     * challenge link, until the friend accepts it or asks for the missions.
+     */
+    public challengeWelcomeOpen = false;
+    /** Real seconds the debrief has been up - drives its payout animation. */
+    public debriefAge = 0;
+
+    /**
+     * The score this run is chasing (v2.3.0): the challenger's, or the
+     * pilot's own best on this mission. Passing it mid-run is a moment - a
+     * banner and a fanfare - not something to find out on the debrief.
+     */
+    public scoreTarget: { score: number; who: string; challenge: boolean } | null = null;
+    private scoreTargetPassed = false;
+    private scoreTargetCelebrated = false;
+    private scoreTargetPassedAt = -1;
+
+    /**
+     * The run's best moment, kept for the share picture (v2.3.0): a copy of
+     * the screen a beat after the best kill - the highest chain, the later
+     * one on a tie - taken before the thumb controls are drawn.
+     */
+    private moment: Moment | null = null;
+    private momentCanvas: HTMLCanvasElement | null = null;
+    private momentWeight = -1;
+    private momentPendingWeight = 0;
+    private momentDueAt = 0;
+
+    /** The pilot's name for shares, if they gave one (v2.3.0, PilotName.ts). */
+    public pilotName: string | null = loadPilotName();
+    /** What the finished run would share: built at its end, named at share time. */
+    private lastShareRun: (Omit<ShareRun, 'name' | 'url'> & { seed: number; freshStars: number; bestIsNews: boolean }) | null = null;
+    /** How the last share went, for the debrief's line under SHARE. */
+    public shareStatus: 'IDLE' | 'SHARED' | 'COPIED' = 'IDLE';
+    /** A new best lights SHARE once a session; after that it is just a line. */
+    private bestNudgedThisSession = false;
+    /** When the rotate prompt went up, for its rotation-lock hint. */
+    private rotationWaitSince = -1;
+    /**
+     * Opens the share panel (main.ts, plain DOM: a real text field for the
+     * name and real buttons). Unset in tests and headless runs, where SHARE
+     * falls back to copying the text card.
+     */
+    public onShareRequest: (() => void) | null = null;
+    /** Called when the challenge welcome closes, either way (main.ts resets the canvas label). */
+    public onChallengeWelcomeClose: (() => void) | null = null;
+
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
     private isNewBest = false;
@@ -413,6 +585,11 @@ export class GameLoop {
      */
     public missionRecords: MissionRecords = loadMissionRecords();
     private isMissionBest = false;
+    /**
+     * This run beat a best that existed before it. A first run is everyone's
+     * "best yet"; only a beaten record is shared as one (v2.3.0 review).
+     */
+    private beatPreviousBest = false;
 
     /**
      * The daily sortie: one date-seeded run everybody gets the same version
@@ -421,10 +598,6 @@ export class GameLoop {
     public dailyResults: DailyResults = loadDailyResults();
     /** True while the active run counts as today's daily. */
     public isDailyRun = false;
-    /** The card for the run just finished, shown on the debrief. */
-    public dailyCard: string | null = null;
-    /** Set briefly after a successful copy, for the confirmation line. */
-    public dailyCopied = false;
     /**
      * Which day the run in progress belongs to, fixed when it started.
      *
@@ -444,9 +617,10 @@ export class GameLoop {
     private qualityCeiling: PostQuality = 'LOW';
 
     /**
-     * Logical (CSS pixel) viewport. The canvas backing store is this times
-     * the device pixel ratio, with the 2D context pre-scaled - so every
-     * layout number in the game stays in CSS pixels while text and vectors
+     * Logical viewport, in layout pixels: CSS pixels over the text-size zoom
+     * (v2.1.0), so CSS pixels at NORMAL text. The canvas backing store is the
+     * CSS size times the device pixel ratio, with the 2D context pre-scaled -
+     * so every layout number in the game stays in layout pixels while text and vectors
      * render at native resolution. The old build pinned the backing store to
      * CSS pixels and set `image-rendering: pixelated`, which is why HUD
      * glyphs looked soft and ragged on any HiDPI screen.
@@ -455,6 +629,11 @@ export class GameLoop {
     public viewHeight = 1;
     /** Device pixel ratio the backing store is currently sized for. */
     public dpr = 1;
+    /** The real canvas size, CSS px. `viewWidth/Height` are these over `uiZoom`. */
+    public cssWidth = 1;
+    public cssHeight = 1;
+    /** Layout pixels -> CSS pixels. 1 at NORMAL text, and on phones; see Theme.textScaling. */
+    public uiZoom = 1;
 
     private lastTimestamp = 0;
     private audioStarted = false;
@@ -483,6 +662,8 @@ export class GameLoop {
         // directly to the visible canvas after compositing).
         this.viewWidth = canvas.width || 1;
         this.viewHeight = canvas.height || 1;
+        this.cssWidth = this.viewWidth;
+        this.cssHeight = this.viewHeight;
         this.post = new PostProcess(this.viewWidth, this.viewHeight);
         this.renderer = new VectorRenderer(this.post.worldTarget);
 
@@ -501,6 +682,10 @@ export class GameLoop {
 
         applyPalette(this.palette);
         this.applyDisplayMode();
+        // A pilot who has never chosen and never flown starts on EASY and is
+        // asked once; a returning pilot keeps the game they already knew.
+        const anyAttempts = Object.values(this.missionRecords).some(r => r.attempts > 0);
+        this.setFlyStyle(loadFlyStyle() ?? (anyAttempts ? 'STANDARD' : 'EASY'), false);
         this.scenario = scenarioById(DEFAULT_SCENARIO);
         this.scenarioIndex = SCENARIOS.findIndex(sc => sc.id === DEFAULT_SCENARIO);
         this.applyScenario(this.scenario);
@@ -592,8 +777,14 @@ export class GameLoop {
         this.score = new ScoreKeeper();
         this.training = new TrainingSequence();
         // The flight checkout is the intro mode's teaching tool; on a scripted
-        // mission it is six lines of noise over the top of real orders.
-        if (!setup.showTrainingChecklist) this.training.skip();
+        // mission it is six lines of noise over the top of real orders. And a
+        // pilot who has already completed a mission has nothing left to learn
+        // from "hold W": v2.0.0 playtest found the 0/6 checkout pinned over
+        // every endless run a veteran flew, and a TRAINING 1/6 coach line
+        // replacing combat hints a minute into the fight.
+        // EASY flies the plane, so a checkout of stick and throttle has
+        // nothing to teach - and its prompt outranked FIRE NOW all sortie.
+        if (!setup.showTrainingChecklist || this.hasCompletedAMission() || this.easyMode) this.training.skip();
 
         if (setup.loadout) {
             this.deck.plannedLoadout = { ...setup.loadout };
@@ -611,12 +802,14 @@ export class GameLoop {
         this.missionSeconds = 0;
         this.hasLaunched = false;
         this.isNewBest = false;
+        this.beatPreviousBest = false;
         this.missionStatus = {
             outcome: 'ACTIVE', phaseIndex: 0, phase: null,
             reason: null, secondsRemaining: null, callouts: []
         };
 
         this.lastSpawnedWave = this.deck.waveNumber;
+        this.startWaveNumber = this.deck.waveNumber;
         this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
 
         this.callouts.clear();
@@ -624,6 +817,32 @@ export class GameLoop {
         this.samMissileActive.clear();
         this.lastCautionDamage = 0;
         this.sortieKills = 0;
+        this.easyOffered = false;
+        this.runFlownEasy = this.easyMode;
+        this.moment = null;
+        this.momentWeight = -1;
+        this.momentDueAt = 0;
+        this.lastShareRun = null;
+        this.shareStatus = 'IDLE';
+        // SCRAMBLE chases a number: the challenger's, else the pilot's best.
+        const best = recordFor(this.missionRecords, scenario.id).best;
+        this.scoreTarget = !setup.scramble ? null
+            : this.challenge && !this.isDailyRun
+                ? { score: this.challenge.score, who: challengerLabel(this.challenge), challenge: true }
+                : best > 0 ? { score: best, who: 'YOUR BEST', challenge: false } : null;
+        this.scoreTargetPassed = false;
+        this.scoreTargetCelebrated = false;
+        this.scoreTargetPassedAt = -1;
+        // A jet lost in the last run must not die again in this one: RESTART
+        // during the MAYDAY sequence, or a daily started from the menu, used
+        // to begin the new run with dead controls, slow motion and a jet
+        // already written off (v2.2.0 review). Airborne starts never pass
+        // through beginSortie, which is where these were cleared before.
+        this.dying = null;
+        this.lastLossCause = null;
+        this.combo.reset();
+        this.killFx.clear();
+        this.hitStop = 0;
         this.trauma = 0;
         this.flashAlpha = 0;
         this.hitMarker = 0;
@@ -636,9 +855,28 @@ export class GameLoop {
 
         this.deck.log(`SCENARIO: ${scenario.name.toUpperCase()} - ${scenario.tagline}`);
 
+        this.scramble = setup.scramble
+            ? {
+                wave: 0,
+                breather: SCRAMBLE.firstWaveDelay,
+                waveSeconds: 0,
+                wavesCleared: 0,
+                trickle: 0,
+                brief: '',
+                seed: seedOverride ?? Math.floor(Math.random() * 1e9),
+                clearTimer: 0,
+                bugOut: false,
+                jets: this.scrambleLives(),
+                leaked: 0,
+                waveKills: 0
+            }
+            : null;
+        if (this.scramble) this.airborneTargets = [];
+
         if (setup.startAirborne) {
             this.hotStartAirborne();
             this.hasLaunched = true;
+            if (this.scramble) this.armScrambleJet();
         } else {
             this.currentView = 'MACRO_DECK';
         }
@@ -705,7 +943,8 @@ export class GameLoop {
             perfectTraps: this.score.breakdown.perfectTraps,
             bombsRemaining: this.physics.loadout.ironBombs,
             rwrState: this.sensors.masterRwrState,
-            flightAssistMode: this.assistLevel
+            flightAssistMode: this.effectiveAssist(),
+            jetsAllowed: this.scramble?.jets ?? this.scrambleLives()
         };
     }
 
@@ -976,8 +1215,14 @@ export class GameLoop {
         this.shake(SHAKE_SOURCES.damageTaken);
         this.flash(THEME.alert, 0.75);
         this.sortieKills = 0;
+        this.combo.breakChain();
         this.deck.inventory.spareAirframes = Math.max(0, this.deck.inventory.spareAirframes - 1);
         this.deck.log(reason);
+        this.offerEasyIfStruggling();
+        if (this.scramble) {
+            this.respawnScramble();
+            return;
+        }
         this.physics.repair();
         this.physics.velocity = { x: 0, y: 0, z: 0 };
         this.physics.throttle = 0;
@@ -1003,17 +1248,31 @@ export class GameLoop {
     /**
      * Re-resolve the control scheme and the thumb layout. Called from resize,
      * so an orientation change or a window drag is enough to pick it up.
+     *
+     * Takes the insets in CSS px and converts them here, at the zoom in force
+     * now - main.ts used to convert them, so a text-size change (which
+     * resizes without a window event) left them in the old zoom's units and
+     * thumb controls a few px under a notch (v2.2.0 review).
      */
-    public applyControlScheme(insets: SafeArea = this.safeArea) {
+    public applyControlScheme(cssInsets: SafeArea = this.cssSafeArea) {
+        this.cssSafeArea = cssInsets;
+        const z = this.uiZoom || 1;
+        const insets: SafeArea = {
+            top: cssInsets.top / z, right: cssInsets.right / z,
+            bottom: cssInsets.bottom / z, left: cssInsets.left / z
+        };
         this.safeArea = insets;
         const signals = readPlatformSignals();
         const previous = this.controlScheme;
+        // Device detection is in CSS px, whatever the text size: a zoomed
+        // tablet layout used to read as a phone and switch to touch controls
+        // (and the autopilot) when the text got bigger.
         this.controlScheme = resolveScheme(this.schemePreference, {
             ...signals,
-            width: this.viewWidth,
-            height: this.viewHeight
+            width: this.cssWidth,
+            height: this.cssHeight
         });
-        this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets);
+        this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets, this.touchKit());
         // Re-read on resize: a preference can change mid-session.
         this.motion = motionSettings(readMotionPreferences());
 
@@ -1041,7 +1300,8 @@ export class GameLoop {
         soundFX.playUiMove();
         this.schemePreference = nextSchemePreference(this.schemePreference);
         saveSchemePreference(this.schemePreference);
-        this.applyControlScheme();
+        // A full resize: phone or not decides the zoom (Theme.textScaling).
+        this.resize(this.cssWidth, this.cssHeight);
         this.deck.log(`CONTROLS: ${this.schemePreference} (${this.controlScheme}).`);
     }
 
@@ -1055,19 +1315,32 @@ export class GameLoop {
             ? Math.min(2, Math.max(1, window.devicePixelRatio))
             : 1;
         this.dpr = dpr;
-        this.viewWidth = Math.max(1, Math.round(width));
-        this.viewHeight = Math.max(1, Math.round(height));
+        this.cssWidth = Math.max(1, Math.round(width));
+        this.cssHeight = Math.max(1, Math.round(height));
+        // Text size is a UI zoom: lay out for a smaller virtual screen, then
+        // scale it up - except on a phone, which is never zoomed and grows its
+        // in-flight words in place instead (see Theme.textScaling). Whether
+        // this is a phone is a CSS-px question, asked before any zoom.
+        const touch = resolveScheme(this.schemePreference, {
+            ...readPlatformSignals(), width: this.cssWidth, height: this.cssHeight
+        }) === 'TOUCH';
+        const scaling = textScaling(this.textSize, this.cssWidth, this.cssHeight, touch);
+        this.uiZoom = scaling.zoom;
+        this.hud.textBoost = scaling.boost;
+        this.viewWidth = Math.max(1, Math.round(this.cssWidth / this.uiZoom));
+        this.viewHeight = Math.max(1, Math.round(this.cssHeight / this.uiZoom));
 
-        this.canvas.width = Math.round(this.viewWidth * dpr);
-        this.canvas.height = Math.round(this.viewHeight * dpr);
+        this.canvas.width = Math.round(this.cssWidth * dpr);
+        this.canvas.height = Math.round(this.cssHeight * dpr);
         if (this.canvas.style) {
-            this.canvas.style.width = `${this.viewWidth}px`;
-            this.canvas.style.height = `${this.viewHeight}px`;
+            this.canvas.style.width = `${this.cssWidth}px`;
+            this.canvas.style.height = `${this.cssHeight}px`;
         }
-        // Everything downstream draws in CSS pixels.
-        this.ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+        // Everything downstream draws in layout pixels (CSS px / zoom).
+        const scale = dpr * this.uiZoom;
+        this.ctx.setTransform?.(scale, 0, 0, scale, 0, 0);
 
-        this.post.resize(this.viewWidth, this.viewHeight, dpr);
+        this.post.resize(this.viewWidth, this.viewHeight, scale);
         this.renderer.resize(this.viewWidth, this.viewHeight);
         this.hud.resize(this.viewWidth, this.viewHeight);
         this.applyControlScheme();
@@ -1078,7 +1351,7 @@ export class GameLoop {
         // sortie for a new pilot, the easiest uncleared mission after that. It
         // used to do this for new pilots only, so a returning pilot saw START
         // HERE on one mission while the big FLY button flew another.
-        this.selectScenarioById(recommendScenario(this.missionRecords).id);
+        this.selectScenarioById(this.challenge ? 'SCRAMBLE' : recommendScenario(this.missionRecords).id);
         requestAnimationFrame(this.step.bind(this));
     }
 
@@ -1130,6 +1403,7 @@ export class GameLoop {
         const elapsed = (timestamp - this.lastTimestamp) / 1000;
         this.lastTimestamp = timestamp;
         this.elapsedSeconds += Math.min(0.1, Math.max(0, elapsed));
+        if (this.phase === 'DEBRIEF') this.debriefAge += Math.min(0.1, Math.max(0, elapsed));
 
         if (this.phase === 'BOOT') {
             this.bootTimer += elapsed;
@@ -1148,14 +1422,54 @@ export class GameLoop {
             // would just repeat the same pointer positions.
             this.updateTouch();
 
-            const steps = this.timestep.consume(elapsed);
+            let simElapsed = elapsed;
+            // EASY runs the world at 80%: time to read, time to react.
+            if (this.easyMode && this.phase === 'ACTIVE') simElapsed *= EASY_TUNING.timeScale;
+            if (this.hitStop > 0) {
+                this.hitStop = Math.max(0, this.hitStop - Math.min(0.1, Math.max(0, elapsed)));
+                simElapsed = elapsed * GameLoop.HIT_STOP_SCALE;
+            }
+            const steps = this.timestep.consume(simElapsed);
+            const wasActive = this.phase === 'ACTIVE';
             for (let i = 0; i < steps; i++) {
                 this.fixedUpdate(FIXED_DT);
+                // The run ended on this step: its score, medals, card and
+                // daily are already recorded, so the rest of this frame's
+                // steps must not move the world the debrief describes.
+                if (wasActive && this.phase !== 'ACTIVE') break;
             }
+            // Real time, so the payoff keeps moving through the hit-stop.
+            this.killFx.update(Math.min(0.1, Math.max(0, elapsed)));
         }
 
         this.updateAdaptiveQuality(elapsed);
+        this.updateMusic();
         this.draw(elapsed);
+    }
+
+    /**
+     * The tab went into the background (v2.2.0 review). The frame loop stops
+     * with it, but the soundtrack's own timer did not: the music played on
+     * over a frozen game. Stop it, and pause a live flight, so a pilot who
+     * took a phone call comes back to the menu - not to a fight already
+     * under way.
+     */
+    public onHidden() {
+        soundFX.setMusicIntensity(0);
+        if (this.phase === 'ACTIVE' && !this.menuOpen) this.toggleMenu();
+    }
+
+    /** The SCRAMBLE soundtrack follows the fight, and stops everywhere else. */
+    private updateMusic() {
+        const s = this.scramble;
+        const playing = s !== null && this.phase === 'ACTIVE' && !this.paused;
+        soundFX.setMusicIntensity(playing
+            ? scrambleIntensity({
+                wave: s!.wave,
+                waveLive: s!.breather <= 0 && this.airborneTargets.some(t => t.isAlive),
+                chain: this.combo.chain
+            })
+            : 0);
     }
 
     /**
@@ -1207,7 +1521,7 @@ export class GameLoop {
         }
         this.lastAirSpeed = speed;
 
-        const demand = resolveControls(this.assistLevel, this.assistFlightState(), pilot, this.navTarget());
+        const demand = resolveControls(this.effectiveAssist(), this.assistFlightState(), pilot, this.navTarget());
         this.assistOverride = demand.override;
 
         if (demand.pitch !== 0) this.physics.applyPitchInput(demand.pitch, dt);
@@ -1234,7 +1548,9 @@ export class GameLoop {
         if (pilot.throttle !== 0) this.training.progress.throttleChanged = true;
 
         // Held-trigger cannon fire
-        if (k[' '] && this.selectedWeapon === 'GUN') {
+        // EASY fires the cannon only in the bursts the smart trigger asks for.
+        const gunHeld = this.easyMode ? this.easyGunBurst > 0 : k[' '] && this.selectedWeapon === 'GUN';
+        if (gunHeld) {
             const before = this.weapons.bullets.length;
             this.weapons.fireGun(this.physics);
             if (this.weapons.bullets.length > before) this.shake(SHAKE_SOURCES.gun);
@@ -1276,6 +1592,21 @@ export class GameLoop {
         );
     }
 
+    /** The thumb controls this sortie actually uses (v2.2.0). */
+    private touchKit(): TouchKit {
+        return touchKitFor({ easy: this.easyMode, scramble: this.scramble !== null });
+    }
+
+    /** Re-solve the thumb layout when the kit changes - EASY toggled, a new mode. */
+    private refreshTouchKit() {
+        const kit = this.touchKit();
+        const was = this.touchLayout.kit;
+        const same = was.flight === kit.flight && was.target === kit.target && was.chaff === kit.chaff
+            && was.recover === kit.recover && was.bigFire === kit.bigFire
+            && was.stores.every((v, i) => v === kit.stores[i]);
+        if (!same) this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, this.safeArea, kit);
+    }
+
     /**
      * Fold the current touch state into the game: the stick becomes an analog
      * demand, the throttle track sets power directly, and every press that
@@ -1286,6 +1617,7 @@ export class GameLoop {
             this.analog = null;
             return;
         }
+        this.refreshTouchKit();
 
         const airborne = this.deck.aircraftState === 'AIRBORNE' && this.currentView === 'MICRO_FLIGHT';
         const demand = this.touch.demand(this.touchLayout);
@@ -1301,8 +1633,11 @@ export class GameLoop {
         }
 
         // The cannon is a held trigger; everything else is edge-triggered, so
-        // the same button can fire a burst or release a single bomb.
-        this.inputState[' '] = demand.firing && this.selectedWeapon === 'GUN';
+        // the same button can fire a burst or release a single bomb. On EASY
+        // a finger held anywhere on the world is the trigger too, like the
+        // mouse: no button to find at all.
+        this.inputState[' '] = (demand.firing && (this.easyMode || this.selectedWeapon === 'GUN'))
+            || (this.easyMode && this.touch.isHeld('WORLD'));
 
         for (const tap of this.touch.consumeTaps()) {
             this.handleTouchTap(tap.control, tap.x, tap.y);
@@ -1312,7 +1647,8 @@ export class GameLoop {
     private handleTouchTap(control: TouchControlId, x: number, y: number) {
         switch (control) {
             case 'FIRE':
-                if (this.selectedWeapon !== 'GUN') this.fireSelectedWeapon();
+                if (this.easyMode) this.easyFire();
+                else if (this.selectedWeapon !== 'GUN') this.fireSelectedWeapon();
                 return;
             case 'TARGET':
                 this.cycleDesignation(1);
@@ -1351,6 +1687,7 @@ export class GameLoop {
                 return;
             case 'WORLD':
                 this.designateAtPoint(x, y);
+                if (this.easyMode) this.easyFire();
                 return;
             default:
                 // STICK and THROTTLE are continuous, handled in updateTouch().
@@ -1390,12 +1727,25 @@ export class GameLoop {
         return chosen !== null;
     }
 
-    /** A tap on a menu screen, in CSS pixels. Returns true if it was used. */
+    /** A tap on a menu screen, in layout pixels. Returns true if it was used. */
     public handleMenuTap(x: number, y: number): boolean {
+        if (this.flyStyleChooserOpen) {
+            const hit = flyStyleHitTest(x, y, flyStyleLayout(this.viewWidth, this.viewHeight));
+            if (hit === 'TEXT_SIZE') this.cycleTextSize();
+            else if (hit) this.chooseFlyStyle(hit);
+            return true;
+        }
+        if (this.phase === 'BRIEFING' && this.challengeWelcomeOpen) {
+            const hit = challengeWelcomeHitTest(x, y,
+                challengeWelcomeLayout(this.viewWidth, this.viewHeight, this.challenge, this.controlScheme === 'TOUCH'));
+            if (hit === 'ACCEPT') this.acceptChallengeWelcome();
+            else if (hit === 'MISSIONS') this.closeChallengeWelcome();
+            return true;
+        }
         if (this.phase === 'BRIEFING') {
             const areas = briefingHitAreas(this.viewWidth, this.viewHeight, SCENARIOS.length, true);
             if (areas.daily && inside(areas.daily, x, y)) {
-                this.startDailySortie();
+                this.requestFlight('DAILY');
                 return true;
             }
             for (let i = 0; i < areas.pills.length; i++) {
@@ -1404,12 +1754,18 @@ export class GameLoop {
                     return true;
                 }
             }
-            this.confirmBriefing();
+            this.requestFlight('BRIEFING');
             return true;
         }
 
         if (this.phase === 'DEBRIEF') {
-            this.restartFromDebrief();
+            if (!this.debriefAcceptsInput()) return true;
+            const layout = debriefLayout(this.viewWidth, this.viewHeight, this.debriefData());
+            if (inside(layout.missions, x, y)) this.returnToBriefing();
+            // SHARE is its own button: a tap on the old card used to fly
+            // again and throw the card away, so a phone could never send one.
+            else if (layout.share && inside(layout.share, x, y)) this.requestShare();
+            else this.flyAgain();
             return true;
         }
         return false;
@@ -1417,7 +1773,7 @@ export class GameLoop {
 
     /** Register a shake event. Presentation only - see the field comment. */
     public shake(amount: number) {
-        this.trauma = addTrauma(this.trauma, amount * this.motion.shakeScale);
+        this.trauma = addTrauma(this.trauma, amount * this.motion.shakeScale * (this.easyMode ? EASY_TUNING.shake : 1));
     }
 
     /** Full-screen flash, used sparingly: damage taken and kills. */
@@ -1523,8 +1879,10 @@ export class GameLoop {
      */
     private recoveryNav(): NavTarget | null {
         this.approachPhase = null;
-        if (!this.approachAssist) return null;
-        if (this.assistLevel !== 'AUTO') return null;
+        // SCRAMBLE has no deck to recover to; a phone's default-on recovery
+        // assist must not fly the jet away from the fight to land.
+        if (!this.approachAssist || this.scramble) return null;
+        if (this.effectiveAssist() !== 'AUTO') return null;
         if (this.deck.aircraftState !== 'AIRBORNE') return null;
 
         // Fly the approach at this airframe's on-speed speed, not a constant:
@@ -1621,7 +1979,8 @@ export class GameLoop {
 
     /** Cycle the colour palette, and remember the choice. */
     public cyclePalette(): PaletteId {
-        this.palette = nextPalette(this.palette);
+        const stars = totalStars(this.medals);
+        this.palette = nextAvailablePalette(this.palette, (p) => isPaletteUnlocked(p, stars));
         applyPalette(this.palette);
         savePalette(this.palette);
         this.callouts.push(`PALETTE — ${paletteSpec(this.palette).label}`, 'MODE');
@@ -1629,8 +1988,24 @@ export class GameLoop {
         return this.palette;
     }
 
+    /** NORMAL -> LARGE -> EXTRA LARGE text, remembered. */
+    public cycleTextSize(): TextSizeId {
+        this.textSize = nextTextSize(this.textSize);
+        saveTextSize(this.textSize);
+        this.resize(this.cssWidth, this.cssHeight);
+        this.callouts.push(`TEXT SIZE — ${textSizeSpec(this.textSize).label}`, 'MODE');
+        soundFX.playUiMove();
+        return this.textSize;
+    }
+
     /** Toggle the recovery assist, and remember the choice. */
     public toggleApproachAssist(): boolean {
+        // L in SCRAMBLE used to say "TAKING YOU HOME", save the setting and
+        // force the stored assist to AUTO - with no deck to fly to.
+        if (this.scramble) {
+            this.callouts.push('NO DECK IN SCRAMBLE', 'MODE', 'CLEAR THE WAVE TO PATCH THE JET');
+            return this.approachAssist;
+        }
         this.approachAssist = !this.approachAssist;
         saveApproachAssist(this.approachAssist);
         if (this.approachAssist && this.assistLevel !== 'AUTO') {
@@ -1667,7 +2042,8 @@ export class GameLoop {
 
     /** Trigger the 5-second arcade flight rewind buffer. */
     public triggerTimeRewind(): boolean {
-        if (this.assistLevel !== 'MANUAL' && this.timeRewind.canRewind()) {
+        // EASY flies on the autopilot whatever the stored assist level says.
+        if (this.effectiveAssist() !== 'MANUAL' && this.timeRewind.canRewind()) {
             const ok = this.timeRewind.triggerRewind(this.physics);
             if (ok) {
                 soundFX.playMasterCaution();
@@ -1754,6 +2130,9 @@ export class GameLoop {
      * disagree about when it is time.
      */
     public isHomeward(): boolean {
+        // SCRAMBLE has no deck to go home to: heavy damage is patched by
+        // clearing the wave, and a BOAT cue at 60% damage pointed nowhere.
+        if (this.scramble) return false;
         return this.missionStatus.phase?.id === 'RECOVER'
             || this.physics.fuel < 800
             || this.physics.damage >= 60;
@@ -1823,7 +2202,7 @@ export class GameLoop {
         if (this.currentView === 'MICRO_FLIGHT') {
             const hudSnap: HudStateSnapshot = {
                 selectedWeapon: this.selectedWeapon,
-                assistLabel: assistSpec(this.assistLevel).label,
+                assistLabel: this.easyMode ? 'EASY' : assistSpec(this.assistLevel).label,
                 hudDensity: this.hud.hudDensity,
                 padlockActive: this.padlock.isPadlocked,
                 pitchInverted: this.pitchInverted,
@@ -1888,10 +2267,12 @@ export class GameLoop {
             if (!threat.isTerrainMasked) this.visibility.markDiscovered(threat.id);
         }
 
+        // SCRAMBLE flies with a datalinked AEW picture: every bandit is on the
+        // scope whether or not a ridge is in the way, so a wave can never hide.
         this.visibility.update(
             this.elapsedSeconds,
             candidates,
-            (position) => this.sensors.checkLOS(this.physics.position, position)
+            (position) => this.scramble !== null || this.sensors.checkLOS(this.physics.position, position)
         );
 
         this.tracker.refresh(
@@ -1903,7 +2284,10 @@ export class GameLoop {
         // 1. In AUTO mode (autopilot), continuously maintain a target lock so the autopilot can prosecute.
         // 2. In ASSIST mode, acquire the initial threat after takeoff so new pilots don't fly blind without HUD brackets.
         if (this.deck.aircraftState === 'AIRBORNE' && !this.manualTargetCleared) {
-            if (this.assistLevel === 'AUTO' || !this.hasInitialTargetAcquired) {
+            // SCRAMBLE re-locks whenever the lock is lost: the next bandit is
+            // always boxed and pointed at, so SPACE is always the answer.
+            const relock = this.scramble !== null && !this.tracker.designated();
+            if (this.effectiveAssist() === 'AUTO' || !this.hasInitialTargetAcquired || relock) {
                 const acquired = this.tracker.autoAcquire();
                 if (acquired) this.hasInitialTargetAcquired = true;
             }
@@ -1915,16 +2299,17 @@ export class GameLoop {
     // -----------------------------------------------------------------
 
     /**
-     * Fly today's daily sortie: the endless carrier defence, seeded from the
-     * date so every player in the world gets the identical campaign, at ARCADE
+     * Fly today's daily: a SCRAMBLE (v2.0.0; it was the endless carrier
+     * defence), seeded from the date so every player in the world gets the
+     * identical waves, at ARCADE
      * pacing so the comparison is like for like whatever they have set.
      */
     public startDailySortie(now: Date = new Date()) {
-        this.selectScenarioById('CARRIER_DEFENSE');
+        // v2.0.0: the daily is a SCRAMBLE - short, seeded wave for wave, and
+        // the mode a newcomer arriving from a shared card can play at once.
+        this.selectScenarioById('SCRAMBLE');
         this.isDailyRun = true;
         this.dailyRunDate = dailyKey(now);
-        this.dailyCard = null;
-        this.dailyCopied = false;
         this.pacing = 'ARCADE';
         // ...and at the standard threat level, for the same reason: the daily
         // is only worth sharing if everybody flew the same fight.
@@ -1943,19 +2328,256 @@ export class GameLoop {
     }
 
     /**
-     * Copy the card. Called from a keydown so the browser's gesture
-     * requirement is satisfied; failure is not an error worth stopping for,
-     * because the card is on screen either way.
+     * No share panel (tests, headless): put the message and the link on the
+     * clipboard. Called from a key or a tap, so the browser's gesture
+     * requirement is met; "copied" is only said once it was.
      */
-    public copyDailyCard(): boolean {
-        if (!this.dailyCard) return false;
+    private copyShareText(): boolean {
+        const share = this.currentShare();
+        const clip = (globalThis.navigator as Navigator | undefined)?.clipboard;
+        if (!share || !clip?.writeText) return false;
         try {
-            void globalThis.navigator?.clipboard?.writeText(this.dailyCard);
-            this.dailyCopied = true;
+            clip.writeText(share.clipboard).then(() => { this.shareStatus = 'COPIED'; }, () => { /* refused */ });
             return true;
         } catch {
             return false;
         }
+    }
+
+    /**
+     * Stars, career XP and unlocks for the run that just ended (v2.0.0). A new
+     * cosmetic look is equipped on the spot, so the reward is seen rather
+     * than read - unless the pilot flies the colour-blind palette, which is
+     * never swapped out from under them.
+     */
+    private recordProgression(completed: boolean) {
+        const summary: RunSummary = {
+            completed,
+            score: this.score.totalScore,
+            waves: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber - this.startWaveNumber,
+            airframesLost: this.score.breakdown.airframesLost,
+            traps: this.score.breakdown.traps,
+            perfectTraps: this.score.breakdown.perfectTraps,
+            bestChain: this.combo.best,
+            hull: this.deck.inventory.carrierHealth,
+            seconds: this.missionSeconds
+        };
+        const starsBefore = totalStars(this.medals);
+        const merged = mergeMedals(this.medals, this.scenario.id, earnedMask(this.scenario.id, summary));
+        this.medals = merged.records;
+        saveMedals(this.medals);
+        const starsAfter = totalStars(this.medals);
+
+        const award = awardRun(this.career, this.score.totalScore, merged.fresh.length);
+        this.career = award.career;
+        saveCareer(this.career);
+
+        const unlocked = newlyUnlocked(starsBefore, starsAfter);
+        if (unlocked.length > 0 && this.palette !== 'DEUTERAN') {
+            this.palette = unlocked[unlocked.length - 1].palette;
+            applyPalette(this.palette);
+            savePalette(this.palette);
+        }
+        this.lastRun = { fresh: merged.fresh, award, unlocks: unlocked.map(u => u.label), summary };
+        // What SHARE sends (v2.3.0): the run, named at share time - the pilot
+        // can still type a name in the share panel.
+        if (this.scramble) {
+            const b = this.score.breakdown;
+            const best = this.beatPreviousBest;
+            const bestIsNews = best && !this.bestNudgedThisSession;
+            if (bestIsNews) this.bestNudgedThisSession = true;
+            this.lastShareRun = {
+                daily: this.isDailyRun ? dailyNumber(new Date(`${this.dailyRunDate ?? dailyKey()}T00:00:00Z`)) : undefined,
+                attempt: this.isDailyRun ? this.dailyResults[this.dailyRunDate ?? dailyKey()]?.attempts : undefined,
+                score: this.score.totalScore,
+                waves: this.scramble.wavesCleared,
+                kills: b.fighterKills + b.bomberKills,
+                bestChain: this.combo.best,
+                stars: starCount(this.medals.SCRAMBLE ?? 0),
+                easy: this.runFlownEasy,
+                isNewBest: best,
+                versus: this.challenge && !this.isDailyRun ? { name: this.challenge.name ?? null, score: this.challenge.score } : null,
+                freshStars: merged.fresh.length,
+                bestIsNews,
+                seed: this.scramble.seed
+            };
+        }
+        this.debriefAge = 0;
+        if (merged.fresh.length > 0) soundFX.playFanfare(4);
+    }
+
+    /** The share for the run just finished, under the pilot's current name. */
+    public currentShare(): ShareContent | null {
+        const r = this.lastShareRun;
+        if (!r) return null;
+        const { seed, bestIsNews: _news, ...run } = r;
+        return shareContent({
+            ...run,
+            name: this.pilotName,
+            // /c/ is the same game with a preview card for the friend - and no
+            // og:url pointing home, which Facebook would follow (vite.config.ts).
+            url: challengeUrl(`${PLAY_URL}/c`, {
+                seed, score: run.score, waves: run.waves, easy: run.easy, name: this.pilotName ?? undefined
+            })
+        });
+    }
+
+    /** Draw the share picture for the run just finished onto `canvas` (1080 square). */
+    public drawSharePicture(canvas: HTMLCanvasElement): boolean {
+        const share = this.currentShare();
+        if (!share) return false;
+        canvas.width = SHARE_IMAGE_SIZE;
+        canvas.height = SHARE_IMAGE_SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        drawShareImage(ctx, share.picture, this.moment);
+        return true;
+    }
+
+    /** The name on shares from now on; null or junk forgets it. */
+    public setPilotName(raw: string | null): string | null {
+        this.pilotName = savePilotName(raw);
+        return this.pilotName;
+    }
+
+    /**
+     * SHARE on the debrief - C, or a tap. Opens the share panel; with no
+     * panel (tests, headless) it copies the message and link instead.
+     */
+    public requestShare(): boolean {
+        if (this.phase !== 'DEBRIEF' || !this.lastShareRun) return false;
+        soundFX.playUiSelect();
+        if (this.onShareRequest) {
+            this.onShareRequest();
+            return true;
+        }
+        return this.copyShareText();
+    }
+
+    /** How a share went, for the debrief's line under SHARE. */
+    public noteShareResult(status: 'SHARED' | 'COPIED') {
+        this.shareStatus = status;
+    }
+
+    /** SHARE - or, after a friend's challenge, REPLY TO ANNA / TELL ANNA. */
+    private shareButtonLabel(): string {
+        const v = this.lastShareRun?.versus;
+        if (!v) return 'SHARE';
+        if (!v.name) return 'REPLY';
+        return `${this.lastShareRun!.score < v.score ? 'TELL' : 'REPLY TO'} ${v.name.toUpperCase()}`;
+    }
+
+    /** Everything the debrief draws, assembled from the run that just ended. */
+    public debriefData(): DebriefData {
+        const won = this.missionOutcome === 'SUCCESS';
+        const b = this.score.breakdown;
+        const run = this.lastRun;
+        const kills = b.fighterKills + b.bomberKills;
+        const stats: [string, string][] = this.scramble
+            ? [
+                ['WAVES CLEARED', `${this.scramble.wavesCleared}`],
+                ['PLANES SHOT DOWN', `${kills}`],
+                ['BEST CHAIN', this.combo.best >= 2 ? `x${Math.min(5, this.combo.best)} · ${this.combo.best}` : '-'],
+                ['JETS LOST', `${b.airframesLost}`],
+                ['HULL LEFT', `${Math.round(this.deck.inventory.carrierHealth)}%`],
+                ['BONUS PTS', this.score.bonusPoints.toLocaleString('en-US')]
+            ]
+            : [
+                ['WAVES', `${this.deck.waveNumber}`],
+                ['AIR KILLS', `${kills}`],
+                ['GROUND KILLS', `${b.samKills + b.structureKills}`],
+                ['TRAPS (3-WIRE)', `${b.traps} (${b.perfectTraps})`],
+                ['BEST CHAIN', this.combo.best >= 2 ? `x${Math.min(5, this.combo.best)}` : '-'],
+                ['JETS LOST', `${b.airframesLost}`]
+            ];
+        const stars = totalStars(this.medals);
+        const next = nextUnlock(stars);
+        // A SCRAMBLE run ends one of two ways, and the headline says which:
+        // it used to say SHOT DOWN when the jet was fine and the boat sank.
+        const carrierLost = this.deck.inventory.carrierHealth <= 0;
+        const headline = won
+            ? this.scenario.victoryTitle
+            : this.scramble
+                ? `${carrierLost ? 'CARRIER LOST' : 'SHOT DOWN'} · WAVE ${Math.max(1, this.scramble.wave)}`
+                : 'MISSION FAILED';
+        // SCRAMBLE always ends in a loss of some kind; on a completed run the
+        // headline is the win and the reason says how far it went first.
+        let reason = this.scramble && won
+            ? `${this.scramble.wavesCleared} waves held before the end. ${this.missionReason ?? ''}`.trim()
+            : this.missionReason;
+        // Beating a friend's score is the headline, whatever else happened:
+        // it is the moment a run is worth sending back (v2.3.0).
+        let celebrate = false;
+        let title = headline;
+        if (this.scramble && this.challenge && !this.isDailyRun) {
+            reason = challengeVerdict(this.challenge, this.score.totalScore, this.runFlownEasy);
+            const ahead = this.score.totalScore - this.challenge.score;
+            if (ahead > 0) {
+                celebrate = true;
+                title = this.challenge.name ? `YOU BEAT ${challengerLabel(this.challenge)}!` : 'CHALLENGE BEATEN!';
+                // The scoreboard, not how the run ended: "the carrier went
+                // down" under a win read as "so did I lose?" (UX review).
+                const pts = (n: number) => n.toLocaleString('en-US');
+                reason = `YOU ${pts(this.score.totalScore)} · ${this.challenge.name ? challengerLabel(this.challenge) : 'CHALLENGE'} `
+                    + `${pts(this.challenge.score)} - you won by ${pts(ahead)}!`;
+            }
+        }
+        return {
+            outcome: won ? 'SUCCESS' : 'FAILED',
+            headline: title,
+            celebrate,
+            reason,
+            scenarioName: this.scenario.name,
+            styleNote: this.runFlownEasy ? 'FLOWN ON EASY' : undefined,
+            // What got the jet - not shown when it was the carrier that went.
+            cause: won || carrierLost ? null : this.lastLossCause,
+            score: this.score.totalScore,
+            isNewBest: this.isNewBest,
+            missionBest: recordFor(this.missionRecords, this.scenario.id).best,
+            isMissionBest: this.isMissionBest,
+            stats,
+            stars: {
+                labels: MEDALS[this.scenario.id].map(c => c.label),
+                recordMask: this.medals[this.scenario.id] ?? 0,
+                fresh: run?.fresh ?? []
+            },
+            xp: run ? run.award : null,
+            unlocks: run?.unlocks ?? [],
+            nextUnlock: next ? { label: next.label, starsNeeded: next.stars - stars } : null,
+            share: this.lastShareRun ? {
+                ...shareNudge({
+                    isNewBest: this.lastShareRun.isNewBest,
+                    versus: this.lastShareRun.versus,
+                    score: this.lastShareRun.score,
+                    freshStars: this.lastShareRun.freshStars,
+                    bestIsNews: this.lastShareRun.bestIsNews
+                }),
+                status: this.shareStatus,
+                label: this.shareButtonLabel()
+            } : null,
+            nextUp: this.nextUpLabel() ?? undefined,
+            touch: this.controlScheme === 'TOUCH'
+        };
+    }
+
+    /**
+     * ENTER on the debrief: the same mission again, straight back into it.
+     * The single most important button in an arcade game, and the old
+     * debrief did not have it - ENTER went back to mission select.
+     */
+    public flyAgain() {
+        if (this.phase !== 'DEBRIEF') return;
+        const daily = this.isDailyRun;
+        this.returnToBriefing();
+        if (daily) this.startDailySortie();
+        else this.confirmBriefing();
+    }
+
+    /** Debrief input is ignored for a beat, so a held trigger cannot skip the payout. */
+    public static readonly DEBRIEF_INPUT_DELAY = 0.7;
+
+    public debriefAcceptsInput(): boolean {
+        return this.phase === 'DEBRIEF' && this.debriefAge >= GameLoop.DEBRIEF_INPUT_DELAY;
     }
 
     /** Fold a finished daily run into the stored record and build its card. */
@@ -1965,19 +2587,20 @@ export class GameLoop {
             date: this.dailyRunDate ?? dailyKey(),
             score: this.score.totalScore,
             rank: this.score.rank,
-            wave: this.deck.waveNumber,
+            wave: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber,
             fighterKills: b.fighterKills,
             bomberKills: b.bomberKills,
             samKills: b.samKills,
             traps: b.traps,
             perfectTraps: b.perfectTraps,
             hullRemaining: this.deck.inventory.carrierHealth,
-            completed: this.missionOutcome === 'SUCCESS'
+            completed: this.missionOutcome === 'SUCCESS',
+            ...(this.scramble ? { mode: 'SCRAMBLE' as const, bestChain: this.combo.best } : {}),
+            ...(this.runFlownEasy ? { easy: true } : {})
         });
 
         this.dailyResults = merged.results;
         saveDailyResults(this.dailyResults);
-        this.dailyCard = formatShareCard(merged.today);
     }
 
     /**
@@ -2038,8 +2661,26 @@ export class GameLoop {
      */
     public fireSelectedWeapon() {
         if (this.currentView !== 'MICRO_FLIGHT') return;
+        if (this.selectedWeapon === 'AIM9' && this.physics.loadout.sidewinders <= 0) {
+            // An empty rail should not be a dead key in a dogfight: fall back
+            // to the cannon, say so, and let the held trigger do the rest.
+            this.selectedWeapon = 'GUN';
+            this.callouts.push('GUNS', 'MODE', 'OUT OF MISSILES - HOLD SPACE');
+            return;
+        }
         if (this.selectedWeapon === 'AIM9') {
             const designated = this.tracker.designated();
+            // A heat-seeker launched at an empty sky is a missile thrown away.
+            // The v2.0.0 browser run found an eager pilot mashing SPACE before
+            // wave 1 had spawned, emptying the rails at nothing - then facing
+            // the first bomber with the gun. No target, no launch.
+            const anyTarget = designated?.target.kind === 'AIR'
+                || this.airborneTargets.some(t => t.isAlive && this.visibility.isVisible(t.id));
+            if (!anyTarget) {
+                soundFX.playRelayClick();
+                this.callouts.push('NO TARGET', 'MODE', 'NOTHING TO LOCK - WAIT FOR THE BANDITS');
+                return;
+            }
             const before = this.weapons.missiles.length;
             this.weapons.fireSidewinder(
                 this.physics,
@@ -2116,6 +2757,8 @@ export class GameLoop {
         if (this.deck.aircraftState === 'AIRBORNE') {
             this.hasLaunched = true;
             this.updateSortie(dt);
+            if (this.scramble && this.deck.aircraftState === 'AIRBORNE') this.updateScramble(dt);
+            this.checkScoreTarget();
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
@@ -2131,6 +2774,18 @@ export class GameLoop {
         this.flashAlpha = Math.max(0, this.flashAlpha - dt * 2.6);
         this.hitMarker = Math.max(0, this.hitMarker - dt);
         this.callouts.update(dt);
+        this.combo.update(dt);
+        this.easyGunBurst = Math.max(0, this.easyGunBurst - dt);
+        this.easyNotYetCooldown = Math.max(0, this.easyNotYetCooldown - dt);
+        if (this.easyMode && (this.inputState[' '] || this.inputState['mousefire'])) {
+            this.easyTriggerTimer -= dt;
+            if (this.easyTriggerTimer <= 0) {
+                this.easyFire(true);
+                this.easyTriggerTimer = EASY_TUNING.triggerInterval;
+            }
+        } else {
+            this.easyTriggerTimer = 0;
+        }
         if (this.trapCinematic > 0) {
             this.trapCinematic = Math.max(0, this.trapCinematic - dt);
             // The deck state machine already owns the aircraft; this is purely
@@ -2208,7 +2863,7 @@ export class GameLoop {
             if (this.scenario.setup.combatShielded) {
                 this.deck.log(`[TRAINING] SAM from ${impact.samId} ghosted — no damage in combat-shielded sortie.`);
             } else {
-                this.physics.applyDamage(impact.damage);
+                this.physics.applyDamage(impact.damage * (this.easyMode ? EASY_TUNING.damageTaken : 1));
                 const sourceSam = this.sensors.samSites.find(s => s.id === impact.samId);
                 this.lastLossCause = { kind: 'SAM', detail: sourceSam?.name ?? impact.samId };
                 this.weapons.spawnExplosion(impact.position, 18, '#ff6600');
@@ -2226,14 +2881,16 @@ export class GameLoop {
             // Simplified hit-scan cannon burst: the alignment/range gate in
             // EnemyAI has already established a valid guns solution, and
             // `hit` says whether this burst actually connected.
-            if (this.scenario.setup.combatShielded || this.dying) return; // ghost in training
+            if (this.scenario.setup.combatShielded || this.dying || enemy.passive) return; // ghost in training
             soundFX.playIncomingFire(this.placeAt(enemy.position));
+            if (hit && enemy.accuracy !== undefined && Math.random() > enemy.accuracy) hit = false;
+            if (hit && this.easyMode && Math.random() < EASY_TUNING.fighterAccuracy) hit = false;
             if (!hit) {
                 this.deck.log(`TRACERS PAST YOU - ${enemy.name} IS FIRING`);
                 this.shake(SHAKE_SOURCES.damageTaken * 0.15);
                 return;
             }
-            const dmg = 4 + Math.random() * 6;
+            const dmg = (4 + Math.random() * 6) * (this.easyMode ? EASY_TUNING.damageTaken : 1);
             this.physics.applyDamage(dmg);
             this.lastLossCause = { kind: 'CANNON', detail: enemy.name };
             this.deck.log(`TAKING CANNON FIRE FROM ${enemy.name}!`);
@@ -2241,8 +2898,10 @@ export class GameLoop {
             this.flash(THEME.alert, 0.28);
         }, (enemy) => {
             // The warning that makes cannon fire a fight instead of an ambush.
-            if (this.scenario.setup.combatShielded) return;
-            this.callouts.push('GUNS TRACKING', 'LOSS', `${enemy.name} - BREAK TURN`);
+            if (this.scenario.setup.combatShielded || enemy.passive) return;
+            // On EASY the plane does the turning; do not order the pilot to.
+            this.callouts.push('GUNS TRACKING', 'LOSS',
+                this.easyMode ? `${enemy.name} - THE PLANE IS TURNING TO FIGHT` : `${enemy.name} - BREAK TURN`);
             // Heard, not just read: the pilot is looking at the target.
             if (this.gunsWarningTimer <= 0) soundFX.playGunsTracking(this.placeAt(enemy.position));
             this.gunsWarningTimer = 4;
@@ -2266,11 +2925,11 @@ export class GameLoop {
             onSAMDestroyed: (destroyedSAM) => {
                 this.score.recordKill('SAM');
                 this.deck.log(`RADAR STRIKE: ${destroyedSAM.name} NEUTRALIZED.`);
-                this.callouts.push('SAM DOWN', 'KILL', destroyedSAM.name);
+                this.payKill(destroyedSAM.position, SCORE_VALUES.SAM, 'SAM DOWN', destroyedSAM.name);
                 this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedSAM.position), 900));
                 this.debris.spawnFromMesh(this.samMesh.lines, destroyedSAM.position, { x: 0, y: 0, z: 0 }, '#ff6622');
                 soundFX.playExplosion(this.placeAt(destroyedSAM.position));
-                soundFX.playKillConfirm();
+                soundFX.playKillConfirm(undefined, this.combo.chain);
             },
             onStrikeTargetHit: (target, destroyed) => this.onStrikeTargetHit(target, destroyed)
         });
@@ -2326,7 +2985,8 @@ export class GameLoop {
 
         // Carrier recovery (arresting gear trap)
         const distToCarrier = Math.hypot(this.physics.position.x, this.physics.position.z);
-        if (distToCarrier < 190 && this.physics.position.y >= 17 && this.physics.position.y <= 30) {
+        // SCRAMBLE has no deck: a low pass over the boat is a flypast, not a trap.
+        if (!this.scramble && distToCarrier < 190 && this.physics.position.y >= 17 && this.physics.position.y <= 30) {
             if (this.physics.airSpeed < 95) {
                 const grade = ScoreKeeper.gradeTrap(this.physics.position.z);
                 this.score.recordTrap(grade);
@@ -2356,20 +3016,488 @@ export class GameLoop {
         }
     }
 
+    // -----------------------------------------------------------------
+    // EASY flying (v2.1.0) - see core/EasyMode.ts
+    // -----------------------------------------------------------------
+
+    public get easyMode(): boolean {
+        return this.flyStyle === 'EASY';
+    }
+
+    /** Switch EASY on or off; `remember` stores the choice. */
+    public setFlyStyle(style: FlyStyle, remember = true) {
+        this.flyStyle = style;
+        if (style === 'EASY') {
+            this.runFlownEasy = true;
+            if (this.scramble) this.scramble.jets = Math.max(this.scramble.jets, this.scrambleLives());
+        }
+        this.callouts.holdScale = style === 'EASY' ? EASY_TUNING.calloutHold : 1;
+        if (remember) saveFlyStyle(style);
+    }
+
+    public toggleFlyStyle(): FlyStyle {
+        this.setFlyStyle(this.easyMode ? 'STANDARD' : 'EASY');
+        this.callouts.push(this.easyMode ? 'EASY FLYING ON' : 'EASY FLYING OFF', 'MODE',
+            this.easyMode ? 'THE PLANE FLIES ITSELF - YOU FIRE' : 'YOU FLY THE PLANE');
+        soundFX.playUiSelect();
+        return this.flyStyle;
+    }
+
+    /** Whether the first-run chooser should be shown before this flight. */
+    public shouldAskFlyStyle(): boolean {
+        // Answered this session counts too: with storage blocked (a private
+        // window) the question otherwise came back before every flight.
+        if (this.flyStyleAnswered) return false;
+        const anyAttempts = Object.values(this.missionRecords).some(r => r.attempts > 0);
+        return shouldAskFlyStyle(loadFlyStyle(), anyAttempts);
+    }
+
+    /**
+     * Every "fly" request from the briefing comes through here, so a brand-new
+     * pilot is asked how they want to fly before their very first flight -
+     * whichever button they pressed - and never again.
+     */
+    public requestFlight(kind: 'BRIEFING' | 'DAILY' | 'SKIP' = 'BRIEFING') {
+        if (this.phase !== 'BRIEFING') return;
+        if (this.shouldAskFlyStyle()) {
+            this.pendingFlight = kind;
+            this.flyStyleChoice = 'EASY';
+            this.flyStyleChooserOpen = true;
+            soundFX.playUiMove();
+            return;
+        }
+        this.launchFlight(kind);
+    }
+
+    private launchFlight(kind: 'BRIEFING' | 'DAILY' | 'SKIP') {
+        if (kind === 'DAILY') {
+            this.startDailySortie();
+        } else {
+            this.confirmBriefing();
+            if (kind === 'SKIP') this.hotStartAirborne();
+        }
+    }
+
+    /** The chooser's answer: remember it and fly what was asked for. */
+    public chooseFlyStyle(style: FlyStyle) {
+        this.flyStyleChooserOpen = false;
+        this.flyStyleAnswered = true;
+        this.setFlyStyle(style);
+        soundFX.playUiSelect();
+        this.launchFlight(this.pendingFlight);
+    }
+
+    public moveFlyStyleChoice(style: FlyStyle) {
+        if (this.flyStyleChoice !== style) soundFX.playUiMove();
+        this.flyStyleChoice = style;
+    }
+
+    public closeFlyStyleChooser() {
+        this.flyStyleChooserOpen = false;
+    }
+
+    /**
+     * The control law actually flying. EASY means the autopilot flies every
+     * intercept, whatever the stored assist level says.
+     */
+    private effectiveAssist(): AssistLevel {
+        return this.easyMode ? 'AUTO' : this.assistLevel;
+    }
+
+    /** Would a press of FIRE do something useful right now? */
+    private shotIsGood(): boolean {
+        if (this.easyMode) return this.easyTriggerChoice() !== 'NOT_YET';
+        const d = this.tracker.designated();
+        if (!d) return false;
+        if (this.selectedWeapon === 'AIM9') return d.inMissileEnvelope && this.physics.loadout.sidewinders > 0;
+        if (this.selectedWeapon === 'GUN') return d.inGunEnvelope && this.physics.loadout.vulcanAmmo > 0;
+        return false;
+    }
+
+    /** An instruction in the words this pilot's controls use (keys, or a thumb). */
+    private forThisPilot(text: string): string {
+        return this.controlScheme === 'TOUCH' ? touchWording(text) : text;
+    }
+
+    /** SCRAMBLE jets per run for the current fly style: more when flying EASY. */
+    private scrambleLives(): number {
+        return this.easyMode ? EASY_TUNING.lives : SCRAMBLE.lives;
+    }
+
+    /** The jets the live run allows - fixed at its start, see `scramble.jets`. */
+    private jetsThisRun(): number {
+        return this.scramble?.jets ?? this.scrambleLives();
+    }
+
+    /**
+     * The EASY smart trigger: SPACE, a click or the FIRE button. Fires the
+     * missile when it will land, the cannon when the target is close and on
+     * the nose, and otherwise says "not yet" in plain words. Bombs and HARMs
+     * still go when the pilot has chosen them - EASY never takes a weapon away.
+     */
+    public easyFire(silent = false) {
+        if (this.currentView !== 'MICRO_FLIGHT' || this.deck.aircraftState !== 'AIRBORNE' || this.dying) return;
+        if (this.selectedWeapon === 'BOMB' || this.selectedWeapon === 'HARM') {
+            if (!silent) this.fireSelectedWeapon();
+            return;
+        }
+        const d = this.tracker.designated();
+        const choice = this.easyTriggerChoice();
+        if (choice === 'MISSILE') {
+            this.selectedWeapon = 'AIM9';
+            this.fireSelectedWeapon();
+        } else if (choice === 'GUN') {
+            this.selectedWeapon = 'GUN';
+            this.easyGunBurst = EASY_TUNING.gunBurstSeconds;
+        } else if (!silent && this.easyNotYetCooldown <= 0) {
+            const inbound = !!d && this.weapons.missiles.some(m => m.targetId === d.target.id);
+            // Say why in words that are true: a ground target never earns a
+            // FIRE NOW from the air-to-air trigger, so "wait" would be a lie.
+            const ground = !!d && d.target.kind !== 'AIR' && !d.inGunEnvelope;
+            this.callouts.push('NOT YET', 'MODE',
+                !d ? 'NO TARGET YET - THE PLANE WILL FIND ONE'
+                    : inbound ? 'A MISSILE IS ALREADY ON ITS WAY'
+                        : ground ? this.forThisPilot('THAT IS ON THE GROUND - PRESS 3 FOR BOMBS, OR 4 FOR A HARM AT A SAM')
+                            : 'THE PLANE IS LINING UP - WAIT FOR "FIRE NOW"',
+                1.4, 'EASY');
+            soundFX.playRelayClick();
+            this.easyNotYetCooldown = 1.2;
+        }
+    }
+
+    /**
+     * A STANDARD pilot who has lost two jets in one run is offered EASY, once,
+     * in plain words - the guidelines' "hints after repeated failure", and the
+     * same in-context pattern as the stick-flip offer. Never repeated, never
+     * shown on EASY, and it changes nothing until the pilot says so.
+     */
+    private offerEasyIfStruggling() {
+        if (this.easyMode || this.easyOffered || this.score.breakdown.airframesLost < 2) return;
+        this.easyOffered = true;
+        // A phone has no ESC key: say where its menu is.
+        this.callouts.push('HAVING A HARD TIME?', 'MODE',
+            this.controlScheme === 'TOUCH'
+                ? 'TAP THE MENU BUTTON (TOP RIGHT) AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF'
+                : 'PRESS ESC AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF, YOU FIRE', 4.5, 'EASY');
+        this.deck.log('TIP: EASY FLYING (ESC MENU) LETS THE PLANE FLY AND AIM ITSELF - YOU ONLY FIRE.');
+    }
+
+    /** What the smart trigger would do right now. */
+    private easyTriggerChoice() {
+        const d = this.tracker.designated();
+        return easyTrigger({
+            target: d ? {
+                kind: d.target.kind,
+                inMissileEnvelope: d.inMissileEnvelope,
+                inGunEnvelope: d.inGunEnvelope,
+                range: d.range,
+                aspect: d.aspect
+            } : null,
+            sidewinders: this.physics.loadout.sidewinders,
+            missileInbound: !!d && this.weapons.missiles.some(m => m.targetId === d.target.id),
+            gunRounds: this.physics.loadout.vulcanAmmo,
+            heavyWeaponSelected: this.selectedWeapon === 'BOMB' || this.selectedWeapon === 'HARM'
+        });
+    }
+
+    // -----------------------------------------------------------------
+    // SCRAMBLE (v2.0.0) - see core/Scramble.ts
+    // -----------------------------------------------------------------
+
+    /** Missiles armed and selected: a beginner's first SPACE should be a kill. */
+    private armScrambleJet() {
+        this.physics.loadout = { ...SCRAMBLE_LOADOUT };
+        this.countermeasures = createCountermeasureState(SCRAMBLE_LOADOUT.chaff);
+        this.selectedWeapon = 'AIM9';
+    }
+
+    /**
+     * The moment a run passes the score it was chasing (v2.3.0). Once a run:
+     * "AHEAD OF ANNA!" past a challenger's score, "PAST YOUR BEST!" past the
+     * pilot's own - while it is happening, which is when it feels like
+     * something. Not "YOU BEAT ANNA": the run is not over, and a penalty can
+     * still take the lead back; the debrief says who won.
+     */
+    private checkScoreTarget() {
+        const t = this.scoreTarget;
+        if (!t) return;
+        // Live, both ways: the chip follows the line if a penalty crosses it.
+        this.scoreTargetPassed = this.score.totalScore > t.score;
+        if (this.scoreTargetCelebrated) return;
+        if (!this.scoreTargetPassed) {
+            this.scoreTargetPassedAt = -1;
+            return;
+        }
+        if (this.scoreTargetPassedAt < 0) this.scoreTargetPassedAt = this.missionSeconds;
+        // Its own moment: let a kill or wave banner clear first (up to 2.5 s)
+        // rather than stacking three banners at once.
+        if (this.callouts.active().length > 1 && this.missionSeconds - this.scoreTargetPassedAt < 2.5) return;
+        this.scoreTargetCelebrated = true;
+        const pts = t.score.toLocaleString('en-US');
+        if (t.challenge) {
+            this.callouts.push(t.who === 'A FRIEND' ? 'AHEAD OF THE CHALLENGE!' : `AHEAD OF ${t.who}!`, 'PRAISE',
+                `PAST ${pts} PTS - KEEP IT UP`, 2.8, 'RECORD');
+        } else {
+            this.callouts.push('PAST YOUR BEST!', 'PRAISE', `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
+        }
+        soundFX.playFanfare(6);
+        this.flash(THEME.caution, 0.25);
+    }
+
+    private updateScramble(dt: number) {
+        const s = this.scramble;
+        if (!s || this.dying) return;
+        // Fuel is not the game here.
+        if (this.physics.fuel < 1500) this.physics.fuel = 1500;
+        // EASY: the rails slowly refill, so a pilot never runs dry mid-wave.
+        if (this.easyMode && this.physics.loadout.sidewinders < SCRAMBLE.maxSidewinders) {
+            s.trickle += dt;
+            if (s.trickle >= EASY_TUNING.missileTrickleSeconds) {
+                s.trickle = 0;
+                this.physics.loadout.sidewinders++;
+            }
+        }
+
+        // A bomber that reaches the boat hits it and is gone - the cost of
+        // chasing the wrong contact, in the one currency this mode keeps.
+        for (const t of this.airborneTargets) {
+            if (!t.isAlive || !isBomber(t)) continue;
+            if (Math.hypot(t.position.x, t.position.z) > SCRAMBLE.bomberStrikeRadius) continue;
+            t.isAlive = false;
+            s.leaked++;
+            const dmg = Math.round(SCRAMBLE.bomberHullDamage * (this.easyMode ? EASY_TUNING.carrierDamage : 1));
+            this.deck.inventory.carrierHealth = Math.max(0, this.deck.inventory.carrierHealth - dmg);
+            this.score.recordHullDamage(dmg);
+            this.deck.log(`CRITICAL: ${t.name} REACHED CV-68! -${dmg}% HULL.`);
+            this.callouts.push('CARRIER HIT', 'LOSS', `-${dmg}% HULL · A BOMBER GOT THROUGH`);
+            this.weapons.spawnExplosion({ x: 0, y: 30, z: 0 }, 30, '#ff6600');
+            soundFX.playExplosion(this.placeAt({ x: 0, y: 20, z: 0 }));
+            soundFX.playMasterCaution();
+            this.shake(SHAKE_SOURCES.damageTaken * 0.6);
+        }
+
+        if (s.breather > 0) {
+            s.breather -= dt;
+            if (s.breather <= 0) this.spawnScrambleWave();
+            return;
+        }
+
+        if (this.airborneTargets.some(t => t.isAlive)) {
+            s.waveSeconds += dt;
+            s.clearTimer = 0;
+            if (s.waveSeconds < SCRAMBLE.waveTimeoutSeconds) return;
+            // Safety net: whatever is left turns for home. No points for it,
+            // but the run moves on.
+            for (const t of this.airborneTargets) t.isAlive = false;
+            s.bugOut = true;
+            this.callouts.push('BANDITS BUGGING OUT', 'MODE', 'THE REST OF THE WAVE TURNED FOR HOME', 2.2, 'WAVE');
+            return;
+        }
+        // Let the last kill have its moment - banner, ring, hit-stop - before
+        // the wave-clear payout lands on top of it.
+        s.clearTimer += dt;
+        if (s.clearTimer < GameLoop.WAVE_CLEAR_BEAT) return;
+        s.clearTimer = 0;
+
+        // Three ways a wave ends (v2.2.0). CLEARED: every contact shot down -
+        // the full bonus. HELD: some shot down, but a bomber reached the boat
+        // or the rest bugged out - it counts, without the speed bonus. OVER:
+        // nothing shot down - it does not count. A wave let through used to
+        // pay the same as one shot down, so a run that never fired earned the
+        // CLEAR WAVE 5 star and a SUCCESS debrief.
+        const won = !s.bugOut && s.leaked === 0;
+        const held = s.waveKills > 0;
+        const leaked = s.leaked;
+        const bugOut = s.bugOut;
+        const bonus = won ? waveClearBonus(s.wave, s.waveSeconds) : 0;
+        s.bugOut = false;
+        s.leaked = 0;
+        s.waveKills = 0;
+        if (held) {
+            s.wavesCleared++;
+            this.score.recordWaveSurvived();
+        }
+        this.score.recordBonus(bonus);
+        const rearmed = rearmAfterWave(this.physics.loadout, this.physics.damage);
+        this.physics.loadout = rearmed.loadout;
+        this.physics.damage = rearmed.damage;
+        // The rails are loaded again; so is the weapon a beginner fires best.
+        if (this.selectedWeapon === 'GUN' && this.physics.loadout.sidewinders > 0) this.selectedWeapon = 'AIM9';
+        this.lastCautionDamage = this.physics.damage;
+        const got = leaked > 0 ? `${leaked} REACHED THE SHIP` : bugOut ? 'THE REST TURNED FOR HOME' : '';
+        if (won) {
+            this.callouts.push(`WAVE ${s.wave} CLEARED`, 'PRAISE',
+                `+${bonus + SCORE_VALUES.WAVE_SURVIVED} PTS · REARMED & PATCHED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} CLEARED IN ${Math.round(s.waveSeconds)} S. +${bonus} BONUS.`);
+            soundFX.playFanfare(Math.min(12, s.wave));
+            this.flash(THEME.phosphor, 0.2);
+        } else if (held) {
+            this.callouts.push(`WAVE ${s.wave} HELD`, 'MODE',
+                `+${SCORE_VALUES.WAVE_SURVIVED} PTS · ${got} · REARMED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} HELD - ${got}.`);
+            soundFX.playUiSelect();
+        } else {
+            this.callouts.push(`WAVE ${s.wave} OVER`, 'LOSS',
+                `NONE SHOT DOWN${got ? ` · ${got}` : ''} · REARMED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} OVER - NONE SHOT DOWN.`);
+        }
+        s.breather = SCRAMBLE.breatherSeconds;
+    }
+
+    /** Turn the next wave's specs into contacts placed round the jet. */
+    private spawnScrambleWave() {
+        const s = this.scramble;
+        if (!s) return;
+        s.wave++;
+        s.waveSeconds = 0;
+        s.bugOut = false;
+        s.leaked = 0;
+        s.waveKills = 0;
+        const spec = scrambleWave(s.wave, s.seed, this.easyMode);
+        s.brief = this.controlScheme === 'TOUCH' ? touchWording(spec.brief) : spec.brief;
+
+        const p = this.physics.position;
+        const yaw = this.physics.yaw;
+        this.airborneTargets = spec.spawns.map((sp, i) => {
+            const a = spawnReference(sp.type, p, yaw) + sp.bearingDeg * (Math.PI / 180);
+            const bomber = sp.type === 'BOMBER';
+            const placed = { x: p.x + Math.sin(a) * sp.rangeM, z: p.z + Math.cos(a) * sp.rangeM };
+            const { x, z } = bomber ? keepClearOfBoat(placed.x, placed.z) : placed;
+            const ground = this.terrain.getElevation(x, z);
+            const y = Math.max(ground + 250, p.y + sp.altOffsetM, 300);
+            const speed = bomber ? 190 : 185;
+            // Fighters come for the jet; bombers go for the boat.
+            const tx = bomber ? -x : p.x - x;
+            const tz = bomber ? -z : p.z - z;
+            const h = Math.hypot(tx, tz) || 1;
+            return {
+                id: `W${s.wave}-${bomber ? 'TU-22' : 'MIG'}-${i}`,
+                name: bomber ? 'Tu-22M BACKFIRE' : `MiG-23 FLOGGER #${i + 1}`,
+                position: { x, y, z },
+                velocity: { x: (tx / h) * speed, y: 0, z: (tz / h) * speed },
+                isAlive: true,
+                passive: sp.passive,
+                accuracy: fighterAccuracy(s.wave),
+                huntsPlayer: !bomber && !sp.passive
+            };
+        });
+        // Every wave is auto-locked again: picking a target is a skill this
+        // mode teaches later (T), not a gate in front of the first shot.
+        this.hasInitialTargetAcquired = false;
+        this.manualTargetCleared = false;
+        this.callouts.push(`WAVE ${s.wave}`, 'PRAISE', s.brief, 2.6, 'WAVE');
+        this.deck.log(`WAVE ${s.wave} INBOUND: ${s.brief}.`);
+        soundFX.playUiSelect();
+    }
+
+    /**
+     * Back in the fight after a loss: same patch of sky, a safe height,
+     * nose on the nearest bandit, a fresh magazine. The deck - and its
+     * progress bar - is no part of this mode.
+     */
+    private respawnScramble() {
+        const jetsLeft = this.jetsThisRun() - this.score.breakdown.airframesLost;
+        if (jetsLeft <= 0) {
+            // The failure condition ends the run on the next tick.
+            this.deck.aircraftState = 'HANGAR_MAINTENANCE';
+            return;
+        }
+        const was = { ...this.physics.position };
+        this.hotStartAirborne();
+        const ground = this.terrain.getElevation(was.x, was.z);
+        const nearest = this.airborneTargets
+            .filter(t => t.isAlive)
+            .sort((a, b) => Math.hypot(a.position.x - was.x, a.position.z - was.z)
+                - Math.hypot(b.position.x - was.x, b.position.z - was.z))[0];
+        const yaw = nearest ? Math.atan2(nearest.position.x - was.x, nearest.position.z - was.z) : 0;
+        this.physics.position = { x: was.x, y: Math.max(ground + 600, 800), z: was.z };
+        this.physics.yaw = yaw;
+        this.physics.velocity = { x: Math.sin(yaw) * 230, y: 0, z: Math.cos(yaw) * 230 };
+        this.armScrambleJet();
+        this.timeRewind.clearHistory();
+        this.callouts.push(`JET ${this.jetsThisRun() - jetsLeft + 1} OF ${this.jetsThisRun()}`, 'MODE',
+            jetsLeft === 1 ? 'LAST JET - MAKE IT COUNT' : 'BACK IN THE FIGHT', 2.2, 'WAVE');
+    }
+
+    private scrambleObjective(): ObjectiveStep {
+        const s = this.scramble!;
+        const jets = Math.max(0, this.jetsThisRun() - this.score.breakdown.airframesLost);
+        const hull = Math.round(this.deck.inventory.carrierHealth);
+        const status = `JETS ${jets} · HULL ${hull}%`;
+        const alive = this.airborneTargets.filter(t => t.isAlive).length;
+        if (s.wave === 0 || s.breather > 0 || alive === 0) {
+            // The beat between a wave's end and its payout says how it ended.
+            const ending = s.wave > 0 && s.breather <= 0;
+            const won = !s.bugOut && s.leaked === 0;
+            return {
+                title: s.wave === 0 ? 'BANDITS INBOUND'
+                    : ending ? `WAVE ${s.wave} ${won ? 'CLEARED' : 'OVER'}` : `WAVE ${s.wave + 1} INBOUND`,
+                detail: s.wave === 0 ? `Weapons hot. ${status}`
+                    : ending ? `${won ? 'Shot them all down.' : 'Rearming.'} ${status}` : `Rearmed and patched. ${status}`,
+                urgency: 'NORMAL',
+                waiting: true
+            };
+        }
+        return {
+            // Plain words (v2.1.0): "SHOOT DOWN 2 PLANES", not "SPLASH 2 BANDITS".
+            title: `SHOOT DOWN ${alive} PLANE${alive === 1 ? '' : 'S'}`,
+            detail: `WAVE ${s.wave} · ${s.brief} · ${status}`,
+            key: 'SPACE',
+            urgency: 'ACTION'
+        };
+    }
+
+    /**
+     * The shared payout for anything the player shoots down (aircraft and
+     * SAMs; a bombed structure has its own payoff): extend the chain, bank
+     * its bonus, put one escalating banner up (a chain replaces its own
+     * previous banner rather than stacking), throw the ring and the points at
+     * the wreck, and hold the world for a beat.
+     */
+    private payKill(position: Vector3, baseValue: number, soloLine: string, name: string) {
+        const kill = this.combo.registerKill(baseValue);
+        this.score.recordBonus(kill.bonus);
+        // The share picture's moment: the best kill so far - the longest
+        // chain, a bomber over a fighter - photographed a beat later, when
+        // the fireball and the banner are up.
+        const weight = kill.chain * 10 + baseValue / 100;
+        if (this.scramble && weight >= this.momentWeight) {
+            this.momentPendingWeight = weight;
+            this.momentDueAt = this.elapsedSeconds + 0.3;
+        }
+        const chained = kill.chain >= 2;
+        this.callouts.push(
+            chained ? `${kill.label}  x${kill.multiplier}` : soloLine,
+            'KILL',
+            chained ? `+${baseValue + kill.bonus} PTS  ·  ${name}` : name,
+            undefined,
+            'KILL_CHAIN'
+        );
+        this.killFx.spawn(
+            position,
+            `+${baseValue + kill.bonus}${chained ? ` x${kill.multiplier}` : ''}`,
+            chained ? THEME.caution : THEME.phosphor,
+            chained ? 1 + Math.min(4, kill.chain - 1) * 0.35 : 1
+        );
+        this.hitStop = Math.max(this.hitStop, kill.chain >= 3 ? 0.16 : 0.09);
+    }
+
     private onTargetDestroyed(destroyedTarget: AirborneTarget) {
         this.deck.log(`COMBAT REPORT: ${destroyedTarget.name} DESTROYED.`);
         this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
 
         this.sortieKills++;
+        if (this.scramble) this.scramble.waveKills++;
         this.celebrate('FIRST_BLOOD');
-        this.callouts.push(splashLine(this.sortieKills), 'KILL', destroyedTarget.name);
+        const base = isBomber(destroyedTarget) ? SCORE_VALUES.BOMBER : SCORE_VALUES.FIGHTER;
+        this.payKill(destroyedTarget.position, base, splashLine(this.sortieKills), destroyedTarget.name);
         // A kill at knife-fighting range should rattle the canopy; one at
         // five kilometres is a flash on the horizon.
         this.shake(SHAKE_SOURCES.killConfirmed + blastTrauma(this.rangeTo(destroyedTarget.position), 900));
         this.flash(THEME.phosphor, 0.22);
         const meshLines = isBomber(destroyedTarget) ? this.bomberMesh.lines : this.mig23Mesh.lines;
         this.debris.spawnFromMesh(meshLines, destroyedTarget.position, destroyedTarget.velocity, '#ff4433', 24);
-        soundFX.playKillConfirm();
+        soundFX.playKillConfirm(undefined, this.combo.chain);
 
         // Map contact id back to its strike package ("STRIKE-1-0" -> "STRIKE-1")
         const pkgId = destroyedTarget.id.replace(/-\d+$/, '');
@@ -2406,8 +3534,13 @@ export class GameLoop {
         }
 
         const deckFailed = this.deck.missionState === 'FAILED';
-        const outcome = deckFailed ? 'FAILED' : this.missionStatus.outcome;
+        let outcome = deckFailed ? 'FAILED' : this.missionStatus.outcome;
         if (outcome === 'ACTIVE' || this.phase === 'DEBRIEF') return;
+        // SCRAMBLE always ends with the jets or the boat gone; going down
+        // after the fifth wave is a completed run, not a failed one.
+        if (this.scramble && outcome === 'FAILED' && this.scramble.wavesCleared >= SCRAMBLE.clearWave) {
+            outcome = 'SUCCESS';
+        }
 
         this.missionOutcome = outcome;
         this.missionReason = deckFailed
@@ -2415,6 +3548,8 @@ export class GameLoop {
             : this.missionStatus.reason;
         if (outcome === 'SUCCESS') this.score.recordMissionComplete();
 
+        const bestBefore = this.bestScore;
+        const missionBestBefore = this.missionRecords[this.scenario.id]?.best ?? 0;
         const result = recordBestScore(this.score.totalScore, this.bestScore);
         this.bestScore = result.best;
         this.isNewBest = result.isNewBest;
@@ -2424,8 +3559,10 @@ export class GameLoop {
         );
         this.missionRecords = merged.records;
         this.isMissionBest = merged.isNewBest;
+        this.beatPreviousBest = (this.isNewBest && bestBefore > 0) || (this.isMissionBest && missionBestBefore > 0);
         saveMissionRecords(this.missionRecords);
         if (this.isDailyRun) this.recordDailyRun();
+        this.recordProgression(outcome === 'SUCCESS');
 
         this.deck.log(outcome === 'SUCCESS' ? 'MISSION COMPLETE.' : 'MISSION FAILED.');
         soundFX.playDebriefSting(outcome === 'SUCCESS');
@@ -2456,6 +3593,7 @@ export class GameLoop {
         // A scenario with scripted phases owns the objective line; the generic
         // deck/flight director is the fallback for the open-ended mode, and
         // for the deck states a flight phase has nothing useful to say about.
+        if (this.scramble) return this.scrambleObjective();
         const snapshot = this.missionSnapshot();
         const missionObjective = this.mission.objective(snapshot);
         if (missionObjective) return missionObjective;
@@ -2514,6 +3652,9 @@ export class GameLoop {
         if (this.deck.aircraftState !== 'AIRBORNE' || this.dying) return null;
 
         const groundElevation = this.terrain.getElevation(this.physics.position.x, this.physics.position.z);
+        // SCRAMBLE has no deck to come home to: no approach, trap or
+        // return-to-carrier coaching, and damage is patched by clearing a wave.
+        const scramble = this.scramble !== null;
         const contextual = getContextualHint({
             isStalled: this.physics.isStalled,
             rwrState: this.sensors.masterRwrState,
@@ -2522,11 +3663,11 @@ export class GameLoop {
             fuel: this.physics.fuel,
             airSpeed: this.physics.airSpeed,
             damage: this.physics.damage,
-            distanceToCarrier: Math.hypot(this.physics.position.x, this.physics.position.z),
+            distanceToCarrier: scramble ? Number.POSITIVE_INFINITY : Math.hypot(this.physics.position.x, this.physics.position.z),
             isAirborne: true,
             // The trap-speed warning is for a recovery, not for the cat shot
             // that necessarily happens fast and at zero range from the boat.
-            closingOnCarrier: HUD.isOnApproach(this.physics),
+            closingOnCarrier: !scramble && HUD.isOnApproach(this.physics),
             bayOpen: this.physics.bayOpen,
             gunsTracking: this.gunsWarningTimer > 0,
             bandit: this.nearestBandit()
@@ -2535,11 +3676,19 @@ export class GameLoop {
         // Safety first, then the training checkout, then routine coaching - and
         // routine coaching only when it does not contradict the objective strip.
         // See `arbitrateHint` for the measured case that made this necessary.
-        return arbitrateHint(
-            contextual,
-            this.training.currentStep?.prompt ?? null,
+        let hint = scramble && contextual?.text.includes('RETURN TO CARRIER')
+            ? { text: 'HEAVY DAMAGE - CLEAR THE WAVE TO PATCH THE JET', severity: contextual.severity }
+            : contextual;
+        if (this.easyMode) hint = easyHint(hint, this.easyTriggerChoice() !== 'NOT_YET');
+        const chosen = arbitrateHint(
+            hint,
+            // EASY switched on part way through a checkout: its stick drills
+            // no longer apply (v2.2.0 review).
+            this.easyMode ? null : this.training.currentStep?.prompt ?? null,
             this.currentObjective()
         );
+        // A phone gets the same order in words a thumb can follow.
+        return chosen && this.controlScheme === 'TOUCH' ? { ...chosen, text: touchWording(chosen.text) } : chosen;
     }
 
     // -----------------------------------------------------------------
@@ -2582,31 +3731,34 @@ export class GameLoop {
                     changeable: this.scenario.setup.allowMapChoice === true
                 },
                 storedPalette() === null,
-                storedPitchInversion() === null
+                storedPitchInversion() === null,
+                {
+                    medals: this.medals,
+                    careerLine: this.career.runs > 0
+                        ? (() => { const c = careerLevel(this.career.xp); return `CAREER LV ${c.level} · ${c.title}`; })()
+                        : null,
+                    challengeLine: this.challenge && this.scenario.setup.scramble ? challengeLine(this.challenge) : null,
+                    textSizeLabel: textSizeSpec(this.textSize).label,
+                    flyStyleLabel: this.easyMode ? 'EASY flying' : 'STANDARD flying',
+                    // SCRAMBLE's jets follow the fly style: say how many.
+                    lossLine: this.scenario.setup.scramble
+                        ? `Losing all ${this.scrambleLives() === 3 ? 'three' : this.scrambleLives() === 5 ? 'five' : this.scrambleLives()} jets, or the carrier.`
+                        : undefined
+                }
             );
+            if (this.challengeWelcomeOpen && this.challenge && !this.flyStyleChooserOpen) {
+                drawChallengeWelcome(this.ctx, w, h, this.challenge, this.controlScheme === 'TOUCH', this.elapsedSeconds);
+            }
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
+            if (this.flyStyleChooserOpen) {
+                drawFlyStyleChooser(this.ctx, w, h, this.flyStyleChoice,
+                    textSizeSpec(this.textSize).label, this.controlScheme === 'TOUCH');
+            }
             return;
         }
 
         if (this.phase === 'DEBRIEF') {
-            this.briefing.drawDebrief(
-                this.ctx, w, h, this.score, this.deck.waveNumber, this.bestScore, this.isNewBest,
-                {
-                    outcome: this.missionOutcome === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-                    scenarioName: this.scenario.name,
-                    reason: this.missionReason,
-                    // Only surfaced on a failure - a win has no "cause" to
-                    // report, and lastLossCause is reset every sortie so it
-                    // can never point at a hit from a previous flight.
-                    cause: this.missionOutcome === 'FAILED' ? this.lastLossCause : null,
-                    title: this.scenario.victoryTitle,
-                    missionBest: recordFor(this.missionRecords, this.scenario.id).best,
-                    isMissionBest: this.isMissionBest,
-                    nextUp: this.nextUpLabel() ?? undefined,
-                    shareCard: this.dailyCard,
-                    copied: this.dailyCopied
-                }
-            );
+            drawDebriefView(this.ctx, w, h, this.debriefData(), this.debriefAge);
             return;
         }
 
@@ -2628,10 +3780,24 @@ export class GameLoop {
                     touchReserveTopRight: this.controlScheme === 'TOUCH'
                         ? this.viewWidth - this.touchLayout.menu.x + 10
                         : undefined,
+                    desktopMenuReserve: DESKTOP_MENU_BUTTON_RESERVE / (this.uiZoom || 1),
                     detail: this.hud.hudDensity === 'FIRST_FLIGHT' ? 'BRIEF' : 'FULL'
                 },
                 w, h, this.elapsedSeconds
             );
+        }
+
+        // Before any overlay and before the thumb controls: the share picture
+        // shows the fight, not the buttons.
+        if (this.momentDueAt > 0 && this.elapsedSeconds >= this.momentDueAt) {
+            // A beat late is fine. Held back longer - the menu, the help or
+            // the rotate prompt went up - it would photograph some later,
+            // unrelated frame at the kill's weight: drop it instead.
+            if (this.elapsedSeconds - this.momentDueAt > 0.5) {
+                this.momentDueAt = 0;
+            } else if (this.currentView === 'MICRO_FLIGHT' && !this.menuOpen && !this.helpVisible && !this.awaitingRotation) {
+                this.captureMoment();
+            }
         }
 
         if (this.helpVisible) {
@@ -2657,7 +3823,31 @@ export class GameLoop {
         // instruments, so the game asks for the device rather than shipping
         // something unreadable.
         if (this.awaitingRotation) {
-            drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds);
+            if (this.rotationWaitSince < 0) this.rotationWaitSince = this.elapsedSeconds;
+            drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds, this.elapsedSeconds - this.rotationWaitSince);
+        } else {
+            this.rotationWaitSince = -1;
+        }
+    }
+
+    /** Keep a downscaled copy of the frame just drawn as the run's best moment. */
+    private captureMoment() {
+        this.momentDueAt = 0;
+        const src = this.canvas;
+        if (!src.width || !src.height) return;
+        try {
+            this.momentCanvas ??= globalThis.document?.createElement('canvas') ?? null;
+            const c = this.momentCanvas;
+            const ctx = c?.getContext('2d');
+            if (!c || !ctx) return;
+            const scale = Math.min(1, 960 / src.width);
+            c.width = Math.round(src.width * scale);
+            c.height = Math.round(src.height * scale);
+            ctx.drawImage(src, 0, 0, c.width, c.height);
+            this.moment = { image: c, width: c.width, height: c.height };
+            this.momentWeight = this.momentPendingWeight;
+        } catch {
+            // A missing moment only means the card shows the radar scope.
         }
     }
 
@@ -2709,6 +3899,7 @@ export class GameLoop {
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
             fireArmed: this.deck.aircraftState === 'AIRBORNE',
+            fireReady: this.deck.aircraftState === 'AIRBORNE' && this.shotIsGood(),
             recoveryOn: this.approachAssist
         });
     }
@@ -2750,6 +3941,19 @@ export class GameLoop {
         this.renderer.decayClear(Math.min(0.1, Math.max(0.001, frameDt)), this.persistenceTau);
 
         this.drawHorizonAndSea(camPos, camPitch, camYaw, camRoll);
+
+        // Speed streaks: how many of the pool show scales with airspeed, so a
+        // slow approach is calm and a 500-knot pass is a blur. Thinned for
+        // prefers-reduced-motion rather than removed - they are also the only
+        // close-range motion cue over open water.
+        this.streaks.update(camPos, this.physics.velocity);
+        const streakShare = SpeedStreaks.intensity(this.physics.airSpeed) * (this.motion.shakeScale < 1 ? 0.3 : 1);
+        const shown = Math.floor(this.streaks.points.length * streakShare);
+        for (let i = 0; i < shown; i++) {
+            const p = this.streaks.points[i];
+            this.renderer.drawLine(p, SpeedStreaks.tail(p, this.physics.velocity),
+                camPos, camPitch, camYaw, camRoll, WORLD.horizon, 1);
+        }
 
         this.renderer.renderMesh(this.carrierMesh, { x: 0, y: 0, z: 0 }, 0, camPos, camPitch, camYaw, camRoll, WORLD.carrier);
         this.terrain.render(this.renderer, camPos, camPitch, camYaw, camRoll);
@@ -2810,6 +4014,13 @@ export class GameLoop {
             this.flash('#00e5ff', this.timeRewind.isRewindingEffect * 0.8);
         }
 
+        drawKillFx(this.ctx, this.killFx, (p) => {
+            const c = this.renderer.transformToCamera(p, camPos, camPitch, camYaw, camRoll);
+            if (c.z < this.renderer.nearPlane) return null;
+            const sp = this.renderer.projectCameraPoint(c);
+            return { x: sp.x, y: sp.y, z: c.z };
+        }, this.renderer.fov);
+
         this.hud.draw(
             this.ctx,
             this.physics,
@@ -2820,6 +4031,7 @@ export class GameLoop {
             {
                 hint: this.currentHint,
                 score: this.score,
+                scoreTarget: this.scoreTarget ? { ...this.scoreTarget, passed: this.scoreTargetPassed } : null,
                 objective: this.currentObjective(),
                 checklist: this.training.checklist(),
                 strikeTargets: this.strikeTargets,
@@ -2831,16 +4043,19 @@ export class GameLoop {
                 pitchInverted: this.pitchInverted,
                 rewindsRemaining: this.timeRewind.rewindsRemaining,
                 goHere: this.goHereGoal(),
-                assistLabel: assistSpec(this.assistLevel).label,
-                assistOverride: this.assistOverride,
+                assistLabel: this.easyMode ? 'EASY' : assistSpec(this.assistLevel).label,
+                // EASY: the autopilot's own limits (ALPHA LIMIT...) are its
+                // business, not a message for a pilot who is not flying.
+                assistOverride: this.easyMode ? 'NONE' : this.assistOverride,
                 callouts: this.callouts.active(),
+                combo: { chain: this.combo.chain, multiplier: multiplierFor(this.combo.chain), fraction: this.combo.fraction },
                 hitMarker: this.hitMarker,
                 trapStamp: this.trapGrade,
                 touchMode: this.controlScheme === 'TOUCH',
                 touchReserve: this.controlScheme === 'TOUCH' ? this.hudReserve() : undefined,
                 motion: this.motion,
                 visibleContacts: this.visibility,
-                terrainFollowing: this.terrainFollowing && this.assistLevel === 'AUTO',
+                terrainFollowing: this.terrainFollowing && this.effectiveAssist() === 'AUTO',
                 // The JOIN cue ("get astern of the boat") is advice for a jet on
                 // its way home. Shown from the catapult onward - where it used
                 // to be, on phones, which default the recovery assist on - it
@@ -2897,8 +4112,42 @@ export class GameLoop {
     // Phase transitions driven by the input layer
     // -----------------------------------------------------------------
 
+    /** Take up a shared challenge: SCRAMBLE, on the sharer's seed. */
+    public acceptChallenge(challenge: Challenge | null) {
+        this.challenge = challenge;
+        // A friend's link opens on the friend's challenge, not the menu.
+        this.challengeWelcomeOpen = challenge !== null;
+        if (challenge) this.selectScenarioById('SCRAMBLE');
+    }
+
+    /** ACCEPT on the challenge screen: fly it (asking a newcomer how first). */
+    public acceptChallengeWelcome() {
+        if (!this.challengeWelcomeOpen) return;
+        this.challengeWelcomeOpen = false;
+        this.onChallengeWelcomeClose?.();
+        // The challenger flew EASY and this pilot has never been asked: fly
+        // EASY too, without the question - the same fight, one tap sooner.
+        // A STANDARD challenge still asks: a newcomer may well want EASY.
+        if (this.challenge?.easy && this.shouldAskFlyStyle()) {
+            this.flyStyleAnswered = true;
+            this.setFlyStyle('EASY');
+        }
+        this.requestFlight('BRIEFING');
+    }
+
+    /** SEE ALL MISSIONS: the normal menu; SCRAMBLE still carries the challenge. */
+    public closeChallengeWelcome() {
+        if (!this.challengeWelcomeOpen) return;
+        this.challengeWelcomeOpen = false;
+        this.onChallengeWelcomeClose?.();
+        soundFX.playUiMove();
+    }
+
     public confirmBriefing(seedOverride?: number) {
         if (this.phase !== 'BRIEFING') return;
+        if (seedOverride === undefined && this.challenge && this.scenario.setup.scramble && !this.isDailyRun) {
+            seedOverride = this.challenge.seed;
+        }
         soundFX.playUiSelect();
         // Re-resolved per mission so a first completion graduates the player
         // to the full instruments - unless they have chosen a density already.
@@ -2925,8 +4174,8 @@ export class GameLoop {
         this.menuOpen = false;
         this.isNewBest = false;
         this.isMissionBest = false;
+        this.beatPreviousBest = false;
         this.isDailyRun = false;
-        this.dailyCopied = false;
         this.dailyRunDate = null;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
@@ -2937,8 +4186,12 @@ export class GameLoop {
 
     /** Fly the same sortie again from the deck, straight from the pilot menu. */
     public restartMission() {
+        // A restart is the same fight again - the daily stays the daily, as
+        // FLY AGAIN already did (it used to become an unrecorded random run).
+        const daily = this.isDailyRun;
         this.returnToBriefing();
-        this.confirmBriefing();
+        if (daily) this.startDailySortie();
+        else this.confirmBriefing();
     }
 
     // -----------------------------------------------------------------
@@ -2950,17 +4203,22 @@ export class GameLoop {
         return pilotMenuItems({
             airborne: this.deck.aircraftState === 'AIRBORNE',
             onDeckReady: this.deck.aircraftState === 'CATAPULT_READY',
-            autopilotFlying: this.assistLevel === 'AUTO',
+            autopilotFlying: this.effectiveAssist() === 'AUTO',
             recoveryOn: this.approachAssist,
             hudDensityLabel: HUD_DENSITY_LABEL[this.hud.hudDensity],
-            muted: soundFX.muted
+            muted: soundFX.muted,
+            canRecover: this.scramble === null,
+            musicOn: this.scramble !== null ? soundFX.musicEnabled : undefined,
+            easyOn: this.easyMode,
+            textSizeLabel: textSizeSpec(this.textSize).label
         });
     }
 
     /** The current objective, restated in plain words, for the menu's own panel. */
     public menuObjective(): { title: string; plain: string } {
         const objective = this.currentObjective();
-        return { title: objective.title, plain: plainInstruction(objective.key, objective.title) };
+        const plain = plainInstruction(objective.key, objective.title);
+        return { title: objective.title, plain: this.controlScheme === 'TOUCH' ? touchWording(plain) : plain };
     }
 
     /** ESC, the DOM menu button, and the touch MENU button all call this. */
@@ -3028,6 +4286,15 @@ export class GameLoop {
                 return;
             case 'SOUND':
                 soundFX.toggleMute();
+                return;
+            case 'MUSIC':
+                soundFX.toggleMusic();
+                return;
+            case 'EASY':
+                this.toggleFlyStyle();
+                return;
+            case 'TEXT_SIZE':
+                this.cycleTextSize();
                 return;
             case 'RESTART':
                 this.restartMission();

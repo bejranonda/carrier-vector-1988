@@ -15,9 +15,13 @@ import { APPROACH_TUNING as APPROACH, glideslopeAltitude } from '../flight/Appro
 import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
+import { debriefLayout } from '../renderer/DebriefView';
+import { challengeWelcomeLayout } from '../renderer/ChallengeView';
+import { flyStyleLayout } from '../renderer/FlyStyleView';
 import { storedPalette } from '../renderer/Theme';
 import { SCENARIOS, recommendScenario } from './Scenarios';
 import { MAPS } from '../tactics/TerrainProfiles';
+import { scrambleWave } from './Scramble';
 
 /**
  * Minimal Canvas2D stub covering every call the renderer/HUD/deck view make.
@@ -75,6 +79,14 @@ describe('GameLoop integration smoke test', () => {
         });
         vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 1280, innerHeight: 800 });
         vi.stubGlobal('requestAnimationFrame', vi.fn());
+        // These tests model a STANDARD pilot (v2.1.0 starts a brand-new one on
+        // EASY). Only the fly-style key answers; nothing else is persisted, so
+        // one GameLoop can never leak records into the next.
+        vi.stubGlobal('localStorage', {
+            getItem: (k: string) => (k === 'carrier-vector-1988.flyStyle' ? 'STANDARD' : null),
+            setItem: () => {},
+            removeItem: () => {}
+        });
 
         GameLoop = (await import('./GameLoop')).GameLoop;
         TrainingSequence = (await import('./Tutorial')).TrainingSequence;
@@ -378,13 +390,13 @@ describe('GameLoop integration smoke test', () => {
         expect(game.training.checklist().length).toBe(6);
     });
 
-    it('selects the training sortie on first start for new pilots', () => {
+    it('selects SCRAMBLE on first start for new pilots', () => {
         const game = new GameLoop(makeCanvasStub());
         const originalRaf = window.requestAnimationFrame;
         try {
             window.requestAnimationFrame = () => 0;
             game.start();
-            expect(game.scenario.id).toBe('TRAINING_SORTIE');
+            expect(game.scenario.id).toBe('SCRAMBLE');
         } finally {
             window.requestAnimationFrame = originalRaf;
         }
@@ -392,7 +404,7 @@ describe('GameLoop integration smoke test', () => {
 
     it('opens a returning pilot on the recommended mission, not a fixed default', () => {
         const game = new GameLoop(makeCanvasStub());
-        game.missionRecords = { TRAINING_SORTIE: { best: 900, completions: 1, attempts: 1 } };
+        game.missionRecords = { SCRAMBLE: { best: 900, completions: 1, attempts: 1 } };
         const originalRaf = window.requestAnimationFrame;
         try {
             window.requestAnimationFrame = () => 0;
@@ -400,7 +412,7 @@ describe('GameLoop integration smoke test', () => {
         } finally {
             window.requestAnimationFrame = originalRaf;
         }
-        expect(game.scenario.id).not.toBe('TRAINING_SORTIE');
+        expect(game.scenario.id).not.toBe('SCRAMBLE');
         expect(game.scenario.id).toBe(recommendScenario(game.missionRecords).id);
     });
 
@@ -537,6 +549,7 @@ describe('GameLoop integration smoke test', () => {
 
     it('steps and wraps the scenario selector', () => {
         const game = new GameLoop(makeCanvasStub());
+        game.selectScenarioByIndex(0);
         const first = game.scenario.id;
         game.selectScenario(1);
         expect(game.scenario.id).not.toBe(first);
@@ -614,6 +627,131 @@ describe('GameLoop integration smoke test', () => {
         game.resize(1440, 900);
         expect(game.controlScheme).toBe('KEYBOARD');
         expect(game.assistLevel).toBe('ASSIST');
+    });
+
+    it('makes EXTRA LARGE do something on a phone: in-flight words grow, nothing zooms (#103)', () => {
+        const game = touchGame();
+        expect(game.hud.textBoost).toBe(1);
+        game.cycleTextSize();
+        game.cycleTextSize();
+        expect(game.textSize).toBe('HUGE');
+        expect(game.uiZoom).toBe(1);
+        expect(game.hud.textBoost).toBeGreaterThan(1.3);
+        expect(game.controlScheme).toBe('TOUCH');
+        // A desktop still zooms the whole UI instead.
+        const desk = new GameLoop(makeCanvasStub());
+        desk.resize(1440, 900);
+        desk.cycleTextSize();
+        expect(desk.uiZoom).toBe(1.25);
+        expect(desk.hud.textBoost).toBe(1);
+    });
+
+    it('pauses a live flight when the tab is hidden (v2.2.0 review)', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 30);
+        game.onHidden();
+        expect(game.menuOpen).toBe(true);
+        expect(game.paused).toBe(true);
+        game.onHidden(); // a second hide does not toggle it shut
+        expect(game.menuOpen).toBe(true);
+    });
+
+    it('gives a phone on EASY in SCRAMBLE one big FIRE, and a tap anywhere fires (v2.2.0)', () => {
+        const game = touchGame();
+        game.setFlyStyle('EASY', false);
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 2);
+        expect(game.touchLayout.kit.flight).toBe(false);
+        expect(game.touchLayout.kit.bigFire).toBe(true);
+        expect(game.touchLayout.kit.recover).toBe(false);
+
+        // Wave 1's bomber, parked dead ahead in the missile envelope.
+        runFrames(game, 100);
+        const bomber = game.airborneTargets[0];
+        const p = game.physics.position;
+        bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+        runFrames(game, 3);
+        const rails = game.physics.loadout.sidewinders;
+        // Where the stick used to be is just the world now - and on EASY a
+        // tap on the world is a trigger pull.
+        const where = game.touchLayout.stickZone;
+        game.touch.down({ id: 1, x: where.x + where.w / 2, y: where.y + where.h / 2 }, game.touchLayout);
+        runFrames(game, 2);
+        game.touch.up(1);
+        expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+        expect(game['analog']).toBeNull();
+
+        // Switching EASY off mid-flight brings the stick back.
+        game.toggleFlyStyle();
+        runFrames(game, 2);
+        expect(game.touchLayout.kit.flight).toBe(true);
+        expect(game.touchLayout.kit.stores).toEqual([true, true, false, false]);
+    });
+
+    it('a tap on SHARE opens the share panel instead of flying again (v2.3.0)', () => {
+        const game = touchGame();
+        let opened = 0;
+        game.onShareRequest = () => { opened++; };
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 75);
+        game.deck.inventory.carrierHealth = 0;
+        for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+        expect(game.phase).toBe('DEBRIEF');
+        runFrames(game, 60); // past the input delay
+        const data = game.debriefData();
+        expect(data.share).not.toBeNull();
+        const layout = debriefLayout(game.viewWidth, game.viewHeight, data);
+        expect(layout.share).not.toBeNull();
+        game.handleMenuTap(layout.share!.x + 20, layout.share!.y + 10);
+        expect(game.phase).toBe('DEBRIEF');
+        expect(opened).toBe(1);
+        // What it would send: a message, the challenge link, and a picture.
+        const share = game.currentShare()!;
+        expect(share.url).toMatch(/^https:\/\/.+\/c\/\?c=7\.\d+\.\d+/);
+        expect(share.text).toMatch(/a free jet game.*plays in your browser/);
+        const canvas = makeCanvasStub();
+        expect(game.drawSharePicture(canvas)).toBe(true);
+        expect(canvas.width).toBe(1080);
+    });
+
+    it('with no share panel, SHARE copies the message and the link (v2.3.0)', async () => {
+        const copied: string[] = [];
+        vi.stubGlobal('navigator', { clipboard: { writeText: (t: string) => { copied.push(t); return Promise.resolve(); } } });
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 75);
+        game.deck.inventory.carrierHealth = 0;
+        for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+        expect(game.requestShare()).toBe(true);
+        await Promise.resolve();
+        expect(copied).toHaveLength(1);
+        expect(copied[0]).toMatch(/Carrier Vector: 1988[\s\S]*\nhttps:\/\//);
+        expect(game.shareStatus).toBe('COPIED');
+        expect(game.debriefData().share?.status).toBe('COPIED');
+    });
+
+    it('speaks to a thumb, not a keyboard, on a phone (v2.2.0)', () => {
+        const game = touchGame();
+        game.setFlyStyle('EASY', false);
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 100);
+        expect(game.scramble?.brief).toBe('ONE BOMBER AHEAD - TAP FIRE');
+        const bomber = game.airborneTargets[0];
+        const p = game.physics.position;
+        bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+        runFrames(game, 5);
+        expect(game.currentHint?.text).toBe('FIRE NOW - TAP FIRE');
     });
 
     it('asks a phone held upright to turn, and stops asking once it is', () => {
@@ -803,7 +941,7 @@ describe('GameLoop integration smoke test', () => {
     // Daily sortie
     // -----------------------------------------------------------------
 
-    it('starts the daily on the endless defence, seeded from the date', () => {
+    it('starts the daily as a SCRAMBLE, seeded from the date', () => {
         const day = new Date('2026-09-19T08:00:00Z');
         const a = new GameLoop(makeCanvasStub());
         runFrames(a, 150);
@@ -813,21 +951,14 @@ describe('GameLoop integration smoke test', () => {
         runFrames(b, 150);
         b.startDailySortie(day);
 
-        expect(a.scenario.id).toBe('CARRIER_DEFENSE');
+        expect(a.scenario.id).toBe('SCRAMBLE');
         expect(a.isDailyRun).toBe(true);
         expect(a.phase).toBe('ACTIVE');
         // The whole point: two players, same day, same campaign.
-        expect(a.deck.strikeTimeline).toEqual(b.deck.strikeTimeline);
+        expect(a.scramble?.seed).toBe(b.scramble?.seed);
     });
 
     it('gives a different campaign on a different day', () => {
-        /** Resolve the opening act so the seeded wave director takes over. */
-        const escalate = (game: InstanceType<typeof GameLoop>) => {
-            for (const pkg of game.deck.strikeTimeline) pkg.isIntercepted = true;
-            runFrames(game, 30);
-            return game.deck.strikeTimeline.map(p => [p.aircraftType, p.count]);
-        };
-
         const a = new GameLoop(makeCanvasStub());
         runFrames(a, 150);
         a.startDailySortie(new Date('2026-09-19T08:00:00Z'));
@@ -836,20 +967,12 @@ describe('GameLoop integration smoke test', () => {
         runFrames(b, 150);
         b.startDailySortie(new Date('2026-09-20T08:00:00Z'));
 
-        const waveA = escalate(a);
-        const waveB = escalate(b);
-        expect(waveA.length).toBeGreaterThan(0);
-        expect(waveA).not.toEqual(waveB);
+        expect(a.scramble?.seed).not.toBe(b.scramble?.seed);
+        expect(scrambleWave(8, a.scramble!.seed)).not.toEqual(scrambleWave(8, b.scramble!.seed));
     });
 
     it('gives two pilots on the same day the same escalation, not just the same opening', () => {
         const day = new Date('2026-09-19T08:00:00Z');
-        const escalate = (game: InstanceType<typeof GameLoop>) => {
-            for (const pkg of game.deck.strikeTimeline) pkg.isIntercepted = true;
-            runFrames(game, 30);
-            return game.deck.strikeTimeline.map(p => [p.aircraftType, p.count]);
-        };
-
         const a = new GameLoop(makeCanvasStub());
         runFrames(a, 150);
         a.startDailySortie(day);
@@ -858,7 +981,9 @@ describe('GameLoop integration smoke test', () => {
         runFrames(b, 150);
         b.startDailySortie(day);
 
-        expect(escalate(a)).toEqual(escalate(b));
+        for (let wave = 1; wave <= 12; wave++) {
+            expect(scrambleWave(wave, a.scramble!.seed)).toEqual(scrambleWave(wave, b.scramble!.seed));
+        }
     });
 
     it('forces arcade pacing so the comparison is like for like', () => {
@@ -885,8 +1010,9 @@ describe('GameLoop integration smoke test', () => {
         const today = game.todaysDaily(day);
         expect(today).not.toBeNull();
         expect(today!.attempts).toBe(1);
-        expect(game.dailyCard).toContain('DAILY SORTIE #');
-        expect(game.dailyCard).toContain('attempt 1');
+        const share = game.currentShare()!;
+        expect(share.picture.title).toMatch(/^DAILY SCRAMBLE #\d+ · FIRST TRY$/);
+        expect(share.text).toContain('(first try)');
     });
 
     it('counts a second attempt and keeps the better run', () => {
@@ -909,7 +1035,7 @@ describe('GameLoop integration smoke test', () => {
         const today = game.todaysDaily(day)!;
         expect(today.attempts).toBe(2);
         expect(today.score).toBe(best);
-        expect(game.dailyCard).toContain('attempt 2');
+        expect(game.currentShare()!.text).toContain('(try 2)');
     });
 
     it('does not record an ordinary mission as the daily', () => {
@@ -922,7 +1048,7 @@ describe('GameLoop integration smoke test', () => {
 
         expect(game.phase).toBe('DEBRIEF');
         expect(game.todaysDaily(day)).toBeNull();
-        expect(game.dailyCard).toBeNull();
+        expect(game.currentShare()?.picture.title ?? '').not.toContain('DAILY');
     });
 
     /**
@@ -946,12 +1072,12 @@ describe('GameLoop integration smoke test', () => {
     it('does not fall over when the clipboard is unavailable', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
-        expect(game.copyDailyCard()).toBe(false);
+        expect(game.requestShare()).toBe(false);
 
         game.startDailySortie();
         game.deck.inventory.carrierHealth = 0;
         runFrames(game, 30);
-        expect(() => game.copyDailyCard()).not.toThrow();
+        expect(() => game.requestShare()).not.toThrow();
     });
 
     // -----------------------------------------------------------------
@@ -1047,6 +1173,8 @@ describe('GameLoop integration smoke test', () => {
         game.sensors.samSites = [];
 
         const killOne = (id: string) => {
+            // Let the previous kill's hit-stop run out first.
+            runFrames(game, 12);
             const p = game.physics.position;
             const bandit: AirborneTarget = {
                 id, name: `MiG-23 FLOGGER ${id}`, isAlive: true,
@@ -1064,8 +1192,49 @@ describe('GameLoop integration smoke test', () => {
 
         killOne('A');
         expect(game.callouts.active()[0].text).toBe('SPLASH ONE');
+        // Let the chain window lapse: a kill well apart from the last is
+        // counted, not chained.
+        game.combo.breakChain();
         killOne('B');
         expect(game.callouts.active()[0].text).toBe('SPLASH TWO');
+    });
+
+    it('chains kills inside the window into one escalating, multiplied banner', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.confirmBriefing();
+        game.hotStartAirborne();
+        runFrames(game, 5);
+        game.sensors.samSites = [];
+
+        const killOne = (id: string) => {
+            // Let the previous kill's hit-stop run out first.
+            runFrames(game, 12);
+            const p = game.physics.position;
+            const bandit: AirborneTarget = {
+                id, name: `MiG-23 FLOGGER ${id}`, isAlive: true,
+                position: { x: p.x, y: p.y, z: p.z + 2200 },
+                velocity: { x: 0, y: 0, z: 0 }
+            };
+            game.airborneTargets = [bandit];
+            runFrames(game, 2);
+            game.tracker.designateById(id);
+            game.selectedWeapon = 'AIM9';
+            game.physics.loadout.sidewinders = 2;
+            game.fireSelectedWeapon();
+            for (let i = 0; i < 40 && bandit.isAlive; i++) runFrames(game, 15);
+        };
+
+        killOne('A');
+        const afterOne = game.score.totalScore;
+        killOne('B');
+        const banners = game.callouts.active().filter(c => c.tone === 'KILL');
+        expect(banners).toHaveLength(1);
+        expect(banners[0].text).toBe('DOUBLE SPLASH  x2');
+        expect(game.combo.best).toBe(2);
+        // Second fighter paid double: its own 100 plus a 100 chain bonus.
+        expect(game.score.totalScore - afterOne).toBe(200);
+        expect(game.killFx.live.length).toBeGreaterThan(0);
     });
 
     it('holds the cockpit for the wire, then hands over to the deck', () => {
@@ -2290,6 +2459,712 @@ describe('GameLoop integration smoke test', () => {
             expect(game.handlePilotMenuClick(10, 10)).toBe(false);
             game.toggleMenu();
             expect(game.handlePilotMenuClick(10, 10)).toBe(true);
+        });
+    });
+
+    // -----------------------------------------------------------------
+    // SCRAMBLE (v2.0.0) - the arcade front door
+    // -----------------------------------------------------------------
+    describe('SCRAMBLE', () => {
+        const startScramble = () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            return game;
+        };
+        /** Shoot the whole wave down - credited as the player's kills. */
+        const killAll = (game: InstanceType<typeof GameLoop>) => {
+            for (const t of game.airborneTargets) {
+                if (!t.isAlive) continue;
+                t.isAlive = false;
+                game.scramble!.waveKills++;
+            }
+        };
+
+        it('puts the jet in the air with missiles selected and no deck screen', () => {
+            const game = startScramble();
+            expect(game.phase).toBe('ACTIVE');
+            expect(game.currentView).toBe('MICRO_FLIGHT');
+            expect(game.deck.aircraftState).toBe('AIRBORNE');
+            expect(game.selectedWeapon).toBe('AIM9');
+            expect(game.physics.loadout.sidewinders).toBeGreaterThan(0);
+            expect(game.training.checklist()).toHaveLength(0);
+        });
+
+        it('spawns wave 1 within about a second: one passive bomber ahead, auto-locked', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            expect(game.scramble?.wave).toBe(1);
+            const live = game.airborneTargets.filter(t => t.isAlive);
+            expect(live).toHaveLength(1);
+            expect(live[0].passive).toBe(true);
+            expect(live[0].position.z).toBeGreaterThan(game.physics.position.z + 1500);
+            expect(game.tracker.designated()?.target.id).toBe(live[0].id);
+            expect(game.currentObjective().title).toBe('SHOOT DOWN 1 PLANE');
+        });
+
+        it('a first SPACE on wave 1 scores a kill within a few seconds', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.sensors.samSites = [];
+            game.fireSelectedWeapon();
+            for (let i = 0; i < 40 && game.airborneTargets.some(t => t.isAlive); i++) runFrames(game, 15);
+            expect(game.score.breakdown.bomberKills).toBe(1);
+        });
+
+        it('clears a wave into a bonus, a rearm and the next wave', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.physics.loadout.sidewinders = 0;
+            game.physics.damage = 50;
+            const before = game.score.totalScore;
+            killAll(game);
+            runFrames(game, 30);
+            // The payout waits a beat so it does not land on the kill banner.
+            expect(game.scramble?.wavesCleared).toBe(0);
+            runFrames(game, 50);
+            expect(game.scramble?.wavesCleared).toBe(1);
+            expect(game.score.totalScore).toBeGreaterThan(before + 200);
+            expect(game.physics.loadout.sidewinders).toBe(2);
+            expect(game.physics.damage).toBeLessThan(50);
+            expect(game.currentObjective().title).toBe('WAVE 2 INBOUND');
+            runFrames(game, 200);
+            expect(game.scramble?.wave).toBe(2);
+            expect(game.airborneTargets.filter(t => t.isAlive)).toHaveLength(2);
+        });
+
+        it('passive contacts never open fire', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            const bomber = game.airborneTargets[0];
+            // Park a passive "fighter" on the jet's tail with a perfect solution.
+            const p = game.physics.position;
+            game.airborneTargets.push({
+                id: 'GALLERY-MIG', name: 'MiG-23 FLOGGER #9', isAlive: true, passive: true,
+                position: { x: p.x, y: p.y, z: p.z - 600 },
+                velocity: { x: 0, y: 0, z: 200 }
+            });
+            bomber.isAlive = true;
+            for (let i = 0; i < 20; i++) runFrames(game, 15);
+            expect(game.physics.damage).toBe(0);
+        });
+
+        it('a bomber reaching the boat costs hull, and the jet respawns in the air after a loss', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            const bomber = game.airborneTargets[0];
+            bomber.position = { x: 100, y: 900, z: 100 };
+            runFrames(game, 2);
+            expect(game.deck.inventory.carrierHealth).toBe(85);
+            expect(bomber.isAlive).toBe(false);
+
+            game.physics.damage = 100;
+            for (let i = 0; i < 20; i++) runFrames(game, 15);
+            expect(game.score.breakdown.airframesLost).toBe(1);
+            expect(game.deck.aircraftState).toBe('AIRBORNE');
+            expect(game.currentView).toBe('MICRO_FLIGHT');
+            expect(game.physics.position.y).toBeGreaterThan(500);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('ends on the third lost jet - failed before wave 5, completed after it', () => {
+            const lose = (game: InstanceType<typeof GameLoop>) => {
+                for (let jet = 0; jet < 3 && game.phase === 'ACTIVE'; jet++) {
+                    game.physics.damage = 100;
+                    for (let i = 0; i < 20 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+                }
+            };
+            const early = startScramble();
+            runFrames(early, 75);
+            lose(early);
+            expect(early.phase).toBe('DEBRIEF');
+            expect(early.missionOutcome).toBe('FAILED');
+
+            const veteran = startScramble();
+            runFrames(veteran, 75);
+            veteran.scramble!.wavesCleared = 5;
+            lose(veteran);
+            expect(veteran.phase).toBe('DEBRIEF');
+            expect(veteran.missionOutcome).toBe('SUCCESS');
+            expect(veteran.missionRecords.SCRAMBLE.completions).toBe(1);
+        });
+
+        it('pays stars and career XP at the end, and FLY AGAIN goes straight back up', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.medals = {};
+            game.career = { xp: 0, runs: 0 };
+            game.scramble!.wavesCleared = 5;
+            for (let jet = 0; jet < 3 && game.phase === 'ACTIVE'; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 20 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            }
+            expect(game.phase).toBe('DEBRIEF');
+            expect(game.medals.SCRAMBLE).toBe(0b001);
+            expect(game.lastRun?.fresh).toEqual([0]);
+            expect(game.career.runs).toBe(1);
+            expect(game.career.xp).toBeGreaterThan(400);
+            const data = game.debriefData();
+            expect(data.headline).toBe('SKY HELD');
+            // Every SCRAMBLE run leaves something to share.
+            const share = game.currentShare()!;
+            expect(share.picture.stars).toBe(1);
+            expect(share.picture.stats).toContain('5 WAVES');
+            expect(share.text).toContain('Can you beat me?');
+            expect(data.stars.labels).toHaveLength(3);
+            expect(() => game['draw'](1 / 60)).not.toThrow();
+
+            // Input is held off for a beat, then FLY AGAIN relaunches airborne.
+            expect(game.debriefAcceptsInput()).toBe(false);
+            runFrames(game, 60);
+            expect(game.debriefAcceptsInput()).toBe(true);
+            game.flyAgain();
+            expect(game.phase).toBe('ACTIVE');
+            expect(game.scenario.id).toBe('SCRAMBLE');
+            expect(game.deck.aircraftState).toBe('AIRBORNE');
+            expect(game.score.totalScore).toBe(0);
+            // The share belonged to the run that made it.
+            expect(game.currentShare()).toBeNull();
+        });
+
+        it('a tap on MISSIONS leaves the debrief for mission select; anywhere else flies again', () => {
+            const end = () => {
+                const game = startScramble();
+                runFrames(game, 75);
+                for (let jet = 0; jet < 3 && game.phase === 'ACTIVE'; jet++) {
+                    game.physics.damage = 100;
+                    for (let i = 0; i < 20 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+                }
+                runFrames(game, 60);
+                return game;
+            };
+            const a = end();
+            const m = debriefLayout(a.viewWidth, a.viewHeight, a.debriefData()).missions;
+            a.handleMenuTap(m.x + m.w / 2, m.y + m.h / 2);
+            expect(a.phase).toBe('BRIEFING');
+            const b = end();
+            b.handleMenuTap(5, 5);
+            expect(b.phase).toBe('ACTIVE');
+        });
+
+        it('never stalls: every bandit is on the scope, and a wave that drags on bugs out', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            const bomber = game.airborneTargets[0];
+            // Hide it behind the fjord wall: SCRAMBLE's AEW picture still has it.
+            bomber.position = { x: 2500, y: 200, z: game.physics.position.z + 3000 };
+            runFrames(game, 15);
+            expect(game.visibility.isVisible(bomber.id)).toBe(true);
+
+            game.scramble!.waveSeconds = 80;
+            runFrames(game, 2);
+            expect(game.airborneTargets.some(t => t.isAlive)).toBe(false);
+            runFrames(game, 90);
+            // The run moves on to the next wave whatever happened.
+            runFrames(game, 260);
+            expect(game.scramble?.wave).toBe(2);
+        });
+
+        it('a shared challenge flies the same waves, and the card carries the run', () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.acceptChallenge({ seed: 424242, score: 5000, waves: 3 });
+            runFrames(game, 150);
+            expect(game.scenario.id).toBe('SCRAMBLE');
+            game.confirmBriefing();
+            expect(game.scramble?.seed).toBe(424242);
+            runFrames(game, 75);
+            for (let jet = 0; jet < 3 && game.phase === 'ACTIVE'; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 20 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            }
+            const data = game.debriefData();
+            expect(data.reason).toContain('pts short');
+            expect(game.currentShare()!.url).toContain('?c=424242.');
+        });
+
+        describe('bringing a friend (v2.3.0)', () => {
+            const challenged = () => {
+                const game = new GameLoop(makeCanvasStub());
+                game.acceptChallenge({ seed: 424242, score: 5000, waves: 3, name: 'Anna' });
+                runFrames(game, 150);
+                return game;
+            };
+            const sink = (game: InstanceType<typeof GameLoop>) => {
+                game.deck.inventory.carrierHealth = 0;
+                for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            };
+
+            it('a challenge link opens on the challenge, and ACCEPT flies it', () => {
+                const game = challenged();
+                expect(game.phase).toBe('BRIEFING');
+                expect(game.challengeWelcomeOpen).toBe(true);
+                expect(() => game['draw'](1 / 60)).not.toThrow();
+                // A tap anywhere but the buttons does nothing - no accidental start.
+                expect(game.handleMenuTap(2, 2)).toBe(true);
+                expect(game.phase).toBe('BRIEFING');
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight, game.challenge);
+                game.handleMenuTap(l.accept.x + 10, l.accept.y + 10);
+                expect(game.challengeWelcomeOpen).toBe(false);
+                expect(game.phase).toBe('ACTIVE');
+                expect(game.scramble?.seed).toBe(424242);
+                expect(game.scoreTarget).toEqual({ score: 5000, who: 'ANNA', challenge: true });
+            });
+
+            it('SEE ALL MISSIONS shows the menu, and SCRAMBLE still carries the challenge', () => {
+                const game = challenged();
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight, game.challenge);
+                game.handleMenuTap(l.missions.x + 10, l.missions.y + 10);
+                expect(game.challengeWelcomeOpen).toBe(false);
+                expect(game.phase).toBe('BRIEFING');
+                game.confirmBriefing();
+                expect(game.scramble?.seed).toBe(424242);
+            });
+
+            it('passing the score to beat is a moment - once - and the debrief leads with it', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                game.score.recordBonus(5200);
+                const banners = () => game.callouts.active().filter(c => c.group === 'RECORD').map(c => c.text);
+                // Its own moment: it may wait (up to 2.5 s) for a wave banner to clear.
+                for (let i = 0; i < 200 && banners().length === 0; i++) runFrames(game, 1);
+                // "Ahead", not "beat": the run is not over yet.
+                expect(banners()).toEqual(['AHEAD OF ANNA!']);
+                expect(game['scoreTargetPassed']).toBe(true);
+                game.score.recordBonus(100);
+                runFrames(game, 2);
+                expect(banners()).toHaveLength(1);
+                sink(game);
+                expect(game.phase).toBe('DEBRIEF');
+                const data = game.debriefData();
+                expect(data.headline).toBe('YOU BEAT ANNA!');
+                expect(data.celebrate).toBe(true);
+                expect(data.reason).toMatch(/^YOU [\d,]+ · ANNA 5,000 - you won by [\d,]+!$/);
+                expect(data.share?.text).toBe('YOU BEAT ANNA - LET ANNA KNOW');
+                expect(data.share?.strong).toBe(true);
+                const share = game.currentShare()!;
+                expect(share.picture.headline).toBe('I BEAT ANNA!');
+                expect(share.text.startsWith('I beat your score, Anna!')).toBe(true);
+                // The reply carries the same waves, the new score - and a name once given.
+                expect(share.url).toMatch(/\/c\/\?c=424242\.\d+\.\d+$/);
+                game.setPilotName('Tom');
+                expect(game.currentShare()!.url).toMatch(/#n=Tom$/);
+                expect(game.debriefData().share?.label).toBe('REPLY TO ANNA');
+                const board = game.currentShare()!.picture.board!;
+                expect(board.map(r => r.name)).toEqual(['TOM', 'ANNA']);
+                expect(board[0].score).toBeGreaterThan(5000);
+                expect(board[1].score).toBe(5000);
+                expect(game.currentShare()!.picture.headline).toBe('TOM BEAT ANNA!');
+            });
+
+            it('a lost challenge is not a celebration', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                sink(game);
+                const data = game.debriefData();
+                expect(data.celebrate).toBe(false);
+                expect(data.reason).toContain('short of ANNA');
+                expect(game.currentShare()!.picture.headline).toBe('CAN YOU BEAT ME?');
+            });
+
+            it('without a challenge, a run chases the pilot\'s own best', () => {
+                const game = new GameLoop(makeCanvasStub());
+                game.missionRecords = { ...game.missionRecords, SCRAMBLE: { best: 3000, completions: 0, attempts: 2 } };
+                runFrames(game, 150);
+                game.selectScenarioById('SCRAMBLE');
+                game.confirmBriefing(7);
+                expect(game.scoreTarget).toEqual({ score: 3000, who: 'YOUR BEST', challenge: false });
+                runFrames(game, 30);
+                game.score.recordBonus(3100);
+                for (let i = 0; i < 200 && !game.callouts.active().some(c => c.group === 'RECORD'); i++) runFrames(game, 1);
+                expect(game.callouts.active().some(c => c.text === 'PAST YOUR BEST!')).toBe(true);
+                // A first run has nothing to chase yet.
+                const fresh = new GameLoop(makeCanvasStub());
+                runFrames(fresh, 150);
+                fresh.selectScenarioById('SCRAMBLE');
+                fresh.confirmBriefing(7);
+                expect(fresh.scoreTarget).toBeNull();
+            });
+
+            it('drops a moment held back by the menu, rather than photographing a later frame (v2.3.0 review)', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH ONE', 'MiG-23');
+                game.toggleMenu();
+                runFrames(game, 120); // two seconds on the menu
+                game.toggleMenu();
+                runFrames(game, 30);
+                expect(game['moment']).toBeNull();
+                expect(game['momentWeight']).toBe(-1);
+                // The next kill is photographed as usual.
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH TWO', 'MiG-23');
+                runFrames(game, 30);
+                expect(game['moment']).not.toBeNull();
+            });
+
+            it('shares a first run as an invitation, and only a beaten best as a best (v2.3.0 review)', () => {
+                const game = new GameLoop(makeCanvasStub());
+                runFrames(game, 150);
+                game.selectScenarioById('SCRAMBLE');
+                game.confirmBriefing(7);
+                runFrames(game, 30);
+                game.score.recordBonus(3000);
+                sink(game);
+                expect(game.phase).toBe('DEBRIEF');
+                // Every first run is a "best yet": that is not news to a friend.
+                expect(game.currentShare()!.action).toBe('INVITE A FRIEND');
+                expect(game.debriefData().share?.strong).toBe(false);
+                game.restartMission();
+                runFrames(game, 30);
+                game.score.recordBonus(9000);
+                sink(game);
+                const share = game.currentShare()!;
+                expect(share.text.startsWith('My best yet: ')).toBe(true);
+                expect(share.action).toBe('CHALLENGE A FRIEND');
+                expect(game.debriefData().share).toMatchObject({ strong: true });
+            });
+
+            it('tells the shell when the welcome closes, either way', () => {
+                for (const close of ['accept', 'missions'] as const) {
+                    const game = challenged();
+                    let closed = 0;
+                    game.onChallengeWelcomeClose = () => { closed++; };
+                    if (close === 'accept') game.acceptChallengeWelcome();
+                    else game.closeChallengeWelcome();
+                    game.closeChallengeWelcome();
+                    expect(closed, close).toBe(1);
+                }
+            });
+
+            it('keeps the best kill of the run as the picture\'s moment', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                expect(game['moment']).toBeNull();
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH ONE', 'MiG-23');
+                runFrames(game, 30); // past the beat it waits for the fireball
+                expect(game['moment']).not.toBeNull();
+                const first = game['momentWeight'];
+                game['payKill']({ x: 0, y: 500, z: 0 }, 300, 'SPLASH TWO', 'Tu-22M');
+                runFrames(game, 30);
+                expect(game['momentWeight']).toBeGreaterThan(first);
+                // A new run starts with no moment of its own.
+                game.restartMission();
+                expect(game['moment']).toBeNull();
+            });
+        });
+
+        it('RESTART during the MAYDAY sequence starts a clean run (v2.2.0 review)', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.physics.damage = 100;
+            runFrames(game, 3);
+            expect(game.isDying).toBe(true);
+            game.restartMission();
+            expect(game.isDying).toBe(false);
+            runFrames(game, 400);
+            expect(game.score.breakdown.airframesLost).toBe(0);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('RESTART keeps a daily the daily', () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.startDailySortie(new Date('2026-10-06T12:00:00Z'));
+            const seed = game.scramble?.seed;
+            game.restartMission();
+            expect(game.isDailyRun).toBe(true);
+            expect(game.scramble?.seed).toBe(seed);
+        });
+
+        it('says CARRIER LOST, not SHOT DOWN, when the boat goes and the jet is fine', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.deck.inventory.carrierHealth = 0;
+            for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            const data = game.debriefData();
+            expect(data.headline).toMatch(/^CARRIER LOST/);
+            expect(data.cause).toBeNull();
+        });
+
+        it('a wave that bugs out after a kill is HELD: it counts, but pays no bonus', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.scramble!.waveKills = 1;
+            game.scramble!.waveSeconds = 80;
+            runFrames(game, 2);
+            const before = game.score.bonusPoints;
+            runFrames(game, 90);
+            expect(game.scramble?.wavesCleared).toBe(1);
+            expect(game.score.bonusPoints).toBe(before);
+            expect(game.callouts.active().some(c => c.text === 'WAVE 1 HELD')).toBe(true);
+        });
+
+        it('a wave nobody shot at is OVER: no bonus, and it does not count (v2.2.0 review)', () => {
+            // The exploit: let wave 1's bomber reach the boat without firing,
+            // and it used to pay ~600 points and count toward CLEAR WAVE 5.
+            const game = startScramble();
+            runFrames(game, 75);
+            const bomber = game.airborneTargets[0];
+            bomber.position = { x: 100, y: 300, z: 100 };
+            const before = game.score.bonusPoints;
+            runFrames(game, 90);
+            expect(game.deck.inventory.carrierHealth).toBeLessThan(100);
+            expect(game.scramble?.wavesCleared).toBe(0);
+            expect(game.score.bonusPoints).toBe(before);
+            expect(game.callouts.active().some(c => c.text === 'WAVE 1 OVER')).toBe(true);
+            runFrames(game, 260);
+            expect(game.scramble?.wave).toBe(2);
+        });
+
+        it('fixes the jets a run allows when it starts (v2.2.0 review)', () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.setFlyStyle('EASY', false);
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            runFrames(game, 75);
+            for (let jet = 0; jet < 3; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 25 && game.score.breakdown.airframesLost === jet; i++) runFrames(game, 15);
+            }
+            expect(game.score.breakdown.airframesLost).toBe(3);
+            // Switching EASY off with three of five jets gone no longer ends the run.
+            game.toggleFlyStyle();
+            runFrames(game, 30);
+            expect(game.phase).toBe('ACTIVE');
+            expect(game.currentObjective().detail).toContain('JETS 2');
+        });
+
+        it('offers a music switch in the pause menu, and no TAKE ME HOME', () => {
+            const game = startScramble();
+            runFrames(game, 10);
+            const ids = game.menuItems().map(i => i.id);
+            expect(ids).toContain('MUSIC');
+            expect(ids).not.toContain('TAKE_ME_HOME');
+        });
+
+        it('never traps aboard - a low slow pass over the deck is a flypast', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.physics.position = { x: 0, y: 22, z: -100 };
+            game.physics.velocity = { x: 0, y: 0, z: -40 };
+            runFrames(game, 5);
+            expect(game.score.breakdown.traps).toBe(0);
+        });
+    });
+
+    // -----------------------------------------------------------------
+    // EASY flying (v2.1.0) - for players who are not gamers
+    // -----------------------------------------------------------------
+    describe('EASY flying', () => {
+        const easyScramble = () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.setFlyStyle('EASY', false);
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            return game;
+        };
+
+        it('marks an EASY run on its card, its challenge link and its debrief (v2.2.0)', () => {
+            const game = easyScramble();
+            runFrames(game, 75);
+            game.score.recordBonus(1200); // a score to claim - and to mark
+            for (let jet = 0; jet < 5 && game.phase === 'ACTIVE'; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 25 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            }
+            expect(game.phase).toBe('DEBRIEF');
+            const data = game.debriefData();
+            const share = game.currentShare()!;
+            expect(share.picture.tags).toContain('EASY MODE');
+            expect(share.text).toContain('on EASY');
+            expect(share.url).toMatch(/\?c=7\.\d+\.\d+\.e$/);
+            expect(data.styleNote).toBe('FLOWN ON EASY');
+        });
+
+        it('a STANDARD run that switches EASY on half way is still marked EASY', () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            expect(game.runFlownEasy).toBe(false);
+            runFrames(game, 75);
+            game.toggleFlyStyle();
+            game.toggleFlyStyle();
+            expect(game.easyMode).toBe(false);
+            expect(game.runFlownEasy).toBe(true);
+            // The next run starts clean.
+            game.returnToBriefing();
+            game.confirmBriefing(7);
+            expect(game.runFlownEasy).toBe(false);
+        });
+
+        it('starts a brand-new pilot on EASY and asks once; a returning pilot keeps STANDARD', () => {
+            vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+            const fresh = new GameLoop(makeCanvasStub());
+            expect(fresh.easyMode).toBe(true);
+            expect(fresh.shouldAskFlyStyle()).toBe(true);
+            const veteran = new GameLoop(makeCanvasStub());
+            veteran.missionRecords = { SCRAMBLE: { best: 10, completions: 0, attempts: 1 } };
+            expect(veteran.shouldAskFlyStyle()).toBe(false);
+        });
+
+        it('lets the autopilot fly the intercept: the jet turns toward a target off the nose', () => {
+            const game = easyScramble();
+            runFrames(game, 100); // 80% world speed: wave 1 lands a little later in real time
+            const p = game.physics.position;
+            const bomber = game.airborneTargets[0];
+            bomber.position = { x: p.x + 2500, y: p.y, z: p.z + 1500 };
+            bomber.velocity = { x: 0, y: 0, z: 0 };
+            const bearing = () => {
+                const dx = bomber.position.x - game.physics.position.x;
+                const dz = bomber.position.z - game.physics.position.z;
+                let r = Math.atan2(dx, dz) - game.physics.yaw;
+                while (r > Math.PI) r -= 2 * Math.PI;
+                while (r < -Math.PI) r += 2 * Math.PI;
+                return Math.abs(r);
+            };
+            const before = bearing();
+            for (let i = 0; i < 10; i++) runFrames(game, 30);
+            expect(bearing()).toBeLessThan(before * 0.5);
+        });
+
+        it('the smart trigger fires a missile when it will land, and only one at a time', () => {
+            const game = easyScramble();
+            runFrames(game, 100);
+            const bomber = game.airborneTargets[0];
+            const p = game.physics.position;
+            bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+            runFrames(game, 3);
+            const rails = game.physics.loadout.sidewinders;
+            game.easyFire();
+            expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+            game.easyFire();
+            expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+            expect(game.callouts.active().some(c => c.text === 'NOT YET')).toBe(true);
+        });
+
+        it('says NOT YET in plain words with nothing to shoot', () => {
+            const game = easyScramble();
+            runFrames(game, 5); // before wave 1 spawns
+            game.easyFire();
+            const c = game.callouts.active().find(x => x.text === 'NOT YET');
+            expect(c?.detail).toContain('NO TARGET YET');
+            expect(game.physics.loadout.sidewinders).toBe(4);
+        });
+
+        it('a held trigger keeps firing whenever a shot is good', () => {
+            const game = easyScramble();
+            runFrames(game, 100);
+            game.inputState[' '] = true;
+            for (let i = 0; i < 40 && game.score.breakdown.bomberKills === 0; i++) runFrames(game, 15);
+            game.inputState[' '] = false;
+            expect(game.score.breakdown.bomberKills).toBe(1);
+        });
+
+        it('runs the world slower, holds messages longer, and gives SCRAMBLE five jets', () => {
+            const standard = new GameLoop(makeCanvasStub());
+            runFrames(standard, 150);
+            standard.selectScenarioById('SCRAMBLE');
+            standard.confirmBriefing(7);
+            const easy = easyScramble();
+            const t0s = standard['missionSeconds'];
+            const t0e = easy['missionSeconds'];
+            runFrames(standard, 60);
+            runFrames(easy, 60);
+            const ratio = (easy['missionSeconds'] - t0e) / (standard['missionSeconds'] - t0s);
+            expect(ratio).toBeGreaterThan(0.75);
+            expect(ratio).toBeLessThan(0.85);
+
+            easy.callouts.push('X', 'MODE', undefined, 1);
+            expect(easy.callouts.active()[0].span).toBeGreaterThan(1.5);
+
+            runFrames(easy, 75);
+            for (let jet = 0; jet < 3; jet++) {
+                easy.physics.damage = 100;
+                for (let i = 0; i < 25 && easy.phase === 'ACTIVE'; i++) runFrames(easy, 15);
+            }
+            expect(easy.phase).toBe('ACTIVE');
+            expect(easy.currentObjective().detail).toContain('JETS 2');
+        });
+
+        it('asks a brand-new pilot how to fly before the first flight, then flies what they asked for', () => {
+            const saved = new Map<string, string>();
+            vi.stubGlobal('localStorage', {
+                getItem: (k: string) => saved.get(k) ?? null,
+                setItem: (k: string, v: string) => { saved.set(k, v); },
+                removeItem: () => {}
+            });
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.requestFlight('BRIEFING');
+            expect(game.flyStyleChooserOpen).toBe(true);
+            expect(game.phase).toBe('BRIEFING');
+            game.cycleTextSize();
+            expect(game.textSize).toBe('LARGE');
+            // A click on the STANDARD card.
+            const l = flyStyleLayout(game.viewWidth, game.viewHeight);
+            game.handleMenuTap(l.standard.x + 10, l.standard.y + 10);
+            expect(game.flyStyleChooserOpen).toBe(false);
+            expect(game.easyMode).toBe(false);
+            expect(game.phase).toBe('ACTIVE');
+            expect(saved.get('carrier-vector-1988.flyStyle')).toBe('STANDARD');
+            // Never asked again.
+            game.returnToBriefing();
+            game.requestFlight('BRIEFING');
+            expect(game.flyStyleChooserOpen).toBe(false);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('the pause menu offers EASY FLYING and TEXT SIZE, and they switch', () => {
+            const game = easyScramble();
+            runFrames(game, 10);
+            const ids = game.menuItems().map(i => i.id);
+            expect(ids[1]).toBe('EASY');
+            expect(ids).toContain('TEXT_SIZE');
+            game.activateMenuItem('EASY');
+            expect(game.easyMode).toBe(false);
+            game.activateMenuItem('TEXT_SIZE');
+            expect(game.textSize).toBe('LARGE');
+            expect(game.uiZoom).toBe(1.25);
+            expect(game.viewWidth).toBe(1024);
+        });
+
+        it('offers EASY, once, to a STANDARD pilot who has lost two jets - never on EASY', () => {
+            const lose = (game: InstanceType<typeof GameLoop>, n: number) => {
+                for (let jet = 0; jet < n; jet++) {
+                    game.physics.damage = 100;
+                    for (let i = 0; i < 25 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+                }
+            };
+            const standard = new GameLoop(makeCanvasStub());
+            runFrames(standard, 150);
+            standard.selectScenarioById('SCRAMBLE');
+            standard.confirmBriefing(7);
+            runFrames(standard, 75);
+            lose(standard, 1);
+            expect(standard.easyOffered).toBe(false);
+            lose(standard, 1);
+            expect(standard.easyOffered).toBe(true);
+            expect(standard.callouts.active().some(c => c.text === 'HAVING A HARD TIME?')).toBe(true);
+
+            const easy = easyScramble();
+            runFrames(easy, 100);
+            lose(easy, 2);
+            expect(easy.easyOffered).toBe(false);
+        });
+
+        it('the coach never tells an EASY pilot to steer', () => {
+            const game = easyScramble();
+            for (let i = 0; i < 60; i++) {
+                runFrames(game, 10);
+                expect(game.currentHint?.text ?? '').not.toMatch(/TURN TOWARD|PRESS \[T\]|A \/ D/);
+            }
         });
     });
 });

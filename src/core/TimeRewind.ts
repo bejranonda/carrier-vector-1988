@@ -145,6 +145,18 @@ export class TimeRewindBuffer {
         return true;
     }
 
+    /**
+     * Forget the recorded path but keep the rewinds left - for a fresh jet
+     * placed in the sky (a SCRAMBLE respawn), whose last five seconds are
+     * not the dead jet's (v2.2.0 review: a rewind put the new jet back on
+     * the old one's pre-crash path).
+     */
+    public clearHistory(): void {
+        this.count = 0;
+        this.head = 0;
+        this.sampleTimer = 0;
+    }
+
     public reset(maxRewinds: number = REWIND_CONFIG.MAX_REWINDS_PER_SORTIE): void {
         this.rewindsRemaining = maxRewinds;
         this.count = 0;

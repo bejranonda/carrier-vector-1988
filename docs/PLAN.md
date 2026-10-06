@@ -780,3 +780,57 @@ a screen full of information and no idea what to do, no feeling of winning.
 `npx tsc --noEmit` clean; **917 tests** in 51 suites (was 874 in 48); `npm run build`. New suites:
 `BankToTurn`, `RadarMath`, `Milestones`, plus additions to `Tutorial`, `EnemyAI`, `VectorRenderer` and
 the `GameLoop` smoke test (bank keys turn the jet both ways; a 180 in under 20 s; the death sequence).
+
+## 17. Renovation for Reach — Scramble and Every Pilot (v2.0.0–v2.1.0)
+
+**Goal:** make the game something a stranger plays twice (v2.0.0), and that a
+non-gamer or older player can enjoy at all (v2.1.0), without changing the
+simulation underneath.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Front door | SCRAMBLE first; airborne on ENTER; teaching waves | first kill 4.2 s, one key |
+| Payout | chains, hit-stop, score pops, medals, career, unlocks, FLY AGAIN | harness + smoke tests |
+| Reach | daily SCRAMBLE, challenge links, soundtrack | card/link tests |
+| Every pilot | fly-style question, EASY flying, text-size zoom, plain words | relaxed bot 6 -> 11-12 kills; older-player browser session |
+
+**Next (see `reviews/v2.1.0/RECOMMENDATIONS_AND_ROADMAP.md`):** a pilot-customer
+round that deliberately includes players over 50, a phone type scale (#103),
+a type-scale pass toward the 28 px guideline (#104).
+
+## 18. Validation Pass — Second Look (v2.2.0)
+
+**Goal:** answer "validate anything to improve else?" with evidence: review
+everything v2.0-v2.1 added, run the game long enough to see what short runs
+hide, and finish the phone experience for the players v2.1.0 was built for.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Review | three parallel code reviews; ~40 findings verified at the code; #105-#124 fixed | 1,182 tests; regression tests run against the old code |
+| Stalls | fighters keep their speed; bombers come past the jet | stall-diagnostic bot; 8-minute runs before/after |
+| Honest records | waves CLEARED/HELD/OVER; jets fixed per run; EASY marked everywhere | smoke + unit tests |
+| Phones | EASY one-control kit, tap-anywhere fire, thumb wording, in-flight text boost, share sheet | harness 66/66, phone screenshots |
+| Reach | player-facing link preview with an image | `index.html`, `public/og-image.png` |
+
+**Next (see `reviews/v2.2.0/RECOMMENDATIONS_AND_ROADMAP.md`):** the
+pilot-customer round (sixth release asking), phone menus at large text, an
+"add to home screen" path for phone players.
+
+## 19. Bring a Friend (v2.3.0)
+
+**Goal:** the owner's brief - *"users should have a good experience, they will
+love to share this to friends"*. Make a run worth sending, make sending it one
+tap, and make the friend's first minute as good as the sender's.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Audit | both ends of the share walked in a browser: a small text box on the debrief; the friend landing on the full mission select | screenshots, `reviews/v2.3.0/SHARE_REVIEW.md` §1 |
+| Research | what chat apps keep, link previews, Web Share support, sharing habits of people over 50 | `SHARE_REVIEW.md` §2, with sources |
+| The friend's end | "ANNA CHALLENGES YOU" first screen with one PLAY - IT'S FREE; EASY challenges skip the fly-style question; the score to beat on the HUD as a scoreboard; "AHEAD OF ANNA!" when it falls; the win is the debrief headline | harness, smoke tests |
+| The sender's end | SHARE beside FLY AGAIN; a panel with an optional name, a 1080 picture with the names and the run's best moment, ONE main button for the challenge (text with its link), the picture offered after it, WhatsApp/LINE/text/email where there is no share sheet | harness, screenshots |
+| Links | `https://`, `/c/` page without `og:url` (the build fails if it ever keeps one), the name after `#`, cleaned of look-alike dots and invisible letters | `Challenge.test.ts`, build output |
+| UX review | a non-gamer and an older player at both ends: wrapped (never cut) welcome text, a preview that does not read like a scam, one send button, no "card" jargon, no premature "YOU BEAT", no nagging | `SELF_CRITIQUE.md` |
+| Code review | 12 findings (none high), every one checked in a browser and fixed: a stale picture on the second share, ESC lost after a mouse click, the HUD's score running under FIRE, names typed just before a press, and eight smaller | `SELF_CRITIQUE.md`, harness 81/81, 1,228 tests |
+
+**Next (see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md`):** real devices
+and real chat apps; the pilot-customer round, now with a friend at each end.

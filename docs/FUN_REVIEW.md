@@ -314,3 +314,61 @@ and a 60% hit chance make the same enemy a fight.
 ### Still open
 Turns are energy-limited (~9 deg/s held, ~19 s for a sustained 180); the guns warning has no sound;
 there is no first-sortie "wings" debrief. See Known Issues #56, #59 and #55.
+
+## 8. The Scramble and Every Pilot Passes (v2.0.0–v2.1.0)
+
+**What was in the way of fun:** order and reach. A new player met a menu, a
+deck screen and four instructions before the first reward; a run paid nothing
+that lasted; and a player without fast hands hit a steering wall a few
+seconds in, reading 9-12 px text.
+
+**What changed:** SCRAMBLE puts the fight first (first kill in ~4 s); chains,
+hit-stop and score pops make kills land; stars, career XP and unlocks make
+every run bank something; ENTER on the debrief flies again; and EASY flying -
+the plane flies and aims itself, one held button fires when a shot is good -
+plus a text-size zoom open the game to players who are not gamers.
+
+**Principle added:** fun is measured per player profile. The same change can
+be a delight for one profile and invisible to another; EASY's first version
+was exactly that, and only a profile-specific measurement showed it.
+
+## 9. The Fight That Stalled (v2.2.0)
+
+**What was in the way of fun:** dead air. Eight-minute runs showed EASY pilots
+spending about 40% of their time watching the plane circle while one or two
+contacts that could not be reached ran down the 75-second wave clock. The
+cause was not difficulty: the enemy AI bled its fighters' speed away in every
+turn until they hovered, and bombers were placed where the jet could only
+chase them. A wave could also pay out for bombers the player let through.
+
+**What changed:** fighters keep their speed and come back for another pass;
+bombers run past the jet; a wave pays only for what was shot down. On a phone,
+EASY became a one-button game in fact as well as name - one big FIRE that
+lights when a shot is good, a tap anywhere also fires, words for a thumb, and
+in-flight text that grows with the setting.
+
+**Principle added:** look for dead air, not just difficulty. A run can be
+"balanced" by every average and still be boring for minutes at a time; only a
+long run, watched second by second, shows it.
+
+## 10. The Run Nobody Saw (v2.3.0)
+
+**What was in the way of fun:** the best moment of a run happened to one
+person. Beating your own best showed up only on the debrief; the share was
+three lines of pilot slang in a small box, behind a key labelled "copy
+result"; and a friend who opened the link landed on a mission menu with a
+dozen key hints and one small yellow line about the challenge.
+
+**What changed:** the run chases a number you can see - your best, or a
+friend's score, as a scoreboard on the HUD - and passing it is a banner and a
+fanfare while it happens ("AHEAD OF ANNA!"). Beating a friend is the
+debrief's headline ("YOU BEAT ANNA!"). SHARE sits beside FLY AGAIN and sends a
+plain-words challenge with a link, then a picture of the run's best moment
+with both names on it; the friend's first screen says who challenged them,
+the score to beat and that it is free, with one big PLAY button - and when
+they win, REPLY TO ANNA sends "I beat your score, Anna!" back. The loop has a
+second turn, which is where a game between friends lives.
+
+**Principle added:** design both ends of every share. The person who receives
+it is a new player with no context, often on a phone, often wary of links;
+the moment they open it is the game's first impression on them.

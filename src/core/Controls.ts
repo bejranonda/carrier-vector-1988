@@ -67,10 +67,10 @@ export const CONTROL_SCHEMA: readonly Binding[] = [
     // --- Mission select (briefing screen) ---
     { keys: ['arrowleft', 'arrowright'], display: '← / →', label: 'Change selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['arrowup', 'arrowdown'], display: '↑ / ↓', label: 'Change map (endless mode only)', context: 'BRIEFING', group: 'MISSION SELECT' },
-    { keys: ['1', '2', '3', '4', '5', '6'], display: '1-6', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['1', '2', '3', '4', '5', '6', '7'], display: '1-7', label: 'Pick a mission directly', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['enter'], display: 'ENTER', label: 'Fly the selected mission', context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['s'], display: 'S', label: 'Skip the deck and start airborne', context: 'BRIEFING', group: 'MISSION SELECT' },
-    { keys: ['d'], display: 'D', label: "Today's daily sortie (one seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
+    { keys: ['d'], display: 'D', label: "Today's daily SCRAMBLE (one seed for everyone)", context: 'BRIEFING', group: 'MISSION SELECT' },
     { keys: ['v'], display: 'V', label: 'Threat level: CADET / REGULAR / VETERAN', context: 'BRIEFING', group: 'MISSION SELECT' },
 
     // --- System (available everywhere) ---
@@ -171,3 +171,34 @@ export function markdownControlTable(context: ControlContext): string {
     return `| Key | Action |\n| --- | --- |\n${rows}`;
 }
 
+
+/**
+ * The same instruction for a thumb (v2.2.0).
+ *
+ * The coach, the wave briefs and the pilot menu are written for a keyboard,
+ * so a phone was told "FIRE NOW - PRESS SPACE OR CLICK" and "HOLD A OR D" -
+ * orders nobody holding a phone can follow, shown to exactly the players
+ * least likely to work out what was meant. Most specific phrases first.
+ */
+const TOUCH_WORDING: readonly [RegExp, string][] = [
+    [/PRESS SPACE OR CLICK|PRESS SPACE TO FIRE|PRESS SPACE/g, 'TAP FIRE'],
+    [/Press SPACE to fire the selected weapon\./g, 'Tap FIRE to shoot.'],
+    [/TURN TOWARD THEM WITH A \/ D/g, 'TURN TOWARD THEM WITH THE LEFT STICK'],
+    [/\(A \/ D\)/g, '(LEFT STICK)'],
+    [/\(HOLD A OR D\)/g, '(STICK HARD LEFT OR RIGHT)'],
+    [/PRESS \[T\] TO LOCK ON/g, 'TAP TGT TO LOCK ON'],
+    [/PRESS 3 FOR BOMBS, OR 4 FOR A HARM AT A SAM/g, 'TAP MK82 FOR BOMBS, OR HARM FOR A SAM'],
+    [/DROP CHAFF \[X\]/g, 'TAP CHF'],
+    [/CHAFF \[X\]/g, 'TAP CHF'],
+    [/OPEN THE MENU \(ESC\)/g, 'TAP THE MENU BUTTON (TOP RIGHT)'],
+    [/PRESS ESC/g, 'TAP THE MENU BUTTON'],
+    [/\(ESC\)/g, '(the menu button, top right)'],
+    // A bracketed key with no thumb equivalent says nothing to a thumb.
+    [/ \[(?:W|S|SHIFT|CTRL|B|L)\]/g, '']
+];
+
+export function touchWording(text: string): string {
+    let out = text;
+    for (const [pattern, replacement] of TOUCH_WORDING) out = out.replace(pattern, replacement);
+    return out;
+}
