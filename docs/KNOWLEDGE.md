@@ -1688,3 +1688,19 @@ never beside a lost challenge.
 | Moment | On a kill, weight = chain × 10 + base value / 100; ≥ the best so far schedules a capture 0.3 s later, before overlays and thumb controls; downscaled to ≤ 960 px wide. Held back by the menu, help or rotate prompt for more than 0.5 s, it is dropped rather than taken from a later frame |
 | Welcome (`renderer/ChallengeView.ts`) | `challengeWelcomeOpen` from `acceptChallenge`; PLAY → `requestFlight` (an EASY challenge sets EASY for a pilot never asked); SEE ALL MISSIONS → the briefing, challenge kept. Text measured as monospace (`monoWidth`: 0.6 em, 1 em for CJK, 0 for an accent), wrapped then balanced (`wrapMono`), a too-wide word set smaller (≥ 60%) then broken; four modes from roomy to compact |
 | Debrief | A beaten challenge is the headline (`celebrate`, gold) over "YOU 12,400 · ANNA 12,345 - you won by 55!"; the SHARE button reads `REPLY TO ANNA`, `REPLY TO …` with a first name, or `REPLY` - whichever fits |
+
+### 25.6 Verification baselines (v2.3.0)
+
+The numbers a change is checked against; a change that should not touch
+gameplay must leave the first two rows identical.
+
+| Check | Value |
+| :-- | :-- |
+| `npm run balance`, `easy-hold` (8 seeds × 480 s) | 40.6 kills (32-51), mean score 19,146, 0 jets lost, 0/8 runs over |
+| `npm run balance`, `std-steer` | 10.4 kills (8-13), mean score 3,547, 3/8 runs over |
+| `npm run test` | 1,228 tests in 72 files |
+| `npm run playtest` | 81 checks |
+| `npm run build` | 330.0 kB JS / 109.4 kB gzip; `dist/c/index.html` without `og:url` or `canonical` |
+
+The hand-over page, [`HANDOFF.md`](HANDOFF.md), keeps these current with the
+release.

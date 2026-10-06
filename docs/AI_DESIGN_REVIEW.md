@@ -1,6 +1,11 @@
 # Carrier Vector 1988: Game Design Review & Development Roadmap
 
-> ## ⚠️ Superseded — read the v1.11.0 suite first
+> ## ⚠️ Superseded — read the current suite first
+>
+> **Current (v2.3.0, "Bring a Friend"):** [`docs/reviews/v2.3.0/`](reviews/v2.3.0/README.md);
+> every release since v1.9.0 is in the registry at [`docs/reviews/`](reviews/README.md),
+> and a project hand-over is in [`docs/HANDOFF.md`](HANDOFF.md). The v1.11.0
+> note below is kept as it was written.
 >
 > This document is kept as a historical snapshot. The current evaluation is
 > [**`docs/reviews/v1.11.0/`**](reviews/v1.11.0/README.md) (a real pilot pause

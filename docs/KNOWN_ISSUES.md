@@ -15,6 +15,8 @@
 | 104 | Small labels stay below the Xbox guideline's 28 px-at-1080p even at EXTRA LARGE | A full type-scale pass, not a zoom |
 | 130 | The `/c/` page's Facebook behaviour is unverified | Needs the live page in Facebook's Sharing Debugger |
 | — | The share loop is untested on real phones and real chat apps | Headless browsers have no share sheet; see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md` P1 |
+| — | Saving the share picture by long-press on an iPhone is unverified | `-webkit-touch-callout: default` is Safari-only; Chromium cannot test it |
+| 132 | Every challenge link has the same preview card | By design while there is no server; the message above the preview carries the names |
 | — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".

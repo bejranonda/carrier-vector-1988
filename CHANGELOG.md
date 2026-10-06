@@ -154,6 +154,9 @@ A reviewer walked both ends again as a non-gamer and an older player:
   keys, and a phone tapping SHARE.
 - Gameplay unchanged: `npm run balance` replays the same runs identically.
 - Bundle 330.0 kB (109.4 kB gzip), was 305.7 / 100.8. Zero runtime dependencies.
+- **`docs/HANDOFF.md`**, a hand-over page for whoever picks the project up:
+  state, how to run and verify it (with the balance baseline), where the code
+  lives, what is open, the traps, and how a release is made.
 
 ### Still open
 

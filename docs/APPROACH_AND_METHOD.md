@@ -797,6 +797,12 @@ love to share it* - so the method was to make the feeling observable:
    (`-webkit-touch-callout` is Safari's) - it is recorded as needing a real
    iPhone, not as passed.
 
+6. **Hand over as you go.** The release ends with `docs/HANDOFF.md`: the
+   state, how to verify it (including the balance baseline that proves
+   gameplay unchanged), where the code lives, what is open, and the traps
+   that bit - so the next contributor starts from evidence, not from a
+   reading of 4,300 lines of `GameLoop.ts`.
+
 Rule from it: *a share is a product with two users*. The one who sends it
 wants to look good and do it in one tap; the one who gets it is a new player
 with no context, likely on a phone, likely wary of links.

@@ -15,6 +15,7 @@ fixed.
 | 2 | [PLAYTEST_EVIDENCE.md](PLAYTEST_EVIDENCE.md) | The loop driven end to end in a browser, the phone tap, screens before and after, tests. |
 | 3 | [SELF_CRITIQUE.md](SELF_CRITIQUE.md) | What the earlier releases got wrong about sharing, what went wrong on the way, what the UX and code reviews found, what is still weak. |
 | 4 | [RECOMMENDATIONS_AND_ROADMAP.md](RECOMMENDATIONS_AND_ROADMAP.md) | Real phones and real apps first; then people, in pairs. |
+| - | [../../HANDOFF.md](../../HANDOFF.md) | The project hand-over at this release: state, verification, open work, traps. |
 
 ## Headline
 

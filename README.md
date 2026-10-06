@@ -9,8 +9,8 @@
 [![CI](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml/badge.svg)](https://github.com/bejranonda/carrier-vector-1988/actions/workflows/deploy.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646cff)](https://vite.dev/)
-[![Vitest](https://img.shields.io/badge/tests-1134%20passing-00ff66)](https://vitest.dev/)
-[![Playtest](https://img.shields.io/badge/browser%20checks-61%20passing-00ff66)](#testing)
+[![Vitest](https://img.shields.io/badge/tests-1228%20passing-00ff66)](https://vitest.dev/)
+[![Playtest](https://img.shields.io/badge/browser%20checks-81%20passing-00ff66)](#testing)
 [![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-00ff66)](#zero-dependency-policy)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -110,7 +110,8 @@ career XP (score plus a bounty per new star) that fills a bar on the debrief
 and levels you from NUGGET through WINGMAN, FLIGHT LEAD and ACE to LEGEND.
 Stars unlock cosmetic palettes - **AMBER VECTOR** (3★), **ARCTIC WHITE** (8★),
 **SYNTHWAVE** (14★) - equipped the moment you earn them (`C` cycles what you
-own; the colour-blind palette is never locked).
+own anywhere but the debrief, where it is SHARE; the colour-blind palette is
+never locked).
 
 **FLY AGAIN.** The debrief pays out stars, score, XP and unlocks, then puts
 `ENTER - FLY AGAIN` under your thumb: straight back into the same mission.
@@ -348,8 +349,9 @@ nothing fires a missile at you and there is no deck to go home to, so the
 stick, the throttle, the weapon pills, chaff, target and recovery all step
 aside: there is a big `FIRE`, which **lights up when a shot is good**, and a
 **tap anywhere** on the sky fires too. Every instruction is in words for a
-thumb (`FIRE NOW - TAP FIRE`), and SHARE at the end goes straight to the
-phone's share sheet. Deck missions keep every control, EASY or not.
+thumb (`FIRE NOW - TAP FIRE`), and SHARE at the end opens a panel whose one
+big button goes to the phone's own share sheet - WhatsApp, LINE, Messages,
+whatever the phone has. Deck missions keep every control, EASY or not.
 
 A phone starts on `AUTOPILOT` with the recovery assist on and the cheapest
 display mode, unless you have already chosen otherwise — a three and a half
@@ -368,9 +370,9 @@ date, so **every player in the world flies the identical waves** — short, and
 the mode someone arriving from a shared link can play at once. SHARE on the
 debrief sends it like any run, saying which day and which try:
 
-> Daily Scramble #279 (first try): I scored 12,400 points in Carrier Vector:
-> 1988 and shot down 18 planes. Everyone gets the same waves today - can you
-> beat me? It's a free game in your browser:
+> Daily Scramble #279 (first try): 12,400 points in Carrier Vector: 1988, a
+> free jet game. Everyone gets the same planes today - can you beat me? It
+> plays in your browser:
 
 Unlimited attempts; the share says which one it was. Locking the day to a
 single try punishes exactly the person who has just found the game.
@@ -482,7 +484,7 @@ automatically from a rolling frame-time average.
 | `H` / `F1` | Control reference overlay |
 | `ESC` | **Pilot menu** (v1.11.0) — pause, see what to do, hand a step to the autopilot, or close the control reference if it's open |
 | `M` | Mute / unmute |
-| `C` | Cycle colour palette — classic phosphor / colour-blind |
+| `C` | Cycle colour palette — classic phosphor / colour-blind; on the SCRAMBLE debrief, **SHARE** (opens the share panel) |
 
 > **New in v1.11.0: the pilot menu.** Press `ESC`, click the `MENU (ESC)`
 > button in the corner, or tap the touch `MENU` control. It restates the
@@ -752,7 +754,7 @@ src/
 │   ├── DebriefView.ts     # v2.0.0 debrief: stars, count-up score, XP bar, FLY AGAIN
 │   ├── FlyStyleView.ts    # v2.1.0 "How would you like to fly?" (EASY / STANDARD, text size)
 │   ├── ChallengeView.ts   # v2.3.0 "ANNA CHALLENGES YOU" - a shared link's first screen
-│   ├── ShareImage.ts      # v2.3.0 the 1080 share picture: best moment, score, stars, name
+│   ├── ShareImage.ts      # v2.3.0 the 1080 share picture: names, best moment, score or scoreboard
 │   ├── KillFx.ts          # Shockwave ring + rising score text at the wreck
 │   └── SpeedStreaks.ts    # Vector dust streaming past the canopy
 ├── audio/
@@ -760,7 +762,7 @@ src/
 │   ├── MusicPattern.ts    # SCRAMBLE soundtrack arrangement (pure)
 │   └── SoundFX.ts         # Web Audio synthesis, the bus graph, the music scheduler
 ├── ui/
-│   └── SharePanel.ts      # v2.3.0 the share panel (plain DOM): name, picture, share buttons
+│   └── SharePanel.ts      # v2.3.0 the share panel (plain DOM): name, picture, one main share button
 └── main.ts                # Entry point and input dispatch
 ```
 
@@ -869,7 +871,8 @@ of game per seed.
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#132, status summary at the top) |
+| [**docs/HANDOFF.md**](docs/HANDOFF.md) | **Start here if you are picking the project up** — current state, how to run and verify it, where everything lives, what is open, and the traps |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#139, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
 | [**docs/reviews/v2.3.0/**](docs/reviews/v2.3.0/README.md) | **Current suite** — "Bring a Friend": both ends of a share walked and researched; the friend's own first screen, the score to beat, a picture and a challenge to send |

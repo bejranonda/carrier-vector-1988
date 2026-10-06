@@ -696,3 +696,19 @@ rendered frames. Five suites of source-reading review had missed all of them.
 - **Keyboard focus is not where the code put it.** A mouse press ends by
   focusing whatever was pressed (the canvas): take focus back after it, and
   let ESC close a dialog wherever focus is.
+
+## 19. Release hygiene (v2.3.0)
+
+- **Every release updates the hand-over page** ([`HANDOFF.md`](HANDOFF.md)):
+  version, test and check counts, the balance baseline, what is open and the
+  traps. It is the page a new contributor reads first; a stale one is worse
+  than none.
+- **A claim about people needs people.** Write "a reviewer found", "the bot
+  measured" or "the research says" - never "players did" - until a human has
+  played it. The v2.3.0 docs briefly said "people pressed the picture first";
+  it was a reviewer's walk-through.
+- **A check that cannot run is recorded as not run**, not as passed (Safari's
+  `-webkit-touch-callout` cannot be tested in Chromium).
+- **Gameplay unchanged is a measurement**: the deterministic balance sim on
+  the last release and on the candidate, rows compared.
+
