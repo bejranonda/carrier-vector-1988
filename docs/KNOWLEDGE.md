@@ -1600,3 +1600,52 @@ run allows (`scramble.jets`) are set at its start and only rise (EASY on).
 - Challenge links: `?c=seed.score.waves[.e]` - `.e` when the run was flown on EASY.
 - `DailyResult.easy`; `sanitise` keeps `mode`, `bestChain`, `easy`.
 - `careerLevel` is closed-form; stored XP is capped at 1e12 (`MAX_CAREER_XP`).
+
+## 25. Bring a Friend: Links, Shares and the Picture (v2.3.0)
+
+### 25.1 Challenge links (`core/Challenge.ts`)
+
+```
+https://bejranonda.github.io/carrier-vector-1988/c/?c=<seed>.<score>.<waves>[.e]#n=<name>
+```
+
+| Part | Rule |
+| :-- | :-- |
+| `/c/` | The same page and bundle, emitted by `vite.config.ts` (`challengePage`) with challenge preview copy and **no `og:url` / `canonical`** - Facebook treats `og:url` as the destination and would drop the query |
+| `c` | seed ≤ 2³¹−1, score ≤ 99,999,999, waves ≤ 999, all integers; `.e` = flown on EASY; anything else → no challenge |
+| `#n=` | The challenger's name, in the fragment (never sent to a server); `encodeURIComponent`; a query `&n=` is also read |
+| `cleanPilotName` | NFC; keeps `\p{L}\p{M}\p{N}`, space, `'`, `’`, `-`; collapses spaces; ≤ 16 characters (`MAX_PILOT_NAME`); needs a letter or digit; no `.`, `/`, `:` - so a name cannot read as a web address |
+
+Displayed as `challengerLabel` (upper-cased name, or `A FRIEND`). The tab title
+becomes `<name> challenges you - Carrier Vector: 1988`.
+
+### 25.2 What a share sends (`core/ShareCard.ts`, `core/Share.ts`)
+
+| Share | Payload | Why |
+| :-- | :-- | :-- |
+| CHALLENGE A FRIEND / REPLY TO ANNA / INVITE A FRIEND | `{ text: message + "\n" + link }` | The link inside `text`, alone on the last line; never in `url` (some iPhone apps cut the query string from it) |
+| SEND THE PICTURE | `{ files: [png] }` | No text or title: an app given both keeps one and drops the other |
+| No share sheet | `wa.me/?text=`, `line.me/R/share?text=`, `sms:?&body=` (touch) / `mailto:` (desktop), COPY MESSAGE, SAVE PICTURE, COPY PICTURE (desktop, `ClipboardItem` with a `Promise<Blob>`) | In-app browsers on Android, Firefox desktop, Chrome on Linux |
+
+Message choice: beat / tie / lost a challenge → about the challenger; the
+daily → "Daily Scramble #N (first try)"; a new best or a fresh star → "Can you
+beat me?"; otherwise an **invitation** ("Try ... EASY mode flies the plane for
+you"). `SHARED` means an app was chosen - nothing may say "sent".
+
+### 25.3 The picture (`renderer/ShareImage.ts`)
+
+1080 × 1080, drawn in the pilot's palette. Rows (y): title 70, subtitle 118,
+moment 150-670 (960 × 520, cover-cropped at `MOMENT_ZOOM` 1.3), stars 726,
+score 860 (112 px), stats 918, pilot or versus 966, headline 1030, address 1066.
+No moment (no kill) → a radar scope.
+
+### 25.4 In the run (`GameLoop`)
+
+| Item | Rule |
+| :-- | :-- |
+| `scoreTarget` | SCRAMBLE only: the challenge's score (not on the daily), else the mission best if > 0 |
+| Passing it | Live both ways (`scoreTargetPassed`); the banner (`YOU BEAT ANNA!` / `NEW PERSONAL BEST!`, group `RECORD`, 2.8 s) and fanfare once a run |
+| HUD | `4,200 / 12,345 PTS` → `13,100 PTS · AHEAD OF ANNA` / `NEW BEST`; shown on the first-flight HUD for a challenge |
+| Moment | On a kill, weight = chain × 10 + base value / 100; ≥ the best so far schedules a capture 0.3 s later, before overlays and thumb controls; downscaled to ≤ 960 px wide |
+| Welcome | `challengeWelcomeOpen` from `acceptChallenge`; ACCEPT → `requestFlight` (an EASY challenge sets EASY for a pilot never asked); SEE ALL MISSIONS → the briefing, challenge kept |
+| Debrief | A beaten challenge is the headline (`celebrate`, gold); the SHARE button reads `REPLY TO ANNA` (or `REPLY` when that does not fit) |

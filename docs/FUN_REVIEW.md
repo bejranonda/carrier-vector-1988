@@ -350,3 +350,22 @@ in-flight text that grows with the setting.
 **Principle added:** look for dead air, not just difficulty. A run can be
 "balanced" by every average and still be boring for minutes at a time; only a
 long run, watched second by second, shows it.
+
+## 10. The Run Nobody Saw (v2.3.0)
+
+**What was in the way of fun:** the best moment of a run happened to one
+person. Beating your own best showed up only on the debrief; the share was
+three lines of pilot slang in a small box, behind a key labelled "copy
+result"; and a friend who opened the link landed on a mission menu with a
+dozen key hints and one small yellow line about the challenge.
+
+**What changed:** the run chases a number you can see - your best, or a
+friend's score - and passing it is a banner and a fanfare while it happens.
+Beating a friend is the debrief's headline. SHARE sits beside FLY AGAIN and
+sends a plain-words challenge with a link, a picture of the run's best moment
+with your name on it, or both; the friend's first screen says who challenged
+them and the score to beat, with one big button.
+
+**Principle added:** design both ends of every share. The person who receives
+it is a new player with no context, often on a phone, often wary of links;
+the moment they open it is the game's first impression on them.

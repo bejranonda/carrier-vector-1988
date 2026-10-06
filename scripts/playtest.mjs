@@ -364,24 +364,76 @@ await session('older-player', { width: 1440, height: 900 }, false, async (page, 
 });
 
 // ---------------------------------------------------------------------
-// A shared challenge link (v2.0.0): same waves, a score to beat
+// A shared challenge link, both ends (v2.0.0; v2.3.0: the friend's own first
+// screen, the score to beat in flight, and a share panel to reply with)
 // ---------------------------------------------------------------------
 await session('challenge', { width: 1280, height: 720 }, false, async (page, shot) => {
-    await page.goto(`${url}?c=424242.5000.3`, { waitUntil: 'networkidle' });
+    // The shape a real link has: /c/, the run in the query, the name after #.
+    await page.goto(`${url}c/?c=424242.5000.3.e#n=Anna`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(2600);
-    await shot('01-briefing');
+    await shot('01-welcome');
     const state = await page.evaluate(() => ({
         scenario: window.__game.scenario.id,
-        challenge: window.__game.challenge
+        challenge: window.__game.challenge,
+        welcome: window.__game.challengeWelcomeOpen,
+        title: document.title
     }));
-    check('a challenge link opens SCRAMBLE with the run to beat',
-        state.scenario === 'SCRAMBLE' && state.challenge?.seed === 424242 && state.challenge?.score === 5000, state);
-    await page.keyboard.press('Enter');
+    check('a challenge link opens on "ANNA CHALLENGES YOU", with SCRAMBLE and the run to beat loaded',
+        state.welcome === true && state.scenario === 'SCRAMBLE' && state.challenge?.seed === 424242
+        && state.challenge?.score === 5000 && state.challenge?.name === 'Anna', state);
+    check('the browser tab says who sent it', /^Anna challenges you/.test(state.title), state.title);
+    await page.keyboard.press('Enter'); // ACCEPT CHALLENGE
+    await page.waitForTimeout(500);
+    let flight = await page.evaluate(() => ({
+        phase: window.__game.phase, seed: window.__game.scramble?.seed, easy: window.__game.easyMode,
+        chooser: window.__game.flyStyleChooserOpen, target: window.__game.scoreTarget
+    }));
+    // Anna flew EASY: a newcomer flies EASY too, without the question.
+    check('ACCEPT flies the sharer\'s waves on their fly style, no question asked',
+        flight.phase === 'ACTIVE' && flight.seed === 424242 && flight.easy === true && flight.chooser === false, flight);
+    check('the run chases Anna\'s score', flight.target?.score === 5000 && flight.target?.who === 'ANNA', flight.target);
+    await page.evaluate(() => window.__game.score.recordBonus(5100));
     await page.waitForTimeout(300);
-    await page.keyboard.press('1'); // the one-time fly-style question: EASY
-    await page.waitForTimeout(400);
-    const seed = await page.evaluate(() => window.__game.scramble?.seed);
-    check('the challenge flies the sharer\'s waves', seed === 424242, seed);
+    const banners = await page.evaluate(() => window.__game.callouts.active().map((c) => c.text));
+    await shot('02-passed');
+    check('passing it puts "YOU BEAT ANNA!" on screen, there and then', banners.includes('YOU BEAT ANNA!'), banners);
+
+    await page.evaluate(() => { window.__game.deck.inventory.carrierHealth = 0; });
+    await page.waitForTimeout(2800);
+    await shot('03-debrief');
+    const debrief = await page.evaluate(() => {
+        const d = window.__game.debriefData();
+        return { headline: d.headline, label: d.share?.label, line: d.share?.text };
+    });
+    check('the debrief leads with the win and offers the reply', debrief.headline === 'YOU BEAT ANNA!' && debrief.label === 'REPLY TO ANNA', debrief);
+
+    await page.keyboard.press('c');
+    await page.waitForTimeout(1200);
+    const panel = await page.evaluate(() => {
+        const img = document.getElementById('share-picture');
+        return { open: !document.getElementById('share').hidden, picture: img.src.startsWith('blob:'), width: img.naturalWidth };
+    });
+    check('C opens the share panel with the picture drawn (1080 square)', panel.open && panel.picture && panel.width === 1080, panel);
+    // Typing a name is the pilot's, not the game's: M must not mute, K must
+    // not switch controls, and it goes on the link after the #.
+    const before = await page.evaluate(() => ({ muted: window.__sfx.muted, scheme: window.__game.controlScheme }));
+    await page.click('#share-name');
+    await page.keyboard.type('Mike');
+    await page.waitForTimeout(700);
+    const after = await page.evaluate(() => ({
+        phase: window.__game.phase, muted: window.__sfx.muted, scheme: window.__game.controlScheme,
+        name: window.__game.pilotName, url: window.__game.currentShare().url,
+        message: document.getElementById('share-message').textContent
+    }));
+    check('a name typed in the panel goes on the link, and nowhere else',
+        after.phase === 'DEBRIEF' && after.muted === before.muted && after.scheme === before.scheme
+        && after.name === 'Mike' && /\/c\/\?c=424242\.\d+\.\d+\.e#n=Mike$/.test(after.url), after);
+    check('the message ends with the link, alone on its line', after.message.split('\n').pop() === after.url, after.message.slice(-90));
+    await shot('04-share-panel');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const closed = await page.evaluate(() => ({ open: !document.getElementById('share').hidden, phase: window.__game.phase }));
+    check('ESC closes the panel and leaves the debrief where it was', !closed.open && closed.phase === 'DEBRIEF', closed);
 });
 
 // ---------------------------------------------------------------------
@@ -467,6 +519,38 @@ await session('phone-portrait', { width: 390, height: 844 }, true, async (page, 
     await shot('02-rotate');
     const rotating = await page.evaluate(() => window.__game.phase === 'ACTIVE' && window.__game.awaitingRotation);
     check('phone portrait: the flight asks the player to rotate', rotating === true, rotating);
+});
+
+// A phone shares with a tap (v2.3.0): the panel must survive the tap that
+// opened it (the first build closed itself on the tap's own click).
+await session('phone-share', { width: 844, height: 390 }, true, async (page, shot) => {
+    await page.evaluate(() => {
+        const g = window.__game;
+        g.setFlyStyle('EASY');
+        g.selectScenarioById('SCRAMBLE');
+        g.confirmBriefing(7);
+    });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { const g = window.__game; g.score.recordBonus(3000); g.deck.inventory.carrierHealth = 0; });
+    await page.waitForTimeout(2800);
+    const share = await page.evaluate(() => {
+        const g = window.__game;
+        const r = window.__ui.debriefLayout(g.viewWidth, g.viewHeight, g.debriefData()).share;
+        return { x: (r.x + r.w / 2) * g.uiZoom, y: (r.y + r.h / 2) * g.uiZoom };
+    });
+    await page.tap('#gameCanvas', { position: share });
+    await page.waitForTimeout(1200);
+    await shot('01-panel');
+    const panel = await page.evaluate(() => ({
+        open: !document.getElementById('share').hidden,
+        picture: document.getElementById('share-picture').naturalWidth,
+        // No share sheet in a headless browser: the app links stand in.
+        apps: [...document.querySelectorAll('#share-apps a')].map((a) => a.textContent),
+        phase: window.__game.phase
+    }));
+    check('phone: a tap on SHARE opens the panel and it stays open', panel.open && panel.phase === 'DEBRIEF', panel);
+    check('phone: with no share sheet, WhatsApp, LINE and a text message are offered',
+        panel.picture === 1080 && panel.apps.join(',') === 'WHATSAPP,LINE,TEXT MESSAGE', panel);
 });
 
 // ---------------------------------------------------------------------

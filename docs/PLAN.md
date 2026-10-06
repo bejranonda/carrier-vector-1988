@@ -815,3 +815,20 @@ hide, and finish the phone experience for the players v2.1.0 was built for.
 **Next (see `reviews/v2.2.0/RECOMMENDATIONS_AND_ROADMAP.md`):** the
 pilot-customer round (sixth release asking), phone menus at large text, an
 "add to home screen" path for phone players.
+
+## 19. Bring a Friend (v2.3.0)
+
+**Goal:** the owner's brief - *"users should have a good experience, they will
+love to share this to friends"*. Make a run worth sending, make sending it one
+tap, and make the friend's first minute as good as the sender's.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Audit | both ends of the share walked in a browser: a small text box on the debrief; the friend landing on the full mission select | screenshots, `reviews/v2.3.0/SHARE_REVIEW.md` §1 |
+| Research | what chat apps keep, link previews, Web Share support, sharing habits of people over 50 | `SHARE_REVIEW.md` §2, with sources |
+| The friend's end | "ANNA CHALLENGES YOU" first screen; EASY challenges skip the fly-style question; the score to beat on the HUD; "YOU BEAT ANNA!" when it falls; the win is the debrief headline | harness, smoke tests |
+| The sender's end | SHARE beside FLY AGAIN; a panel with an optional name, a 1080 picture of the run's best moment, the challenge as text with its link, the picture separately, WhatsApp/LINE/text/email where there is no share sheet | harness 77/77, screenshots |
+| Links | `https://`, `/c/` page without `og:url`, the name after `#` | `Challenge.test.ts`, build output |
+
+**Next (see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md`):** real devices
+and real chat apps; the pilot-customer round, now with a friend at each end.

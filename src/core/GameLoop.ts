@@ -31,11 +31,17 @@ import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper, SCORE_VALUES } from './ScoreKeeper';
 import { ComboTracker, multiplierFor } from './Combo';
-import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, formatScrambleCard, keepClearOfBoat, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus } from './Scramble';
+import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, keepClearOfBoat, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus } from './Scramble';
 import { KillFxSystem, drawKillFx } from '../renderer/KillFx';
 import { SpeedStreaks } from '../renderer/SpeedStreaks';
 import { scrambleIntensity } from '../audio/MusicPattern';
-import { challengeLine, challengeUrl, challengeVerdict } from './Challenge';
+import { challengeLine, challengeUrl, challengeVerdict, challengerLabel } from './Challenge';
+import { shareContent, shareNudge } from './ShareCard';
+import type { ShareContent, ShareRun } from './ShareCard';
+import { loadPilotName, savePilotName } from './PilotName';
+import { SHARE_IMAGE_SIZE, drawShareImage } from '../renderer/ShareImage';
+import type { Moment } from '../renderer/ShareImage';
+import { challengeWelcomeHitTest, challengeWelcomeLayout, drawChallengeWelcome } from '../renderer/ChallengeView';
 import { EASY_TUNING, easyHint, easyTrigger, loadFlyStyle, saveFlyStyle, shouldAskFlyStyle } from './EasyMode';
 import type { FlyStyle } from './EasyMode';
 import type { Challenge } from './Challenge';
@@ -184,7 +190,6 @@ import {
     dailyNumber,
     dailySeed,
     PLAY_URL,
-    formatShareCard,
     loadDailyResults,
     mergeDailyResult,
     saveDailyResults
@@ -521,8 +526,46 @@ export class GameLoop {
      * waves and beat their score. See Challenge.ts.
      */
     public challenge: Challenge | null = null;
+    /**
+     * The "Anna challenges you" screen (v2.3.0): up when the page opened on a
+     * challenge link, until the friend accepts it or asks for the missions.
+     */
+    public challengeWelcomeOpen = false;
     /** Real seconds the debrief has been up - drives its payout animation. */
     public debriefAge = 0;
+
+    /**
+     * The score this run is chasing (v2.3.0): the challenger's, or the
+     * pilot's own best on this mission. Passing it mid-run is a moment - a
+     * banner and a fanfare - not something to find out on the debrief.
+     */
+    public scoreTarget: { score: number; who: string; challenge: boolean } | null = null;
+    private scoreTargetPassed = false;
+    private scoreTargetCelebrated = false;
+
+    /**
+     * The run's best moment, kept for the share picture (v2.3.0): a copy of
+     * the screen a beat after the best kill - the highest chain, the later
+     * one on a tie - taken before the thumb controls are drawn.
+     */
+    private moment: Moment | null = null;
+    private momentCanvas: HTMLCanvasElement | null = null;
+    private momentWeight = -1;
+    private momentPendingWeight = 0;
+    private momentDueAt = 0;
+
+    /** The pilot's name for shares, if they gave one (v2.3.0, PilotName.ts). */
+    public pilotName: string | null = loadPilotName();
+    /** What the finished run would share: built at its end, named at share time. */
+    private lastShareRun: (Omit<ShareRun, 'name' | 'url'> & { seed: number; freshStars: number }) | null = null;
+    /** How the last share went, for the debrief's line under SHARE. */
+    public shareStatus: 'IDLE' | 'SHARED' | 'COPIED' = 'IDLE';
+    /**
+     * Opens the share panel (main.ts, plain DOM: a real text field for the
+     * name and real buttons). Unset in tests and headless runs, where SHARE
+     * falls back to copying the text card.
+     */
+    public onShareRequest: (() => void) | null = null;
 
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
@@ -543,10 +586,6 @@ export class GameLoop {
     public dailyResults: DailyResults = loadDailyResults();
     /** True while the active run counts as today's daily. */
     public isDailyRun = false;
-    /** The card for the run just finished, shown on the debrief. */
-    public dailyCard: string | null = null;
-    /** Set briefly after a successful copy, for the confirmation line. */
-    public dailyCopied = false;
     /**
      * Which day the run in progress belongs to, fixed when it started.
      *
@@ -767,6 +806,19 @@ export class GameLoop {
         this.sortieKills = 0;
         this.easyOffered = false;
         this.runFlownEasy = this.easyMode;
+        this.moment = null;
+        this.momentWeight = -1;
+        this.momentDueAt = 0;
+        this.lastShareRun = null;
+        this.shareStatus = 'IDLE';
+        // SCRAMBLE chases a number: the challenger's, else the pilot's best.
+        const best = recordFor(this.missionRecords, scenario.id).best;
+        this.scoreTarget = !setup.scramble ? null
+            : this.challenge && !this.isDailyRun
+                ? { score: this.challenge.score, who: challengerLabel(this.challenge), challenge: true }
+                : best > 0 ? { score: best, who: 'YOUR BEST', challenge: false } : null;
+        this.scoreTargetPassed = false;
+        this.scoreTargetCelebrated = false;
         // A jet lost in the last run must not die again in this one: RESTART
         // during the MAYDAY sequence, or a daily started from the menu, used
         // to begin the new run with dead controls, slow motion and a jet
@@ -1669,6 +1721,12 @@ export class GameLoop {
             else if (hit) this.chooseFlyStyle(hit);
             return true;
         }
+        if (this.phase === 'BRIEFING' && this.challengeWelcomeOpen) {
+            const hit = challengeWelcomeHitTest(x, y, challengeWelcomeLayout(this.viewWidth, this.viewHeight));
+            if (hit === 'ACCEPT') this.acceptChallengeWelcome();
+            else if (hit === 'MISSIONS') this.closeChallengeWelcome();
+            return true;
+        }
         if (this.phase === 'BRIEFING') {
             const areas = briefingHitAreas(this.viewWidth, this.viewHeight, SCENARIOS.length, true);
             if (areas.daily && inside(areas.daily, x, y)) {
@@ -1689,9 +1747,9 @@ export class GameLoop {
             if (!this.debriefAcceptsInput()) return true;
             const layout = debriefLayout(this.viewWidth, this.viewHeight, this.debriefData());
             if (inside(layout.missions, x, y)) this.returnToBriefing();
-            // The card copies (or shares) - a tap on it used to fly again and
-            // throw the card away, so a phone could never send one.
-            else if (layout.share && inside(layout.share, x, y)) this.copyDailyCard();
+            // SHARE is its own button: a tap on the old card used to fly
+            // again and throw the card away, so a phone could never send one.
+            else if (layout.share && inside(layout.share, x, y)) this.requestShare();
             else this.flyAgain();
             return true;
         }
@@ -2237,8 +2295,6 @@ export class GameLoop {
         this.selectScenarioById('SCRAMBLE');
         this.isDailyRun = true;
         this.dailyRunDate = dailyKey(now);
-        this.dailyCard = null;
-        this.dailyCopied = false;
         this.pacing = 'ARCADE';
         // ...and at the standard threat level, for the same reason: the daily
         // is only worth sharing if everybody flew the same fight.
@@ -2257,36 +2313,20 @@ export class GameLoop {
     }
 
     /**
-     * Copy the card. Called from a keydown so the browser's gesture
-     * requirement is satisfied; failure is not an error worth stopping for,
-     * because the card is on screen either way.
+     * No share panel (tests, headless): put the message and the link on the
+     * clipboard. Called from a key or a tap, so the browser's gesture
+     * requirement is met; "copied" is only said once it was.
      */
-    public copyDailyCard(): boolean {
-        const card = this.dailyCard;
-        if (!card) return false;
-        const nav = globalThis.navigator as (Navigator & { share?: (data: { text: string }) => Promise<void> }) | undefined;
+    private copyShareText(): boolean {
+        const share = this.currentShare();
+        const clip = (globalThis.navigator as Navigator | undefined)?.clipboard;
+        if (!share || !clip?.writeText) return false;
         try {
-            // On a phone the card goes where cards go - the share sheet,
-            // straight into a chat - rather than through the clipboard.
-            if (this.canShareCard()) {
-                nav!.share!({ text: card }).then(() => { this.dailyCopied = true; }, () => { /* dismissed */ });
-                return true;
-            }
-            const clip = nav?.clipboard;
-            // "Copied" only once it was: with no clipboard at all (an
-            // insecure page, an old browser) it used to say so anyway.
-            if (!clip?.writeText) return false;
-            clip.writeText(card).then(() => { this.dailyCopied = true; }, () => { this.dailyCopied = false; });
+            clip.writeText(share.clipboard).then(() => { this.shareStatus = 'COPIED'; }, () => { /* refused */ });
             return true;
         } catch {
             return false;
         }
-    }
-
-    /** A touch device with a native share sheet: the card is shared, not copied. */
-    private canShareCard(): boolean {
-        const nav = globalThis.navigator as (Navigator & { share?: unknown }) | undefined;
-        return this.controlScheme === 'TOUCH' && typeof nav?.share === 'function';
     }
 
     /**
@@ -2324,28 +2364,80 @@ export class GameLoop {
             savePalette(this.palette);
         }
         this.lastRun = { fresh: merged.fresh, award, unlocks: unlocked.map(u => u.label), summary };
-        // Every SCRAMBLE run gets a card to paste, not only the daily.
-        if (this.scramble && !this.isDailyRun) {
+        // What SHARE sends (v2.3.0): the run, named at share time - the pilot
+        // can still type a name in the share panel.
+        if (this.scramble) {
             const b = this.score.breakdown;
-            this.dailyCard = formatScrambleCard({
-                wavesCleared: this.scramble.wavesCleared,
+            this.lastShareRun = {
+                daily: this.isDailyRun ? dailyNumber(new Date(`${this.dailyRunDate ?? dailyKey()}T00:00:00Z`)) : undefined,
+                attempt: this.isDailyRun ? this.dailyResults[this.dailyRunDate ?? dailyKey()]?.attempts : undefined,
                 score: this.score.totalScore,
-                stars: starCount(this.medals.SCRAMBLE ?? 0),
+                waves: this.scramble.wavesCleared,
                 kills: b.fighterKills + b.bomberKills,
                 bestChain: this.combo.best,
-                // The card carries the run itself: whoever opens it flies
-                // these exact waves with this score to beat.
-                url: challengeUrl(PLAY_URL, {
-                    seed: this.scramble.seed,
-                    score: this.score.totalScore,
-                    waves: this.scramble.wavesCleared,
-                    easy: this.runFlownEasy
-                }),
-                easy: this.runFlownEasy
-            });
+                stars: starCount(this.medals.SCRAMBLE ?? 0),
+                easy: this.runFlownEasy,
+                isNewBest: this.isNewBest || this.isMissionBest,
+                versus: this.challenge && !this.isDailyRun ? { name: this.challenge.name ?? null, score: this.challenge.score } : null,
+                freshStars: merged.fresh.length,
+                seed: this.scramble.seed
+            };
         }
         this.debriefAge = 0;
         if (merged.fresh.length > 0) soundFX.playFanfare(4);
+    }
+
+    /** The share for the run just finished, under the pilot's current name. */
+    public currentShare(): ShareContent | null {
+        const r = this.lastShareRun;
+        if (!r) return null;
+        const { seed, ...run } = r;
+        return shareContent({
+            ...run,
+            name: this.pilotName,
+            // /c/ is the same game with a preview card for the friend - and no
+            // og:url pointing home, which Facebook would follow (vite.config.ts).
+            url: challengeUrl(`${PLAY_URL}/c`, {
+                seed, score: run.score, waves: run.waves, easy: run.easy, name: this.pilotName ?? undefined
+            })
+        });
+    }
+
+    /** Draw the share picture for the run just finished onto `canvas` (1080 square). */
+    public drawSharePicture(canvas: HTMLCanvasElement): boolean {
+        const share = this.currentShare();
+        if (!share) return false;
+        canvas.width = SHARE_IMAGE_SIZE;
+        canvas.height = SHARE_IMAGE_SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        drawShareImage(ctx, share.picture, this.moment);
+        return true;
+    }
+
+    /** The name on shares from now on; null or junk forgets it. */
+    public setPilotName(raw: string | null): string | null {
+        this.pilotName = savePilotName(raw);
+        return this.pilotName;
+    }
+
+    /**
+     * SHARE on the debrief - C, or a tap. Opens the share panel; with no
+     * panel (tests, headless) it copies the message and link instead.
+     */
+    public requestShare(): boolean {
+        if (this.phase !== 'DEBRIEF' || !this.lastShareRun) return false;
+        soundFX.playUiSelect();
+        if (this.onShareRequest) {
+            this.onShareRequest();
+            return true;
+        }
+        return this.copyShareText();
+    }
+
+    /** How a share went, for the debrief's line under SHARE. */
+    public noteShareResult(status: 'SHARED' | 'COPIED') {
+        this.shareStatus = status;
     }
 
     /** Everything the debrief draws, assembled from the run that just ended. */
@@ -2386,12 +2478,25 @@ export class GameLoop {
         let reason = this.scramble && won
             ? `${this.scramble.wavesCleared} waves held before the end. ${this.missionReason ?? ''}`.trim()
             : this.missionReason;
+        // Beating a friend's score is the headline, whatever else happened:
+        // it is the moment a run is worth sending back (v2.3.0).
+        let celebrate = false;
+        let title = headline;
         if (this.scramble && this.challenge && !this.isDailyRun) {
             reason = challengeVerdict(this.challenge, this.score.totalScore, this.runFlownEasy);
+            const ahead = this.score.totalScore - this.challenge.score;
+            if (ahead > 0) {
+                celebrate = true;
+                title = this.challenge.name ? `YOU BEAT ${challengerLabel(this.challenge)}!` : 'CHALLENGE BEATEN!';
+                const end = won ? `${this.scramble.wavesCleared} waves held`
+                    : `${carrierLost ? 'the carrier went down' : 'shot down'} at wave ${Math.max(1, this.scramble.wave)}`;
+                reason = `By ${ahead.toLocaleString('en-US')} pts - ${end}.`;
+            }
         }
         return {
             outcome: won ? 'SUCCESS' : 'FAILED',
-            headline,
+            headline: title,
+            celebrate,
             reason,
             scenarioName: this.scenario.name,
             styleNote: this.runFlownEasy ? 'FLOWN ON EASY' : undefined,
@@ -2410,9 +2515,19 @@ export class GameLoop {
             xp: run ? run.award : null,
             unlocks: run?.unlocks ?? [],
             nextUnlock: next ? { label: next.label, starsNeeded: next.stars - stars } : null,
-            shareCard: this.dailyCard,
-            copied: this.dailyCopied,
-            shareVerb: this.canShareCard() ? 'SHARE' : 'COPY',
+            share: this.lastShareRun ? {
+                ...shareNudge({
+                    isNewBest: this.lastShareRun.isNewBest,
+                    versus: this.lastShareRun.versus,
+                    score: this.lastShareRun.score,
+                    freshStars: this.lastShareRun.freshStars
+                }),
+                status: this.shareStatus,
+                // After a friend's challenge the button answers them by name.
+                label: this.lastShareRun.versus
+                    ? (this.lastShareRun.versus.name ? `REPLY TO ${this.lastShareRun.versus.name.toUpperCase()}` : 'REPLY')
+                    : 'SHARE'
+            } : null,
             nextUp: this.nextUpLabel() ?? undefined,
             touch: this.controlScheme === 'TOUCH'
         };
@@ -2459,7 +2574,6 @@ export class GameLoop {
 
         this.dailyResults = merged.results;
         saveDailyResults(this.dailyResults);
-        this.dailyCard = formatShareCard(merged.today);
     }
 
     /**
@@ -2617,6 +2731,7 @@ export class GameLoop {
             this.hasLaunched = true;
             this.updateSortie(dt);
             if (this.scramble && this.deck.aircraftState === 'AIRBORNE') this.updateScramble(dt);
+            this.checkScoreTarget();
         } else {
             soundFX.updateEngine(0, false);
             soundFX.setRWRState('SILENT');
@@ -3069,6 +3184,32 @@ export class GameLoop {
         this.selectedWeapon = 'AIM9';
     }
 
+    /**
+     * The moment a run passes the score it was chasing (v2.3.0). Once a run:
+     * a challenger's score earns "YOU BEAT ANNA!", the pilot's own best earns
+     * NEW PERSONAL BEST - while it is happening, which is when it feels like
+     * something.
+     */
+    private checkScoreTarget() {
+        const t = this.scoreTarget;
+        if (!t) return;
+        // Live, both ways: a penalty can take the score back under the line,
+        // and then the chip says so rather than claim a win the debrief will
+        // deny. The banner and the fanfare happen once a run.
+        this.scoreTargetPassed = this.score.totalScore > t.score;
+        if (!this.scoreTargetPassed || this.scoreTargetCelebrated) return;
+        this.scoreTargetCelebrated = true;
+        const pts = t.score.toLocaleString('en-US');
+        if (t.challenge) {
+            this.callouts.push(t.who === 'A FRIEND' ? 'CHALLENGE BEATEN!' : `YOU BEAT ${t.who}!`, 'PRAISE',
+                `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
+        } else {
+            this.callouts.push('NEW PERSONAL BEST!', 'PRAISE', `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
+        }
+        soundFX.playFanfare(6);
+        this.flash(THEME.caution, 0.25);
+    }
+
     private updateScramble(dt: number) {
         const s = this.scramble;
         if (!s || this.dying) return;
@@ -3282,6 +3423,14 @@ export class GameLoop {
     private payKill(position: Vector3, baseValue: number, soloLine: string, name: string) {
         const kill = this.combo.registerKill(baseValue);
         this.score.recordBonus(kill.bonus);
+        // The share picture's moment: the best kill so far - the longest
+        // chain, a bomber over a fighter - photographed a beat later, when
+        // the fireball and the banner are up.
+        const weight = kill.chain * 10 + baseValue / 100;
+        if (this.scramble && weight >= this.momentWeight) {
+            this.momentPendingWeight = weight;
+            this.momentDueAt = this.elapsedSeconds + 0.3;
+        }
         const chained = kill.chain >= 2;
         this.callouts.push(
             chained ? `${kill.label}  x${kill.multiplier}` : soloLine,
@@ -3560,6 +3709,9 @@ export class GameLoop {
                         : undefined
                 }
             );
+            if (this.challengeWelcomeOpen && this.challenge && !this.flyStyleChooserOpen) {
+                drawChallengeWelcome(this.ctx, w, h, this.challenge, this.controlScheme === 'TOUCH', this.elapsedSeconds);
+            }
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
             if (this.flyStyleChooserOpen) {
                 drawFlyStyleChooser(this.ctx, w, h, this.flyStyleChoice,
@@ -3598,6 +3750,13 @@ export class GameLoop {
             );
         }
 
+        // Before any overlay and before the thumb controls: the share picture
+        // shows the fight, not the buttons.
+        if (this.momentDueAt > 0 && this.elapsedSeconds >= this.momentDueAt && this.currentView === 'MICRO_FLIGHT'
+            && !this.menuOpen && !this.helpVisible && !this.awaitingRotation) {
+            this.captureMoment();
+        }
+
         if (this.helpVisible) {
             this.briefing.drawHelp(
                 this.ctx,
@@ -3622,6 +3781,27 @@ export class GameLoop {
         // something unreadable.
         if (this.awaitingRotation) {
             drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds);
+        }
+    }
+
+    /** Keep a downscaled copy of the frame just drawn as the run's best moment. */
+    private captureMoment() {
+        this.momentDueAt = 0;
+        const src = this.canvas;
+        if (!src.width || !src.height) return;
+        try {
+            this.momentCanvas ??= globalThis.document?.createElement('canvas') ?? null;
+            const c = this.momentCanvas;
+            const ctx = c?.getContext('2d');
+            if (!c || !ctx) return;
+            const scale = Math.min(1, 960 / src.width);
+            c.width = Math.round(src.width * scale);
+            c.height = Math.round(src.height * scale);
+            ctx.drawImage(src, 0, 0, c.width, c.height);
+            this.moment = { image: c, width: c.width, height: c.height };
+            this.momentWeight = this.momentPendingWeight;
+        } catch {
+            // A missing moment only means the card shows the radar scope.
         }
     }
 
@@ -3805,6 +3985,7 @@ export class GameLoop {
             {
                 hint: this.currentHint,
                 score: this.score,
+                scoreTarget: this.scoreTarget ? { ...this.scoreTarget, passed: this.scoreTargetPassed } : null,
                 objective: this.currentObjective(),
                 checklist: this.training.checklist(),
                 strikeTargets: this.strikeTargets,
@@ -3888,7 +4069,30 @@ export class GameLoop {
     /** Take up a shared challenge: SCRAMBLE, on the sharer's seed. */
     public acceptChallenge(challenge: Challenge | null) {
         this.challenge = challenge;
+        // A friend's link opens on the friend's challenge, not the menu.
+        this.challengeWelcomeOpen = challenge !== null;
         if (challenge) this.selectScenarioById('SCRAMBLE');
+    }
+
+    /** ACCEPT on the challenge screen: fly it (asking a newcomer how first). */
+    public acceptChallengeWelcome() {
+        if (!this.challengeWelcomeOpen) return;
+        this.challengeWelcomeOpen = false;
+        // The challenger flew EASY and this pilot has never been asked: fly
+        // EASY too, without the question - the same fight, one tap sooner.
+        // A STANDARD challenge still asks: a newcomer may well want EASY.
+        if (this.challenge?.easy && this.shouldAskFlyStyle()) {
+            this.flyStyleAnswered = true;
+            this.setFlyStyle('EASY');
+        }
+        this.requestFlight('BRIEFING');
+    }
+
+    /** SEE ALL MISSIONS: the normal menu; SCRAMBLE still carries the challenge. */
+    public closeChallengeWelcome() {
+        if (!this.challengeWelcomeOpen) return;
+        this.challengeWelcomeOpen = false;
+        soundFX.playUiMove();
     }
 
     public confirmBriefing(seedOverride?: number) {
@@ -3902,8 +4106,6 @@ export class GameLoop {
         this.hud.hudDensity = resolveHudDensity(this.hasCompletedAMission());
         // Build the world fresh from whatever the selector landed on.
         this.applyScenario(this.scenario, seedOverride);
-        // A card belongs to the run that made it; the next run starts without one.
-        this.dailyCard = null;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;
         this.phase = 'ACTIVE';
@@ -3925,7 +4127,6 @@ export class GameLoop {
         this.isNewBest = false;
         this.isMissionBest = false;
         this.isDailyRun = false;
-        this.dailyCopied = false;
         this.dailyRunDate = null;
         this.missionOutcome = 'ACTIVE';
         this.missionReason = null;

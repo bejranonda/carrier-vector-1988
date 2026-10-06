@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { challengeLine, challengeUrl, challengeVerdict, parseChallenge } from './Challenge';
+import { MAX_PILOT_NAME, challengeLine, challengeUrl, challengeVerdict, challengerLabel, cleanPilotName, parseChallenge } from './Challenge';
 
 describe('challenge links', () => {
     it('round-trips a run through its URL', () => {
@@ -47,5 +47,49 @@ describe('challenge links', () => {
         expect(challengeVerdict(standardRun, 6000, true)).toBe('CHALLENGE BEATEN by 1,000 pts (you flew EASY).');
         expect(challengeVerdict(easyRun, 6000, true)).toBe('CHALLENGE BEATEN by 1,000 pts.');
         expect(challengeVerdict(standardRun, 4000)).toContain('1,000 pts short. FLY AGAIN');
+    });
+
+    it('carries the challenger\'s name after the #, and links without one still open (v2.3.0)', () => {
+        const parse = (url: string) => { const u = new URL(url); return parseChallenge(u.search, u.hash); };
+        const c = { seed: 7, score: 9100, waves: 6, name: 'Anna' };
+        const url = challengeUrl('https://example.org/game/c', c);
+        // The name is in the fragment, which never reaches a server.
+        expect(url).toBe('https://example.org/game/c/?c=7.9100.6#n=Anna');
+        expect(new URL(url).search).toBe('?c=7.9100.6');
+        expect(parse(url)).toEqual(c);
+        const easy = { ...c, easy: true };
+        expect(parse(challengeUrl('https://example.org', easy))).toEqual(easy);
+        // Any script: a Thai name survives the round trip, percent-encoded.
+        const thai = { seed: 7, score: 9100, waves: 6, name: 'สมชาย' };
+        const thaiUrl = challengeUrl('https://example.org/game', thai);
+        expect(thaiUrl).not.toMatch(/[^\x21-\x7e]/);
+        expect(parse(thaiUrl)).toEqual(thai);
+        // A junk name drops; the challenge itself still opens. A name in the
+        // query string (an early v2.3.0 link) is read too.
+        expect(parseChallenge('?c=7.9100.6', '#n=%3C%2F%3E')).toEqual({ seed: 7, score: 9100, waves: 6 });
+        expect(parseChallenge('?c=7.9100.6&n=Anna')).toEqual(c);
+        expect(parseChallenge('?c=7.9100.6')).toEqual({ seed: 7, score: 9100, waves: 6 });
+    });
+
+    it('cleans a name so a link cannot put an address or markup on a friend\'s screen', () => {
+        expect(cleanPilotName('  Grandpa   Joe ')).toBe('Grandpa Joe');
+        expect(cleanPilotName('www.win-a-prize.com')).toBe('wwwwin-a-prizeco');
+        expect(cleanPilotName('<script>alert(1)</script>')).toBe('scriptalert1scri');
+        expect(cleanPilotName("Anne-Marie O'Neil")).toBe("Anne-Marie O'Nei");
+        expect(Array.from(cleanPilotName('x'.repeat(40))!)).toHaveLength(MAX_PILOT_NAME);
+        for (const bad of ['', '   ', "-'-", '...', null, undefined, 42]) {
+            expect(cleanPilotName(bad), String(bad)).toBeNull();
+        }
+    });
+
+    it('names the challenger in the briefing line and the verdict', () => {
+        const c = { seed: 1, score: 12400, waves: 7, name: 'Anna' };
+        expect(challengerLabel(c)).toBe('ANNA');
+        expect(challengerLabel({})).toBe('A FRIEND');
+        expect(challengeLine(c)).toContain('CHALLENGE FROM ANNA · BEAT 12,400 PTS');
+        expect(challengeVerdict(c, 13000)).toBe('YOU BEAT ANNA by 600 pts!');
+        expect(challengeVerdict(c, 12400)).toBe('TIED WITH ANNA - to the point.');
+        expect(challengeVerdict(c, 10000)).toBe('2,400 pts short of ANNA. FLY AGAIN - same waves.');
+        expect(challengeVerdict({ ...c, easy: true }, 13000)).toBe('YOU BEAT ANNA by 600 pts (they flew EASY)!');
     });
 });

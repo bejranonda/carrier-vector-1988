@@ -5,6 +5,99 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-10-06
+
+**"Bring a Friend."** The owner's brief: *users should have a good experience,
+they will love to share this to friends.* So v2.3.0 walked both ends of a
+share in a browser - the player sending it, and the friend opening it - had a
+research brief written on what chat apps actually do with a share, and
+rebuilt the loop around both people. Evidence:
+[`docs/reviews/v2.3.0/`](docs/reviews/v2.3.0/README.md).
+
+### The friend who opens the link (#127, #128)
+
+- **"ANNA CHALLENGES YOU."** A challenge link opens on a screen of its own:
+  who sent it, the score to beat in big gold numbers, the waves and fly
+  style, one sentence on what the game is, and one big ACCEPT CHALLENGE (SEE
+  ALL MISSIONS for everything else). It used to open the full mission menu
+  with the challenge in one line of small yellow text. The browser tab says
+  who sent it, and so does the canvas's screen-reader label.
+- **Same fight, one tap sooner:** a newcomer accepting an EASY challenge
+  flies EASY without the fly-style question; a STANDARD challenge still asks.
+- **The score to beat is on the HUD** - `4,200 / 12,345 PTS`, even on the
+  first-flight HUD - and passing it is a moment: **"YOU BEAT ANNA!"** and a
+  fanfare, there and then (once a run; the chip tracks the line both ways).
+- **A win is the headline.** Beating the challenge used to be a grey line
+  under a red CARRIER LOST; it is now the debrief's headline, in gold, and
+  the share button reads **REPLY TO ANNA**.
+
+### The player who shares (#125, #126, #129, #131)
+
+- **SHARE** sits beside FLY AGAIN (C on a keyboard), lit when the run is worth
+  sending, with one line saying why ("NEW PERSONAL BEST - SHOW YOUR FRIENDS").
+  It used to be "C copy result" inside a small text box.
+- **The share panel**: an optional name for the card ("Your name on the card"
+  - kept on this device), a picture of the run, and the buttons the device
+  can use: CHALLENGE A FRIEND / REPLY TO ANNA / INVITE A FRIEND and SEND THE
+  PICTURE through the share sheet; WhatsApp, LINE and a text message or email
+  where there is none (Facebook's and Messenger's in-app browsers, Firefox,
+  Linux); COPY MESSAGE, SAVE PICTURE, and COPY PICTURE on a computer.
+- **The picture**: a 1080 square in the game's look and the pilot's palette -
+  the run's best moment (a frame kept a beat after the best kill, before the
+  thumb controls are drawn), the stars, the score, waves and kills, the
+  pilot's name or both names after a challenge, and "CAN YOU BEAT ME?" or "I
+  BEAT ANNA!".
+- **The message**, in plain sentences with the link alone on its last line:
+  a challenge after a best, a star or a win ("I beat Anna! 12,400 points to
+  12,345..."), an invitation after a modest run ("Try Carrier Vector: 1988 -
+  a free retro jet game in your browser... EASY mode flies the plane for
+  you"). It says what the link is, for friends who are wary of links.
+- **Two shares, not one.** The first build sent the picture, the message and
+  the link together; the research showed iPhone WhatsApp drops the picture
+  and Facebook/Messenger drop the link from such a share. The challenge goes
+  as text (never as a share `url`, which some iPhone apps cut the query string
+  from), the picture alone.
+- **Nothing says "sent"** - the browser is only told an app was chosen.
+
+### Links (#126, #130)
+
+- `https://bejranonda.github.io/carrier-vector-1988/c/?c=seed.score.waves[.e]#n=Name`:
+  the scheme, so every app makes it a link; `/c/`, the same page emitted by
+  the build without the `og:url` and `canonical` that would send a Facebook
+  post to the home page, and with preview text addressed to the friend; the
+  name after `#`, which never reaches a server, cleaned so it cannot read as
+  a web address.
+
+### Fixed on the way
+
+- On a phone the share panel closed itself: it opened on the tap's
+  pointerdown, and the same tap's click then landed on its CLOSE button.
+- "5 WAVEs · 0 PLANEs DOWN" on the picture; cut-off lines on the welcome
+  screen, the picture and a narrow debrief button.
+- A mid-run "YOU BEAT ANNA!" could be followed by a debrief saying 25 points
+  short, after a penalty.
+
+### Removed
+
+- The v2.0 text cards (`formatScrambleCard`, `formatShareCard`) and their
+  "C copy result" box - replaced by the share panel.
+
+### Engineering
+
+- 1,215 tests (was 1,185; the twelve text-card tests went with the cards).
+  Browser harness **77/77** (was 66): the whole friend loop from a real
+  `/c/?c=...#n=Anna` link to a reply, name isolation from the game's keys,
+  and a phone tapping SHARE.
+- Gameplay unchanged: `npm run balance` replays the same runs identically.
+- Bundle 323.2 kB (106.8 kB gzip), was 305.7 / 100.8. Zero runtime dependencies.
+
+### Still open
+
+Nothing here has been tried on a real phone or in a real chat app yet (#130
+needs the live page in Facebook's Sharing Debugger); every challenge shares
+the same preview card (#132, no server); and - seventh release running - no
+human playtest.
+
 ## [2.2.0] — 2026-10-06
 
 **"Second Look."** The owner asked: *validate anything to improve else?* So

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    SCRAMBLE, SCRAMBLE_LOADOUT, escalationCount, fighterAccuracy, formatScrambleCard, keepClearOfBoat, mulberry32, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus
+    SCRAMBLE, SCRAMBLE_LOADOUT, escalationCount, fighterAccuracy, keepClearOfBoat, mulberry32, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus
 } from './Scramble';
 
 describe('SCRAMBLE wave director', () => {
@@ -128,20 +128,3 @@ describe('SCRAMBLE fighter accuracy', () => {
     });
 });
 
-describe('SCRAMBLE brag card', () => {
-    it('is three short lines ending in the address of the game', () => {
-        const card = formatScrambleCard({ wavesCleared: 7, score: 12400, stars: 2, kills: 18, bestChain: 4, url: 'example.org/game' });
-        expect(card.split('\n')).toEqual([
-            'CARRIER VECTOR: 1988 — SCRAMBLE ★★☆',
-            '7 WAVES HELD · 12,400 PTS · 18 splashed · chain x4',
-            'beat it: example.org/game'
-        ]);
-        expect(formatScrambleCard({ wavesCleared: 1, score: 10, stars: 0, kills: 1, bestChain: 1, url: 'u' }))
-            .toContain('1 WAVE HELD');
-    });
-
-    it('says EASY in the title of a run flown on EASY (v2.2.0)', () => {
-        const card = formatScrambleCard({ wavesCleared: 5, score: 6300, stars: 1, kills: 11, bestChain: 2, url: 'u', easy: true });
-        expect(card.split('\n')[0]).toBe('CARRIER VECTOR: 1988 — SCRAMBLE · EASY ★☆☆');
-    });
-});

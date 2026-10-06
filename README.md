@@ -25,7 +25,7 @@
 - [Play Online](https://bejranonda.github.io/carrier-vector-1988/)
 - [What is this?](#what-is-this)
 - [Quick Start](#quick-start)
-- [SCRAMBLE: the arcade front door](#scramble-the-arcade-front-door)
+- [SCRAMBLE: the arcade front door](#scramble-the-arcade-front-door) · [Bring a friend](#bring-a-friend)
 - [Built for every pilot: EASY flying and big text](#built-for-every-pilot-easy-flying-and-big-text)
 - [How to Play](#how-to-play)
 - [Controls](#controls)
@@ -59,8 +59,8 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 1,185 headless Vitest tests
-npm run playtest # 66 checks in a real browser, screenshots to playtest-output/
+npm run test     # 1,215 headless Vitest tests
+npm run playtest # 77 checks in a real browser, screenshots to playtest-output/
 npm run balance  # whole SCRAMBLE runs, many seeds, headless - balance means
 npm run preview  # serve the production build
 ```
@@ -114,19 +114,38 @@ own; the colour-blind palette is never locked).
 
 **FLY AGAIN.** The debrief pays out stars, score, XP and unlocks, then puts
 `ENTER - FLY AGAIN` under your thumb: straight back into the same mission.
-`ESC` goes to mission select. Every SCRAMBLE run leaves a three-line card to
-paste (`C` copies it), and its last line is a **challenge link**:
+`ESC` goes to mission select.
 
-```
-CARRIER VECTOR: 1988 — SCRAMBLE ★★☆
-7 WAVES HELD · 12,400 PTS · 18 splashed · chain x4
-beat it: bejranonda.github.io/carrier-vector-1988/?c=482913.12400.7
-```
+### Bring a friend
 
-Whoever opens it lands on the briefing with `CHALLENGE · BEAT 12,400 PTS (7
-WAVES) ON THE SAME WAVES`, flies *your exact waves* (they are a pure function
-of the seed), and the debrief tells them by how much they beat you - or how
-far short they fell. No server involved.
+**SHARE** sits beside FLY AGAIN (`C` on a keyboard) and opens a panel with two
+things to send - separately, because chat apps handed a picture and a link in
+one share keep one and drop the other:
+
+- **the challenge** - a message in plain words with the link on its last line,
+  through your phone's share sheet (or WhatsApp, LINE, a text message or an
+  email where there is no share sheet):
+
+  > I scored 12,400 points in Carrier Vector: 1988 and shot down 18 planes.
+  > My best yet! Can you beat me? It's a free game in your browser - same
+  > waves, a few minutes, no download:
+  > https://bejranonda.github.io/carrier-vector-1988/c/?c=482913.12400.7#n=Anna
+
+- **a picture** of your run - a 1080 square with its best moment (the game
+  keeps a frame a beat after your best kill), your stars, your score and your
+  name.
+
+Your name is optional and stays on your device; in the link it rides after the
+`#`, which browsers never send to a server. A run with nothing to boast about
+is shared as an invitation instead ("EASY mode flies the plane for you").
+
+**Whoever opens it** gets a first screen of their own - `ANNA CHALLENGES YOU`,
+the score to beat, one big `ACCEPT CHALLENGE` - and flies *your exact waves*
+(they are a pure function of the seed). The score to beat stays on their HUD,
+`YOU BEAT ANNA!` goes up the moment they pass it, and their debrief leads with
+the result and a `REPLY TO ANNA` button. Without a challenge, a SCRAMBLE run
+chases your own best the same way - `NEW PERSONAL BEST!` as it happens. No
+server involved.
 
 SCRAMBLE also has its own soundtrack: a small procedural synthwave loop that
 layers up with the fight - kick and bass while bandits are inbound, hats when a
@@ -172,12 +191,13 @@ once, in plain words.
 **Measured** with a scripted relaxed player (slow reactions, never steers):
 three minutes on STANDARD gave 6 kills and 4 waves; on EASY, 11-12 kills and
 5 waves - the first medal star - with no jets lost, at 80% world speed. Over
-eight minutes on EASY (v2.2.0) the first two SCRAMBLE stars come within about
-five minutes; the third, CLEAR WAVE 10, is at the edge of an eight-minute run.
+eight minutes on EASY, holding FIRE (v2.2.0, 16 runs): CLEAR WAVE 5 at about
+1:46, SCORE 8,000 at about 2:26, and CLEAR WAVE 10 at about 7:16 (15 of 16 runs
+inside eight minutes).
 
-**Honest scores.** A run flown on EASY says so - on its card, its challenge
-link, the daily card and the debrief - so nobody compares an EASY score with a
-STANDARD one without knowing.
+**Honest scores.** A run flown on EASY says so - in its share message, on its
+picture, in its challenge link, on the daily and on the debrief - so nobody
+compares an EASY score with a STANDARD one without knowing.
 
 ## Missions
 
@@ -327,8 +347,8 @@ nothing fires a missile at you and there is no deck to go home to, so the
 stick, the throttle, the weapon pills, chaff, target and recovery all step
 aside: there is a big `FIRE`, which **lights up when a shot is good**, and a
 **tap anywhere** on the sky fires too. Every instruction is in words for a
-thumb (`FIRE NOW - TAP FIRE`), and a tap on the result card at the end opens
-the phone's share sheet. Deck missions keep every control, EASY or not.
+thumb (`FIRE NOW - TAP FIRE`), and SHARE at the end goes straight to the
+phone's share sheet. Deck missions keep every control, EASY or not.
 
 A phone starts on `AUTOPILOT` with the recovery assist on and the cheapest
 display mode, unless you have already chosen otherwise — a three and a half
@@ -344,17 +364,14 @@ if it guesses wrong. Desktop players get tap-to-designate with the mouse too.
 
 Press `D` on the briefing. Since v2.0.0 it is a SCRAMBLE seeded from today's
 date, so **every player in the world flies the identical waves** — short, and
-the mode someone arriving from a shared card can play at once. The debrief
-prints a four-line card and `C` copies it:
+the mode someone arriving from a shared link can play at once. SHARE on the
+debrief sends it like any run, saying which day and which try:
 
-```
-CARRIER VECTOR: 1988 — DAILY SCRAMBLE #279
-WAVE 7 · 12,400 PTS · COMMANDER
-●●●●●●●●●●  18 splashed · chain x4 · hull 70%
-attempt 2 · bejranonda.github.io/carrier-vector-1988
-```
+> Daily Scramble #279 (first try): I scored 12,400 points in Carrier Vector:
+> 1988 and shot down 18 planes. Everyone gets the same waves today - can you
+> beat me? It's a free game in your browser:
 
-Unlimited attempts; the card says which one it was. Locking the day to a
+Unlimited attempts; the share says which one it was. Locking the day to a
 single try punishes exactly the person who has just found the game.
 
 ### Ops tempo
@@ -683,7 +700,7 @@ src/
 │   ├── Scenarios.ts       # Selectable missions + the phase director (pure)
 │   ├── HighScore.ts       # Persisted personal best
 │   ├── MissionRecords.ts  # Per-scenario bests, completions and attempts (pure)
-│   ├── DailySortie.ts     # Date-seeded run, result merge, share card (pure)
+│   ├── DailySortie.ts     # Date-seeded run, result merge (pure)
 │   ├── Pacing.ts          # ARCADE / SIM deck timings and threat scaling (pure)
 │   ├── ThreatLevel.ts     # CADET / REGULAR / VETERAN escalation offset (pure)
 │   ├── Accessibility.ts   # Flash-rate cap and reduced-motion settings (pure)
@@ -691,11 +708,14 @@ src/
 │   ├── TouchInput.ts      # Pointer binding, stick and throttle demand (pure)
 │   ├── Callouts.ts        # SPLASH ONE / SAM DOWN / 3-WIRE, with lifetimes (pure)
 │   ├── Milestones.ts      # First blood / first trap / chaff save / first loop, persisted (pure)
-│   ├── Scramble.ts        # SCRAMBLE waves, bonuses, rearm, brag card (pure)
+│   ├── Scramble.ts        # SCRAMBLE waves, bonuses, rearm (pure)
+│   ├── ShareCard.ts       # What a share says, and the picture's words (pure)
+│   ├── Share.ts           # Share sheet / clipboard / quick-link decisions
+│   ├── PilotName.ts       # The optional name on shares, on this device
 │   ├── Combo.ts           # Kill chains and the multiplier (pure)
 │   ├── Medals.ts          # Three named stars per mission, persisted (pure)
 │   ├── Career.ts          # Career XP, levels, palette unlocks, persisted (pure)
-│   ├── Challenge.ts       # ?c=seed.score.waves challenge links (pure)
+│   ├── Challenge.ts       # ?c=seed.score.waves[.e]#n=name challenge links (pure)
 │   ├── EasyMode.ts        # EASY flying: tuning, smart trigger, coach rewrite (pure)
 │   └── ScoreKeeper.ts     # Scoring (incl. chain/wave bonuses), trap grading, rank ladder
 ├── flight/
@@ -730,12 +750,16 @@ src/
 │   ├── BriefingScreen.ts  # Boot sequence, briefing (stars, career line), help
 │   ├── DebriefView.ts     # v2.0.0 debrief: stars, count-up score, XP bar, FLY AGAIN
 │   ├── FlyStyleView.ts    # v2.1.0 "How would you like to fly?" (EASY / STANDARD, text size)
+│   ├── ChallengeView.ts   # v2.3.0 "ANNA CHALLENGES YOU" - a shared link's first screen
+│   ├── ShareImage.ts      # v2.3.0 the 1080 share picture: best moment, score, stars, name
 │   ├── KillFx.ts          # Shockwave ring + rising score text at the wreck
 │   └── SpeedStreaks.ts    # Vector dust streaming past the canopy
 ├── audio/
 │   ├── AudioMix.ts        # Bus levels, spatialisation, beds (pure)
 │   ├── MusicPattern.ts    # SCRAMBLE soundtrack arrangement (pure)
 │   └── SoundFX.ts         # Web Audio synthesis, the bus graph, the music scheduler
+├── ui/
+│   └── SharePanel.ts      # v2.3.0 the share panel (plain DOM): name, picture, share buttons
 └── main.ts                # Entry point and input dispatch
 ```
 
@@ -788,7 +812,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**1,185 headless tests** across 66 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
+**1,215 headless tests** across 72 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links and names, what a share says and the picture's layout, the share sheet and clipboard decisions, the challenge welcome screen at nine sizes, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -801,7 +825,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ### In a real browser
 
 ```bash
-npm run playtest              # 66 checks, screenshots + report in playtest-output/
+npm run playtest              # 77 checks, screenshots + report in playtest-output/
 PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
 ```
 
@@ -844,10 +868,11 @@ of game per seed.
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#124, status summary at the top) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#132, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [**docs/reviews/v2.2.0/**](docs/reviews/v2.2.0/README.md) | **Current suite** — "Second Look": three code reviews, eight-minute balance runs and a stall diagnosis; the phone made a one-button game |
+| [**docs/reviews/v2.3.0/**](docs/reviews/v2.3.0/README.md) | **Current suite** — "Bring a Friend": both ends of a share walked and researched; the friend's own first screen, the score to beat, a picture and a challenge to send |
+| [docs/reviews/v2.2.0/](docs/reviews/v2.2.0/README.md) | "Second Look": three code reviews, eight-minute balance runs and a stall diagnosis; the phone made a one-button game |
 | [docs/reviews/v2.1.0/](docs/reviews/v2.1.0/README.md) | "Every Pilot": accessibility research, EASY flying and text size, validated from eight player perspectives |
 | [docs/reviews/v2.0.0/](docs/reviews/v2.0.0/README.md) | a frank "would this be a hit?" review, the research behind it, the SCRAMBLE renovation, bot-measured evidence, and a self-critique of what is still weak |
 | [docs/reviews/v1.11.0/](docs/reviews/v1.11.0/README.md) | A pilot menu, plain-language coaching, and two measured bugs fixed |
@@ -860,6 +885,16 @@ of game per seed.
 ---
 
 ## Future Roadmap
+
+Shipped in v2.3.0 ("Bring a Friend") - for "users should have a good experience
+and love to share it": a friend who opens a challenge link gets a first screen
+of their own (`ANNA CHALLENGES YOU`, the score to beat, one button), sees the
+score to beat on the HUD and `YOU BEAT ANNA!` the moment they pass it, and
+replies from a debrief that leads with the result. SHARE sends a plain-words
+challenge with its link and, separately, a picture of the run's best moment -
+through the share sheet, or WhatsApp, LINE, a text or an email where there is
+none. See [`docs/reviews/v2.3.0/`](docs/reviews/v2.3.0/README.md). Next: the
+same loop on real phones and real chat apps, with real people at both ends.
 
 Shipped in v2.2.0 ("Second Look") - a validation release: three code reviews
 of v2.0-v2.1 (#105-#124 fixed, including a death that carried into the next

@@ -3,7 +3,6 @@ import {
     dailyKey,
     dailyNumber,
     dailySeed,
-    formatShareCard,
     loadDailyResults,
     mergeDailyResult,
     saveDailyResults,
@@ -130,58 +129,6 @@ describe('mergeDailyResult', () => {
     });
 });
 
-describe('formatShareCard', () => {
-    it('is four short lines', () => {
-        const lines = formatShareCard(run()).split('\n');
-        expect(lines).toHaveLength(4);
-        for (const line of lines) expect(line.length).toBeLessThan(80);
-    });
-
-    it('leads with the sortie number and carries the headline figures', () => {
-        const card = formatShareCard(run());
-        expect(card).toContain('DAILY SORTIE #262');
-        expect(card).toContain('WAVE 7');
-        expect(card).toContain('18,400 PTS');
-        expect(card).toContain('LT COMMANDER');
-    });
-
-    it('states the attempt, so sharing stays honest without being punitive', () => {
-        expect(formatShareCard(run({ attempts: 3 }))).toContain('attempt 3');
-    });
-
-    it('uses only glyphs the game\'s monospace font actually has', () => {
-        // An aircraft emoji rendered as a stray arrow in the debrief card.
-        const card = formatShareCard(run());
-        expect(card).not.toMatch(/[\u{1F000}-\u{1FAFF}\u2700-\u27BF]/u);
-    });
-
-    it('draws one mark per kill, capped so a long run stays one line', () => {
-        const modest = formatShareCard(run({ fighterKills: 2, bomberKills: 1, samKills: 0, traps: 0 }));
-        expect(modest).toContain('●●●');
-        const huge = formatShareCard(run({ fighterKills: 40, bomberKills: 40 }));
-        expect(huge.split('\n')[2].length).toBeLessThan(80);
-    });
-
-    it('says so plainly when the pilot never got home', () => {
-        expect(formatShareCard(run({ traps: 0, perfectTraps: 0 }))).toContain('no trap');
-    });
-
-    it('calls out perfect traps, because that is the flex', () => {
-        expect(formatShareCard(run({ traps: 2, perfectTraps: 1 }))).toContain('(1 perfect)');
-        expect(formatShareCard(run({ traps: 2, perfectTraps: 0 }))).not.toContain('perfect');
-    });
-
-    it('survives a zeroed run without printing junk', () => {
-        const card = formatShareCard(run({
-            score: 0, wave: 0, fighterKills: 0, bomberKills: 0,
-            samKills: 0, traps: 0, perfectTraps: 0, hullRemaining: 100
-        }));
-        expect(card).not.toContain('undefined');
-        expect(card).not.toContain('NaN');
-        expect(card.split('\n')).toHaveLength(4);
-    });
-});
-
 describe('persistence', () => {
     it('round-trips a day', () => {
         const store = new Map<string, string>();
@@ -199,7 +146,7 @@ describe('persistence', () => {
         });
     });
 
-    it('discards garbage fields rather than trusting them into the card', () => {
+    it('discards garbage fields rather than trusting them', () => {
         const store = new Map([[
             'carrier-vector-1988.daily',
             JSON.stringify({ '2026-09-19': { score: 'lots', wave: -4, rank: 12, attempts: 2.5 } })
@@ -210,7 +157,6 @@ describe('persistence', () => {
             expect(day.wave).toBe(0);
             expect(day.rank).toBe('NUGGET');
             expect(day.attempts).toBe(2);
-            expect(() => formatShareCard(day)).not.toThrow();
         });
     });
 
@@ -223,23 +169,6 @@ describe('persistence', () => {
             expect(loadDailyResults()).toEqual({});
             expect(() => saveDailyResults({})).not.toThrow();
         });
-    });
-});
-
-describe('SCRAMBLE share card (v2.0.0)', () => {
-    it('names the mode and brags about waves, kills and the chain - no traps', () => {
-        const card = formatShareCard({
-            date: '2026-10-06', score: 12400, rank: 'COMMANDER', wave: 7,
-            fighterKills: 14, bomberKills: 4, samKills: 0, traps: 0, perfectTraps: 0,
-            hullRemaining: 70, attempts: 2, completed: true, mode: 'SCRAMBLE', bestChain: 4
-        });
-        const lines = card.split('\n');
-        expect(lines).toHaveLength(4);
-        expect(lines[0]).toContain('DAILY SCRAMBLE #');
-        expect(lines[1]).toBe('WAVE 7 · 12,400 PTS · COMMANDER');
-        expect(lines[2]).toContain('18 splashed · chain x4 · hull 70%');
-        expect(card).not.toContain('trap');
-        expect(lines[3]).toBe('attempt 2 · bejranonda.github.io/carrier-vector-1988');
     });
 });
 
@@ -261,23 +190,17 @@ describe('SCRAMBLE days survive a reload (v2.2.0)', () => {
         });
     });
 
-    it('still prints the SCRAMBLE card for a weaker second attempt after a reload', () => {
+    it('keeps a SCRAMBLE day a SCRAMBLE day after a weaker second attempt and a reload', () => {
         // The bug: the stored day lost its mode, the weaker attempt kept the
-        // stored record, and the card fell back to "DAILY SORTIE ... no trap".
+        // stored record, and the day came back as a deck sortie.
         const store = new Map<string, string>();
         withStorage(store, () => {
             saveDailyResults(mergeDailyResult({}, scrambleDay()).results);
             const second = mergeDailyResult(loadDailyResults(), scrambleDay({ score: 4000 }));
-            const card = formatShareCard(second.today);
-            expect(card).toContain('DAILY SCRAMBLE #');
-            expect(card).not.toContain('trap');
-            expect(card).toContain('attempt 2');
+            expect(second.today.mode).toBe('SCRAMBLE');
+            expect(second.today.attempts).toBe(2);
+            expect(second.today.score).toBe(9000);
         });
-    });
-
-    it('marks an EASY day on the card, and only an EASY day', () => {
-        expect(formatShareCard(scrambleDay({ easy: true })).split('\n')[0]).toMatch(/DAILY SCRAMBLE #\d+ · EASY$/);
-        expect(formatShareCard(scrambleDay()).split('\n')[0]).not.toContain('EASY');
     });
 
     it('ignores a forged mode or EASY flag of the wrong type', () => {

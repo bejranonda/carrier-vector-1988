@@ -77,6 +77,39 @@
            control drawn on the canvas. -->
       <button id="menu-button" class="shell-link" type="button" hidden>MENU (ESC)</button>
 
+      <!-- SHARE on the debrief (v2.3.0). Plain DOM, like the crash screen:
+           a real text field for the pilot's name (a phone keyboard, any
+           script) and real buttons for the share sheet, the clipboard and a
+           download. See src/ui/SharePanel.ts. -->
+      <div id="share" class="share" role="dialog" aria-modal="true" aria-labelledby="share-title" hidden>
+        <div class="share-panel">
+          <img id="share-picture" class="share-picture" alt="" />
+          <div class="share-side">
+            <h2 id="share-title">SHARE YOUR RUN</h2>
+            <p class="share-sub">Your friend gets a link to fly the same waves and try to beat you.</p>
+            <label class="share-label" for="share-name">YOUR NAME ON THE CARD <span>(optional)</span></label>
+            <input id="share-name" class="share-name" type="text" maxlength="16" autocomplete="nickname"
+                   autocapitalize="words" spellcheck="false" enterkeyhint="done" placeholder="e.g. Grandpa Joe" />
+            <!-- The challenge and the picture go separately: chat apps given
+                 both in one share keep one and drop the other. -->
+            <button id="share-send" class="share-send" type="button">CHALLENGE A FRIEND</button>
+            <button id="share-picture-send" class="share-alt" type="button" hidden>SEND THE PICTURE</button>
+            <!-- No share sheet here (an in-app browser, a desktop): the apps
+                 people send these with, through their public share links. -->
+            <p id="share-apps-label" class="share-label" hidden>SEND IT WITH</p>
+            <div id="share-apps" class="share-apps" hidden></div>
+            <div class="share-more">
+              <button id="share-copy" type="button">COPY MESSAGE</button>
+              <button id="share-copy-picture" type="button" hidden>COPY PICTURE</button>
+              <button id="share-save" type="button">SAVE PICTURE</button>
+            </div>
+            <p id="share-status" class="share-status" role="status" aria-live="polite"></p>
+            <p id="share-message" class="share-message"></p>
+            <button id="share-close" class="share-close" type="button">CLOSE</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Shown only if the frame loop stops for good (GameLoop.onFatalError).
            A frozen canvas with no message is the worst way to lose a player. -->
       <div id="crash" class="crash" role="alertdialog" aria-labelledby="crash-title" hidden>

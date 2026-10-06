@@ -114,6 +114,11 @@ export interface AirborneTarget {
 export interface HudContext {
     hint: Hint | null;
     score: ScoreKeeper;
+    /**
+     * The score this run is chasing (v2.3.0): a challenger's, or the pilot's
+     * best. Shown beside the score until it is passed.
+     */
+    scoreTarget?: { score: number; who: string; challenge: boolean; passed: boolean } | null;
     objective: ObjectiveStep;
     checklist: ChecklistItem[];
     /** Hardened ground targets the active scenario wants destroyed. */
@@ -319,6 +324,7 @@ export class HUD {
     public hudDensity: HudDensity = 'ARCADE';
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
+    private touchTarget?: HudContext['scoreTarget'];
     /** Flash and motion limits for this frame. */
     private motion: MotionSettings = motionSettings({ reducedMotion: false });
     /**
@@ -391,6 +397,7 @@ export class HUD {
             this.drawAltitudeBlock(ctx, physics, sensors, layout);
         }
         this.touchScore = layout.touchMode ? context.score : undefined;
+        this.touchTarget = context.scoreTarget;
         this.drawSystemsBlock(ctx, physics, selectedWeapon, layout, context, sensors);
         if (layout.showRwr && vis.radar) {
             this.drawRWR(
@@ -424,7 +431,11 @@ export class HUD {
         if (context.trapStamp) this.drawTrapStamp(ctx, context.trapStamp, layout);
         if (context.goHere) this.drawGoHereCue(ctx, physics, context.goHere, layout);
         this.drawMissileCarets(ctx, physics, sensors, layout);
-        if (!layout.touchMode && vis.scoreChip) this.drawScoreChip(ctx, context.score, layout);
+        // A challenge's score to beat shows even on the first-flight HUD: it
+        // is the reason a friend's link was opened.
+        if (!layout.touchMode && (vis.scoreChip || context.scoreTarget?.challenge)) {
+            this.drawScoreChip(ctx, context.score, layout, context.scoreTarget);
+        }
         this.drawAssistAnnunciator(
             ctx, context.assistOverride ?? 'NONE', Boolean(context.designated), layout.cx,
             context.terrainFollowing ?? false, context.recovery ?? null, layout,
@@ -912,7 +923,7 @@ export class HUD {
         // collided with the objective strip on a narrow screen, and this
         // plate is already paid for.
         const text = `FUEL ${Math.round(physics.fuel)}L   HULL ${Math.round(100 - physics.damage)}%   ${physics.gLoad.toFixed(1)}G`
-            + (score ? `   ${score.totalScore} PTS` : '');
+            + (score ? `   ${scoreWithTarget(score.totalScore, this.touchTarget)}` : '');
         const w = ctx.measureText(text).width + 20;
         // Centred in the free gap between the thumb clusters, at the bottom.
         const gapLeft = layout.reserve.left;
@@ -1602,11 +1613,11 @@ export class HUD {
         ctx.restore();
     }
 
-    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout) {
+    private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout, target?: HudContext['scoreTarget']) {
         ctx.save();
         noGlow(ctx);
         ctx.font = font(11, 600);
-        const text = `${score.totalScore} PTS · ${score.rank}`;
+        const text = target ? scoreWithTarget(score.totalScore, target) : `${score.totalScore} PTS · ${score.rank}`;
         const w = ctx.measureText(text).width + 22;
         // The menu button lives in the top-right corner in touch mode; the
         // chip has to clear it rather than sit underneath it.
@@ -2512,4 +2523,15 @@ export class HUD {
 /** "MiG-23 FLOGGER #2" -> "MIG-23". Keeps target tags to a glance. */
 function shortName(name: string): string {
     return name.split(' ')[0].toUpperCase();
+}
+
+/**
+ * "4,200 / 12,345 PTS" while a run chases a score; "13,100 PTS · AHEAD OF
+ * ANNA" (or NEW BEST) once it has passed it.
+ */
+export function scoreWithTarget(score: number, target: HudContext['scoreTarget'] | undefined): string {
+    const pts = (n: number) => n.toLocaleString('en-US');
+    if (!target) return `${pts(score)} PTS`;
+    if (!target.passed) return `${pts(score)} / ${pts(target.score)} PTS`;
+    return `${pts(score)} PTS · ${target.challenge ? (target.who === 'A FRIEND' ? 'CHALLENGE BEATEN' : `AHEAD OF ${target.who}`) : 'NEW BEST'}`;
 }

@@ -759,3 +759,32 @@ measure the same thing again* (the v2.2.0 AI took the STANDARD steering bot
 from 5.1 to 10.0 kills in the same eight minutes, 16-seed
 means). *Switch each change off once before believing it.* And *a finding is
 not a fix until a test that fails on the old code passes on the new*.
+
+## 16. Design Both Ends of a Share (v2.3.0)
+
+v2.3.0's brief was about feelings - *users should have a good experience and
+love to share it* - so the method was to make the feeling observable:
+
+1. **Walk both ends in a browser before designing anything.** The sender's
+   end (the debrief) and the receiver's end (opening the link) were
+   screenshotted at desktop, laptop-at-large-text and phone sizes. Neither
+   was what the code's authors pictured: the share was a small grey box, and
+   the friend arrived on the full mission menu.
+2. **Research the platforms, not just the players.** A research agent was
+   asked what chat apps actually keep from a share, with sources. The answer
+   reversed the first design - one share holding a picture, a message and a
+   link - before it shipped: iPhone WhatsApp keeps the text and drops the
+   picture, Facebook and Messenger keep the picture and drop the link.
+3. **Drive the whole loop end to end, with real taps.** The harness opens a
+   real link shape (`/c/?c=...#n=Anna`), accepts, passes the score, reads the
+   debrief, opens the panel, types a name and checks the link it produces.
+   The phone run found what no unit test could: the tap that opened the share
+   panel then clicked its own CLOSE button.
+4. **Fresh eyes on the result.** A code review and a UX review (as a
+   70-year-old receiving the link on WhatsApp) ran in parallel on the
+   finished screens and texts, and their findings were checked at the code
+   before anything was changed.
+
+Rule from it: *a share is a product with two users*. The one who sends it
+wants to look good and do it in one tap; the one who gets it is a new player
+with no context, likely on a phone, likely wary of links.

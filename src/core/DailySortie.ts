@@ -104,59 +104,16 @@ export function mergeDailyResult(
     return { results: { ...results, [result.date]: today }, today, isBest };
 }
 
-const repeat = (glyph: string, n: number, cap = 8) => glyph.repeat(Math.max(0, Math.min(cap, n)));
-
 /**
- * The shareable card. Kept to four short lines: anything longer gets truncated
- * by the places people paste it.
+ * Where a share sends whoever reads it - the game's only way out of the tab
+ * (v2.0.0; it was a bare project name that went nowhere when pasted). With
+ * the scheme (v2.3.0): a bare "host/path" is turned into a link by some chat
+ * apps and left as plain text - with no preview card - by others.
  */
-/**
- * Where a card sends whoever reads it. The card is the game's only way out of
- * the tab, so it carries the address you can actually open (v2.0.0; it was a
- * bare project name that went nowhere when pasted).
- */
-export const PLAY_URL = 'bejranonda.github.io/carrier-vector-1988';
+export const PLAY_URL = 'https://bejranonda.github.io/carrier-vector-1988';
 
-export function formatShareCard(result: DailyResult, url = PLAY_URL): string {
-    const kills = result.fighterKills + result.bomberKills;
-    const number = dailyNumber(new Date(`${result.date}T00:00:00Z`));
-    if (result.mode === 'SCRAMBLE') {
-        // No deck in SCRAMBLE, so no traps: the card says waves, kills and
-        // the longest chain - the three numbers a SCRAMBLE pilot brags about.
-        const chain = result.bestChain ?? 0;
-        return [
-            `CARRIER VECTOR: 1988 — DAILY SCRAMBLE #${number}${result.easy ? ' · EASY' : ''}`,
-            `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
-            `${kills > 0 ? repeat('●', kills, 10) + '  ' : ''}${kills} splashed · ${chain >= 2 ? `chain x${Math.min(5, chain)}` : 'no chain'} · hull ${Math.round(result.hullRemaining)}%`,
-            `attempt ${result.attempts} · ${url}`
-        ].join('\n');
-    }
-    // Geometric Shapes rather than emoji: an aircraft glyph is missing from
-    // most monospace faces, including the game's own, where it rendered as a
-    // stray arrow. These three exist everywhere and still read as a score
-    // grid when the card is pasted somewhere else.
-    const marks = [
-        repeat('●', kills),
-        repeat('◆', result.samKills),
-        repeat('▲', result.traps)
-    ].filter(Boolean).join(' ');
-
-    const detail = [
-        `${kills} splashed`,
-        result.samKills > 0 ? `${result.samKills} SAM` : '',
-        result.traps > 0
-            ? `${result.traps} trap${result.traps === 1 ? '' : 's'}${result.perfectTraps > 0 ? ` (${result.perfectTraps} perfect)` : ''}`
-            : 'no trap',
-        `hull ${Math.round(result.hullRemaining)}%`
-    ].filter(Boolean).join(' · ');
-
-    return [
-        `CARRIER VECTOR: 1988 — DAILY SORTIE #${number}`,
-        `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
-        `${marks ? marks + '  ' : ''}${detail}`,
-        `attempt ${result.attempts} · ${url}`
-    ].join('\n');
-}
+/** The same address without the scheme, for printing on a picture. */
+export const PLAY_HOST = PLAY_URL.replace(/^https?:\/\//, '');
 
 const STORAGE_KEY = 'carrier-vector-1988.daily';
 

@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v2.2.0
+## Status at v2.3.0
 
 **Open, deliberately:**
 
@@ -13,6 +13,8 @@
 | 97 | SCRAMBLE difficulty and medal thresholds are calibrated against bots, not people | Eight-minute runs now behind them; needs the pilot-customer round |
 | 103 | Phone menus do not grow with the text size | In-flight words do since v2.2.0; the briefing and debrief would need their own phone type scale |
 | 104 | Small labels stay below the Xbox guideline's 28 px-at-1080p even at EXTRA LARGE | A full type-scale pass, not a zoom |
+| 130 | The `/c/` page's Facebook behaviour is unverified | Needs the live page in Facebook's Sharing Debugger |
+| — | The share loop is untested on real phones and real chat apps | Headless browsers have no share sheet; see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md` P1 |
 | — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
 **Platform limits and by-design decisions** (#1, #3, #4, #6, #7, #8, #11, #21, #22, #46, #57, #58 and others marked so below) are not defects and are not "open work".
@@ -38,6 +40,14 @@ carried into the next run, EASY runs that did not say so, nine phone controls
 where EASY needs one, a coach that spoke keyboard to phones, banners and a
 first screen that collapsed at large text, and more.
 Evidence: [`reviews/v2.2.0/`](reviews/v2.2.0/README.md).
+
+**Closed in v2.3.0:** #125–#131, from walking both ends of a share and a
+research brief on what chat apps do with one - a share nobody would send,
+links without `https://`, a friend landing on the mission menu, a win drawn
+as a loss, a picture-and-link share that loses one, Facebook following
+`og:url` home, and in-app browsers with no share sheet. #130 is unverified
+until the page is live; #132 is by design. Evidence:
+[`reviews/v2.3.0/`](reviews/v2.3.0/README.md).
 
 **Closed in v2.1.0:** #98–#102, found while building EASY flying and the
 text-size zoom - a fly-style question whose keys did not act, an EASY coach
@@ -1395,3 +1405,67 @@ one screen where C copies; the deck's menu-button reserve ignored the zoom;
 SCRAMBLE's loss line and third card said "three jets" on EASY and offered
 chaff.
 
+
+## 125. The share was a text box nobody would send **[Fixed in 2.3.0]**
+
+The debrief's share was three lines of 10-12 px text near the bottom of the
+screen - "5 WAVES HELD · 2,200 PTS · 1 splashed", "beat it: <link>" - with the
+action as a key hint, "C copy result". Pilot slang, written for the person who
+flew; no picture; no name; on a desktop it copied silently. SHARE is now a
+button beside FLY AGAIN that opens a panel with a plain-words challenge, a
+picture of the run's best moment and an optional name. See
+`reviews/v2.3.0/SHARE_REVIEW.md`.
+
+## 126. Shared links had no `https://` **[Fixed in 2.3.0]**
+
+`PLAY_URL` was `bejranonda.github.io/carrier-vector-1988`. Some chat apps turn
+a bare host/path into a link and some leave it as text - and none builds a
+preview card for it. Every link now starts with `https://`.
+
+## 127. A friend opening a challenge landed on the mission menu **[Fixed in 2.3.0]**
+
+The challenge was one line of small yellow text under the title of the full
+mission select (seven tabs, a daily banner, three cards, eleven key hints).
+The link now opens on its own screen - who sent it, the score to beat, one
+sentence on the game, ACCEPT CHALLENGE - and an EASY challenge flies a
+newcomer on EASY without the fly-style question.
+
+## 128. Beating a friend was a grey line under a red headline **[Fixed in 2.3.0]**
+
+SCRAMBLE always ends in a loss, so the debrief said CARRIER LOST or SHOT DOWN
+in red, with "CHALLENGE BEATEN by 55 pts." in small grey type underneath. A
+beaten challenge is now the headline, in gold, and the share button reads
+REPLY TO <name>. Passing the score is also celebrated in flight, as it
+happens, and every SCRAMBLE run chases a visible number (the challenger's, or
+the pilot's own best).
+
+## 129. A picture and a link in one share lose one or the other **[Avoided in 2.3.0]**
+
+Not a shipped bug - the first v2.3.0 build had it. A Web Share call with a
+file, text and a url reaches each chat app as separate items, and the app
+keeps what it likes: WhatsApp on iPhone keeps the text and drops the picture;
+Facebook and Messenger on Android keep the picture and drop the text, link
+included. Some iPhone apps have been reported cutting the query string off
+`url`. The challenge (text, link on its last line) and the picture are two
+separate shares; nothing uses `url`.
+
+## 130. Facebook could send a challenge to the home page **[Fixed in 2.3.0 - unverified]**
+
+`og:url` and `rel=canonical` pointed at the home page, and Facebook treats
+`og:url` as where a link really goes - dropping the `?c=` that carries the
+run. Challenge links now open `/c/`, the same page emitted by the build
+without either tag and with preview text addressed to the friend. Not yet
+checked with Facebook's Sharing Debugger (needs the page live).
+
+## 131. No share sheet inside Facebook's, Messenger's and Instagram's browsers **[Platform limit - worked around in 2.3.0]**
+
+Their Android in-app browsers have no `navigator.share`, nor does Firefox on a
+desktop or Chrome on Linux. Where there is none, the share panel offers
+WhatsApp, LINE, a text message (phone) or an email (computer), COPY MESSAGE,
+SAVE PICTURE and, on a computer, COPY PICTURE.
+
+## 132. Every challenge link has the same preview card **[By design - no server]**
+
+Link previews are built by the chat app's server from the page's static meta
+tags; it does not run JavaScript. Without a server of our own, the preview
+cannot say "Anna challenged you - 12,345"; the message above it does.

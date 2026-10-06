@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUD, assistCaption, goHereRelativeBearing } from './HUD';
+import { HUD, assistCaption, goHereRelativeBearing, scoreWithTarget } from './HUD';
 import type { AircraftPhysics } from '../flight/AircraftPhysics';
 
 /** isOnApproach only reads position and velocity. */
@@ -93,5 +93,16 @@ describe('goHereRelativeBearing', () => {
         expect(goHereRelativeBearing(0, -Math.PI / 2)).toBeCloseTo(-Math.PI / 2, 9);
         expect(goHereRelativeBearing(0.1, 2 * Math.PI + 0.3)).toBeCloseTo(0.2, 9);
         expect(Math.abs(goHereRelativeBearing(0, Math.PI))).toBeCloseTo(Math.PI, 9);
+    });
+});
+
+describe('scoreWithTarget (v2.3.0)', () => {
+    it('shows the score to beat until it is passed, then who is behind', () => {
+        expect(scoreWithTarget(4200, null)).toBe('4,200 PTS');
+        const anna = { score: 12345, who: 'ANNA', challenge: true, passed: false };
+        expect(scoreWithTarget(4200, anna)).toBe('4,200 / 12,345 PTS');
+        expect(scoreWithTarget(13100, { ...anna, passed: true })).toBe('13,100 PTS · AHEAD OF ANNA');
+        expect(scoreWithTarget(13100, { ...anna, who: 'A FRIEND', passed: true })).toBe('13,100 PTS · CHALLENGE BEATEN');
+        expect(scoreWithTarget(9000, { score: 8000, who: 'YOUR BEST', challenge: false, passed: true })).toBe('9,000 PTS · NEW BEST');
     });
 });

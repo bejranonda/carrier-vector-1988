@@ -239,31 +239,3 @@ export function rearmAfterWave(loadout: AircraftLoadout, damage: number): { load
         damage: Math.max(0, damage - SCRAMBLE.repairPerWave)
     };
 }
-
-export interface ScrambleCardInput {
-    wavesCleared: number;
-    score: number;
-    /** Stars held on SCRAMBLE after the run, 0-3. */
-    stars: number;
-    kills: number;
-    bestChain: number;
-    url: string;
-    /** Flown on EASY: the card says so (v2.2.0). */
-    easy?: boolean;
-}
-
-/**
- * The brag card for any SCRAMBLE run, daily or not - three short lines that
- * paste anywhere and end with the address of the game. A run with nothing to
- * share is the one a player closes the tab on; a run they can paste is an
- * invitation to someone else.
- */
-export function formatScrambleCard(r: ScrambleCardInput): string {
-    const stars = '★'.repeat(Math.max(0, Math.min(3, r.stars))) + '☆'.repeat(3 - Math.max(0, Math.min(3, r.stars)));
-    const chain = r.bestChain >= 2 ? ` · chain x${Math.min(5, r.bestChain)}` : '';
-    return [
-        `CARRIER VECTOR: 1988 — SCRAMBLE${r.easy ? ' · EASY' : ''} ${stars}`,
-        `${r.wavesCleared} WAVE${r.wavesCleared === 1 ? '' : 'S'} HELD · ${Math.round(r.score).toLocaleString('en-US')} PTS · ${r.kills} splashed${chain}`,
-        `beat it: ${r.url}`
-    ].join('\n');
-}

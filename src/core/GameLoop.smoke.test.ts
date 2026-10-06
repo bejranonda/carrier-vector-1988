@@ -16,6 +16,7 @@ import { HUD as HUDClass } from '../renderer/HUD';
 import type { AirborneTarget } from '../renderer/HUD';
 import { briefingHitAreas } from '../renderer/BriefingScreen';
 import { debriefLayout } from '../renderer/DebriefView';
+import { challengeWelcomeLayout } from '../renderer/ChallengeView';
 import { flyStyleLayout } from '../renderer/FlyStyleView';
 import { storedPalette } from '../renderer/Theme';
 import { SCENARIOS, recommendScenario } from './Scenarios';
@@ -692,10 +693,10 @@ describe('GameLoop integration smoke test', () => {
         expect(game.touchLayout.kit.stores).toEqual([true, true, false, false]);
     });
 
-    it('a tap on the debrief card shares it instead of flying again (v2.2.0 review)', () => {
-        const shared: string[] = [];
-        vi.stubGlobal('navigator', { share: (d: { text: string }) => { shared.push(d.text); return Promise.resolve(); } });
+    it('a tap on SHARE opens the share panel instead of flying again (v2.3.0)', () => {
         const game = touchGame();
+        let opened = 0;
+        game.onShareRequest = () => { opened++; };
         runFrames(game, 150);
         game.selectScenarioById('SCRAMBLE');
         game.confirmBriefing(7);
@@ -705,14 +706,37 @@ describe('GameLoop integration smoke test', () => {
         expect(game.phase).toBe('DEBRIEF');
         runFrames(game, 60); // past the input delay
         const data = game.debriefData();
-        expect(data.shareVerb).toBe('SHARE');
+        expect(data.share).not.toBeNull();
         const layout = debriefLayout(game.viewWidth, game.viewHeight, data);
         expect(layout.share).not.toBeNull();
         game.handleMenuTap(layout.share!.x + 20, layout.share!.y + 10);
         expect(game.phase).toBe('DEBRIEF');
-        expect(game.dailyCard).not.toBeNull();
-        expect(shared).toHaveLength(1);
-        expect(shared[0]).toContain('beat it:');
+        expect(opened).toBe(1);
+        // What it would send: a message, the challenge link, and a picture.
+        const share = game.currentShare()!;
+        expect(share.url).toMatch(/^https:\/\/.+\/c\/\?c=7\.\d+\.\d+/);
+        expect(share.text).toContain('a free retro jet game in your browser');
+        const canvas = makeCanvasStub();
+        expect(game.drawSharePicture(canvas)).toBe(true);
+        expect(canvas.width).toBe(1080);
+    });
+
+    it('with no share panel, SHARE copies the message and the link (v2.3.0)', async () => {
+        const copied: string[] = [];
+        vi.stubGlobal('navigator', { clipboard: { writeText: (t: string) => { copied.push(t); return Promise.resolve(); } } });
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 75);
+        game.deck.inventory.carrierHealth = 0;
+        for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+        expect(game.requestShare()).toBe(true);
+        await Promise.resolve();
+        expect(copied).toHaveLength(1);
+        expect(copied[0]).toMatch(/Carrier Vector: 1988[\s\S]*\nhttps:\/\//);
+        expect(game.shareStatus).toBe('COPIED');
+        expect(game.debriefData().share?.status).toBe('COPIED');
     });
 
     it('speaks to a thumb, not a keyboard, on a phone (v2.2.0)', () => {
@@ -986,8 +1010,9 @@ describe('GameLoop integration smoke test', () => {
         const today = game.todaysDaily(day);
         expect(today).not.toBeNull();
         expect(today!.attempts).toBe(1);
-        expect(game.dailyCard).toContain('DAILY SCRAMBLE #');
-        expect(game.dailyCard).toContain('attempt 1');
+        const share = game.currentShare()!;
+        expect(share.picture.title).toMatch(/^DAILY SCRAMBLE #\d+ · FIRST TRY$/);
+        expect(share.text).toContain('(first try)');
     });
 
     it('counts a second attempt and keeps the better run', () => {
@@ -1010,7 +1035,7 @@ describe('GameLoop integration smoke test', () => {
         const today = game.todaysDaily(day)!;
         expect(today.attempts).toBe(2);
         expect(today.score).toBe(best);
-        expect(game.dailyCard).toContain('attempt 2');
+        expect(game.currentShare()!.text).toContain('(try 2)');
     });
 
     it('does not record an ordinary mission as the daily', () => {
@@ -1023,7 +1048,7 @@ describe('GameLoop integration smoke test', () => {
 
         expect(game.phase).toBe('DEBRIEF');
         expect(game.todaysDaily(day)).toBeNull();
-        expect(game.dailyCard).toBeNull();
+        expect(game.currentShare()?.picture.title ?? '').not.toContain('DAILY');
     });
 
     /**
@@ -1047,12 +1072,12 @@ describe('GameLoop integration smoke test', () => {
     it('does not fall over when the clipboard is unavailable', () => {
         const game = new GameLoop(makeCanvasStub());
         runFrames(game, 150);
-        expect(game.copyDailyCard()).toBe(false);
+        expect(game.requestShare()).toBe(false);
 
         game.startDailySortie();
         game.deck.inventory.carrierHealth = 0;
         runFrames(game, 30);
-        expect(() => game.copyDailyCard()).not.toThrow();
+        expect(() => game.requestShare()).not.toThrow();
     });
 
     // -----------------------------------------------------------------
@@ -2582,9 +2607,11 @@ describe('GameLoop integration smoke test', () => {
             expect(game.career.xp).toBeGreaterThan(400);
             const data = game.debriefData();
             expect(data.headline).toBe('SKY HELD');
-            // Every SCRAMBLE run leaves something to paste.
-            expect(data.shareCard).toContain('SCRAMBLE ★☆☆');
-            expect(data.shareCard).toContain('5 WAVES HELD');
+            // Every SCRAMBLE run leaves something to share.
+            const share = game.currentShare()!;
+            expect(share.picture.stars).toBe(1);
+            expect(share.picture.stats).toContain('5 WAVES');
+            expect(share.text).toContain('Can you beat me?');
             expect(data.stars.labels).toHaveLength(3);
             expect(() => game['draw'](1 / 60)).not.toThrow();
 
@@ -2597,8 +2624,8 @@ describe('GameLoop integration smoke test', () => {
             expect(game.scenario.id).toBe('SCRAMBLE');
             expect(game.deck.aircraftState).toBe('AIRBORNE');
             expect(game.score.totalScore).toBe(0);
-            // The brag card belonged to the run that made it.
-            expect(game.dailyCard).toBeNull();
+            // The share belonged to the run that made it.
+            expect(game.currentShare()).toBeNull();
         });
 
         it('a tap on MISSIONS leaves the debrief for mission select; anywhere else flies again', () => {
@@ -2653,7 +2680,123 @@ describe('GameLoop integration smoke test', () => {
             }
             const data = game.debriefData();
             expect(data.reason).toContain('pts short');
-            expect(data.shareCard).toContain('?c=424242.');
+            expect(game.currentShare()!.url).toContain('?c=424242.');
+        });
+
+        describe('bringing a friend (v2.3.0)', () => {
+            const challenged = () => {
+                const game = new GameLoop(makeCanvasStub());
+                game.acceptChallenge({ seed: 424242, score: 5000, waves: 3, name: 'Anna' });
+                runFrames(game, 150);
+                return game;
+            };
+            const sink = (game: InstanceType<typeof GameLoop>) => {
+                game.deck.inventory.carrierHealth = 0;
+                for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            };
+
+            it('a challenge link opens on the challenge, and ACCEPT flies it', () => {
+                const game = challenged();
+                expect(game.phase).toBe('BRIEFING');
+                expect(game.challengeWelcomeOpen).toBe(true);
+                expect(() => game['draw'](1 / 60)).not.toThrow();
+                // A tap anywhere but the buttons does nothing - no accidental start.
+                expect(game.handleMenuTap(2, 2)).toBe(true);
+                expect(game.phase).toBe('BRIEFING');
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight);
+                game.handleMenuTap(l.accept.x + 10, l.accept.y + 10);
+                expect(game.challengeWelcomeOpen).toBe(false);
+                expect(game.phase).toBe('ACTIVE');
+                expect(game.scramble?.seed).toBe(424242);
+                expect(game.scoreTarget).toEqual({ score: 5000, who: 'ANNA', challenge: true });
+            });
+
+            it('SEE ALL MISSIONS shows the menu, and SCRAMBLE still carries the challenge', () => {
+                const game = challenged();
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight);
+                game.handleMenuTap(l.missions.x + 10, l.missions.y + 10);
+                expect(game.challengeWelcomeOpen).toBe(false);
+                expect(game.phase).toBe('BRIEFING');
+                game.confirmBriefing();
+                expect(game.scramble?.seed).toBe(424242);
+            });
+
+            it('passing the score to beat is a moment - once - and the debrief leads with it', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                game.score.recordBonus(5200);
+                runFrames(game, 2);
+                const banners = () => game.callouts.active().filter(c => c.group === 'RECORD').map(c => c.text);
+                expect(banners()).toEqual(['YOU BEAT ANNA!']);
+                expect(game['scoreTargetPassed']).toBe(true);
+                game.score.recordBonus(100);
+                runFrames(game, 2);
+                expect(banners()).toHaveLength(1);
+                sink(game);
+                expect(game.phase).toBe('DEBRIEF');
+                const data = game.debriefData();
+                expect(data.headline).toBe('YOU BEAT ANNA!');
+                expect(data.celebrate).toBe(true);
+                expect(data.reason).toMatch(/^By [\d,]+ pts - /);
+                expect(data.share?.text).toBe('YOU BEAT ANNA - SEND IT BACK');
+                const share = game.currentShare()!;
+                expect(share.picture.headline).toBe('I BEAT ANNA!');
+                expect(share.text.startsWith('I beat Anna!')).toBe(true);
+                // The reply carries the same waves, the new score - and a name once given.
+                expect(share.url).toMatch(/\/c\/\?c=424242\.\d+\.\d+$/);
+                game.setPilotName('Tom');
+                expect(game.currentShare()!.url).toMatch(/#n=Tom$/);
+                expect(game.debriefData().share?.label).toBe('REPLY TO ANNA');
+                expect(game.currentShare()!.picture.versus).toMatch(/^ANNA 5,000 · TOM /);
+            });
+
+            it('a lost challenge is not a celebration', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                sink(game);
+                const data = game.debriefData();
+                expect(data.celebrate).toBe(false);
+                expect(data.reason).toContain('short of ANNA');
+                expect(game.currentShare()!.picture.headline).toBe('CAN YOU BEAT ME?');
+            });
+
+            it('without a challenge, a run chases the pilot\'s own best', () => {
+                const game = new GameLoop(makeCanvasStub());
+                game.missionRecords = { ...game.missionRecords, SCRAMBLE: { best: 3000, completions: 0, attempts: 2 } };
+                runFrames(game, 150);
+                game.selectScenarioById('SCRAMBLE');
+                game.confirmBriefing(7);
+                expect(game.scoreTarget).toEqual({ score: 3000, who: 'YOUR BEST', challenge: false });
+                runFrames(game, 30);
+                game.score.recordBonus(3100);
+                runFrames(game, 2);
+                expect(game.callouts.active().some(c => c.text === 'NEW PERSONAL BEST!')).toBe(true);
+                // A first run has nothing to chase yet.
+                const fresh = new GameLoop(makeCanvasStub());
+                runFrames(fresh, 150);
+                fresh.selectScenarioById('SCRAMBLE');
+                fresh.confirmBriefing(7);
+                expect(fresh.scoreTarget).toBeNull();
+            });
+
+            it('keeps the best kill of the run as the picture\'s moment', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                expect(game['moment']).toBeNull();
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH ONE', 'MiG-23');
+                runFrames(game, 30); // past the beat it waits for the fireball
+                expect(game['moment']).not.toBeNull();
+                const first = game['momentWeight'];
+                game['payKill']({ x: 0, y: 500, z: 0 }, 300, 'SPLASH TWO', 'Tu-22M');
+                runFrames(game, 30);
+                expect(game['momentWeight']).toBeGreaterThan(first);
+                // A new run starts with no moment of its own.
+                game.restartMission();
+                expect(game['moment']).toBeNull();
+            });
         });
 
         it('RESTART during the MAYDAY sequence starts a clean run (v2.2.0 review)', () => {
@@ -2772,14 +2915,17 @@ describe('GameLoop integration smoke test', () => {
         it('marks an EASY run on its card, its challenge link and its debrief (v2.2.0)', () => {
             const game = easyScramble();
             runFrames(game, 75);
+            game.score.recordBonus(1200); // a score to claim - and to mark
             for (let jet = 0; jet < 5 && game.phase === 'ACTIVE'; jet++) {
                 game.physics.damage = 100;
                 for (let i = 0; i < 25 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
             }
             expect(game.phase).toBe('DEBRIEF');
             const data = game.debriefData();
-            expect(data.shareCard?.split('\n')[0]).toContain('SCRAMBLE · EASY');
-            expect(data.shareCard).toMatch(/\?c=7\.\d+\.\d+\.e$/m);
+            const share = game.currentShare()!;
+            expect(share.picture.tags).toContain('EASY MODE');
+            expect(share.text).toContain('on EASY');
+            expect(share.url).toMatch(/\?c=7\.\d+\.\d+\.e$/);
             expect(data.styleNote).toBe('FLOWN ON EASY');
         });
 

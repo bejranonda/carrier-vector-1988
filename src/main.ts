@@ -19,6 +19,8 @@ import { feedbackUrl } from './core/Feedback';
 import { parseChallenge } from './core/Challenge';
 import { flyStyleLayout } from './renderer/FlyStyleView';
 import { debriefLayout } from './renderer/DebriefView';
+import { challengeWelcomeLayout } from './renderer/ChallengeView';
+import { setupSharePanel } from './ui/SharePanel';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -34,8 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dev.__game = game;
         dev.__sfx = soundFX;
         // Layout solvers, so the browser harness can click what a player sees.
-        dev.__ui = { flyStyleLayout, debriefLayout };
+        dev.__ui = { flyStyleLayout, debriefLayout, challengeWelcomeLayout };
     }
+
+    // SHARE on the debrief opens a DOM panel (v2.3.0): name, picture, sheet.
+    const sharePanel = setupSharePanel(game, canvas);
 
     /**
      * Safe-area insets, read from CSS environment variables through a probe
@@ -79,6 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('pointerdown', unlockAudio);
 
     window.addEventListener('keydown', (e) => {
+        // The share panel's text field and buttons own the keyboard while it
+        // is open (it also stops its own keys from bubbling here).
+        if (sharePanel?.isOpen()) return;
         // The stick cluster by physical position, everything else by label -
         // see Controls.normalizeKey. Keyup below MUST use the same mapping, or
         // a key pressed on one layout could be released under another name
@@ -102,6 +110,18 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (key === 't') game.cycleTextSize();
             else if (key === 'enter' || key === ' ') game.chooseFlyStyle(game.flyStyleChoice);
             else if (key === 'escape') game.closeFlyStyleChooser();
+            return;
+        }
+
+        // A friend's challenge (v2.3.0) owns the keys the same way: ENTER
+        // takes it up, ESC shows the missions instead.
+        if (game.challengeWelcomeOpen && game.phase === 'BRIEFING') {
+            e.preventDefault();
+            if (e.repeat) return;
+            if (key === 'enter' || key === ' ') game.acceptChallengeWelcome();
+            else if (key === 'escape') game.closeChallengeWelcome();
+            else if (key === 't') game.cycleTextSize();
+            else if (key === 'm') soundFX.toggleMute();
             return;
         }
 
@@ -221,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // mission. ESC or BACKSPACE goes to mission select. Both wait out
             // a short beat so a key still held from the fight cannot skip
             // the payout.
-            if (key === 'c') game.copyDailyCard();
+            if (key === 'c') { if (!e.repeat) game.requestShare(); }
             else if (e.repeat || !game.debriefAcceptsInput()) return;
             else if (key === 'enter') game.flyAgain();
             else if (key === 'backspace') game.returnToBriefing();
@@ -527,7 +547,16 @@ document.addEventListener('DOMContentLoaded', () => {
         reload?.focus();
     };
 
-    // A shared card's link carries a run to beat (?c=seed.score.waves).
-    game.acceptChallenge(parseChallenge(window.location.search));
+    // A shared link carries a run to beat (?c=seed.score.waves) and, after
+    // the #, who sent it.
+    const challenge = parseChallenge(window.location.search, window.location.hash);
+    game.acceptChallenge(challenge);
+    if (challenge) {
+        const who = challenge.name ?? 'A friend';
+        document.title = `${who} challenges you - Carrier Vector: 1988`;
+        // The welcome card is pixels; a screen reader hears this instead.
+        canvas.setAttribute('aria-label', `${who} challenges you to beat ${challenge.score.toLocaleString('en-US')} points `
+            + 'in Carrier Vector 1988, on the same waves. Press Enter, or tap Accept Challenge, to fly.');
+    }
     game.start();
 });

@@ -25,13 +25,15 @@
 import type { CareerLevel } from '../core/Career';
 import { formatLossCause, postMortemTip } from '../core/PostMortem';
 import type { LossCause } from '../core/PostMortem';
-import { THEME, fitText, font, glow, halo, keycap, noGlow, plate } from './Theme';
+import { THEME, fitText, font, glow, halo, keycap, keycapWidth, noGlow, plate } from './Theme';
 import type { Rect } from './Theme';
 
 export interface DebriefData {
     outcome: 'SUCCESS' | 'FAILED';
     /** Big line: the victory title, or MISSION FAILED / SHOT DOWN. */
     headline: string;
+    /** The headline is a win over a friend's challenge: drawn in gold (v2.3.0). */
+    celebrate?: boolean;
     /** Why it ended, in one line. */
     reason: string | null;
     scenarioName: string;
@@ -56,10 +58,12 @@ export interface DebriefData {
     unlocks: string[];
     /** Teaser for the next unlock, when nothing was unlocked. */
     nextUnlock: { label: string; starsNeeded: number } | null;
-    shareCard?: string | null;
-    copied?: boolean;
-    /** What the card button does: the phone's share sheet, or the clipboard. */
-    shareVerb?: 'SHARE' | 'COPY';
+    /**
+     * SHARE (v2.3.0): the line above the button - why this run is worth
+     * sending - and how the last share went. Null when there is nothing to
+     * share (deck missions).
+     */
+    share?: { text: string; strong: boolean; status: 'IDLE' | 'SHARED' | 'COPIED'; label?: string } | null;
     nextUp?: string;
     touch?: boolean;
 }
@@ -68,9 +72,9 @@ export interface DebriefLayout {
     top: number;
     width: number;
     x: number;
-    /** Which optional sections fit. */
+    /** Which optional sections fit. `share` is the line above the buttons. */
     show: { cause: boolean; stars: boolean; stats: boolean; xp: boolean; unlock: boolean; share: boolean };
-    /** The share card's plate - a tap on it copies (or shares) the card. */
+    /** The SHARE button - present whenever there is a run to share. */
     share: Rect | null;
     y: { headline: number; cause: number; stars: number; score: number; stats: number; xp: number; unlock: number; share: number; buttons: number };
     again: Rect;
@@ -85,42 +89,46 @@ const TALL = {
     stats: 66,
     xp: 58,
     unlock: 28,
+    share: 26,
     buttons: 60
 };
 /** A landscape phone is ~360-390 px tall: tighter rows keep the XP bar on it. */
 const SHORT: typeof TALL = { ...TALL, headline: 82, stars: 80, score: 62, xp: 52, buttons: 58 };
 const rowsFor = (h: number) => (h < 520 ? SHORT : TALL);
 
-/** Lines in a share card, for its height. */
-const shareHeight = (card: string | null | undefined) => (card ? card.split('\n').length * 16 + 34 : 0);
-
-export function debriefLayout(w: number, h: number, data?: Pick<DebriefData, 'outcome' | 'cause' | 'shareCard' | 'unlocks' | 'nextUnlock' | 'xp'>): DebriefLayout {
+export function debriefLayout(w: number, h: number, data?: Pick<DebriefData, 'outcome' | 'cause' | 'share' | 'unlocks' | 'nextUnlock' | 'xp'>): DebriefLayout {
     const H = rowsFor(h);
     const width = Math.min(620, w - 32);
     const x = (w - width) / 2;
+    const canShare = !!data?.share;
+    // Three buttons need room; on a narrow (upright) screen FLY AGAIN gets a
+    // row of its own and SHARE and MISSIONS share the next.
+    const narrow = canShare && width < 500;
+    const buttonsH = H.buttons + (narrow ? 52 : 0);
     const want = {
         cause: !!data && data.outcome === 'FAILED' && !!formatLossCause(data.cause ?? null),
         stars: true,
         stats: true,
         xp: !!data?.xp,
         unlock: !!data && (data.unlocks.length > 0 || data.nextUnlock !== null),
-        share: !!data?.shareCard
+        share: canShare
     };
     const show = { ...want };
-    const total = () => H.headline + H.score + H.buttons
+    const total = () => H.headline + H.score + buttonsH
         + (show.cause ? H.cause : 0) + (show.stars ? H.stars : 0) + (show.stats ? H.stats : 0)
-        + (show.xp ? H.xp : 0) + (show.unlock ? H.unlock : 0) + (show.share ? shareHeight(data?.shareCard) : 0);
-    // Shed in order of least value on THIS screen. The share card is the
-    // daily's whole point, so it outlives the stats grid.
+        + (show.xp ? H.xp : 0) + (show.unlock ? H.unlock : 0) + (show.share ? H.share : 0);
+    // Shed in order of least value on THIS screen. The line that says why a
+    // run is worth sending outlives the stats grid; the SHARE button itself
+    // sits in the button row and is never shed.
     for (const k of ['stats', 'unlock', 'cause', 'xp', 'share', 'stars'] as const) {
         if (total() <= h - 24) break;
         show[k] = false;
     }
     let y = Math.max(12, (h - total()) / 2);
     const top = y;
-    const at = (key: keyof typeof TALL | 'share', on = true, size = 0) => {
+    const at = (key: keyof typeof TALL, on = true) => {
         const here = y;
-        if (on) y += key === 'share' ? size : H[key as keyof typeof TALL];
+        if (on) y += H[key];
         return here;
     };
     const ys = {
@@ -131,24 +139,36 @@ export function debriefLayout(w: number, h: number, data?: Pick<DebriefData, 'ou
         stats: at('stats', show.stats),
         xp: at('xp', show.xp),
         unlock: at('unlock', show.unlock),
-        share: at('share', show.share, shareHeight(data?.shareCard)),
+        share: at('share', show.share),
         buttons: at('buttons')
     };
-    const bw = Math.min(260, (width - 16) * 0.6);
-    const mw = Math.min(180, width - bw - 16);
-    const bx = w / 2 - (bw + 16 + mw) / 2;
+    const by = ys.buttons + 8;
+    if (narrow) {
+        const half = (width - 12) / 2;
+        return {
+            top, width, x, show, y: ys,
+            again: { x, y: by, w: width, h: 44 },
+            share: { x, y: by + 52, w: half, h: 44 },
+            missions: { x: x + half + 12, y: by + 52, w: half, h: 44 }
+        };
+    }
+    const gap = 12;
+    const sw = canShare ? Math.min(160, width * 0.27) : 0;
+    const mw = Math.min(170, width * 0.27);
+    const aw = Math.min(270, width - sw - mw - gap * (canShare ? 2 : 1));
+    const bx = w / 2 - (aw + mw + sw + gap * (canShare ? 2 : 1)) / 2;
     return {
         top, width, x, show, y: ys,
-        again: { x: bx, y: ys.buttons + 8, w: bw, h: 44 },
-        missions: { x: bx + bw + 16, y: ys.buttons + 8, w: mw, h: 44 },
-        share: show.share ? { x: x + 20, y: ys.share, w: width - 40, h: shareHeight(data?.shareCard) - 8 } : null
+        again: { x: bx, y: by, w: aw, h: 44 },
+        share: canShare ? { x: bx + aw + gap, y: by, w: sw, h: 44 } : null,
+        missions: { x: bx + aw + gap + (canShare ? sw + gap : 0), y: by, w: mw, h: 44 }
     };
 }
 
 const ease = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
-/** A five-point star centred on (cx, cy). */
-function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+/** A five-point star centred on (cx, cy). Shared with the share picture. */
+export function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
     ctx.beginPath();
     for (let i = 0; i < 10; i++) {
         const rad = i % 2 === 0 ? r : r * 0.45;
@@ -176,7 +196,7 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
 
     // 1. Headline
     const won = data.outcome === 'SUCCESS';
-    const headColor = won ? THEME.phosphor : THEME.alert;
+    const headColor = data.celebrate ? THEME.caution : won ? THEME.phosphor : THEME.alert;
     ctx.font = font(Math.min(40, Math.max(26, w / 34)), 700);
     ctx.fillStyle = headColor;
     glow(ctx, headColor, 14);
@@ -320,42 +340,30 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
         }
     }
 
-    // Daily share card.
-    if (L.show.share && data.shareCard) {
-        const lines = data.shareCard.split('\n');
-        const ch = shareHeight(data.shareCard) - 8;
-        plate(ctx, { x: L.x + 20, y: L.y.share, w: L.width - 40, h: ch },
-            { fill: 'rgba(9,19,25,0.9)', border: THEME.phosphor, radius: 5 });
-        lines.forEach((line, i) => {
-            ctx.font = font(i === 1 ? 12 : 10, i <= 1 ? 700 : 400);
-            ctx.fillStyle = i === 1 ? THEME.ink : i === 0 ? THEME.phosphor : THEME.muted;
-            ctx.fillText(fitText(ctx, line, L.width - 64), cx, L.y.share + 16 + i * 16);
-        });
-        ctx.textAlign = 'left';
-        // A thumb taps the card; a keyboard has C.
-        const capW = data.touch ? 0 : keycap(ctx, L.x + 30, L.y.share + ch - 12, 'C', { size: 10 }) + 8;
-        const share = data.shareVerb === 'SHARE';
-        ctx.font = font(10, 600);
-        ctx.fillStyle = data.copied ? THEME.phosphor : THEME.muted;
-        ctx.fillText(
-            data.copied ? (share ? 'shared' : 'copied to clipboard')
-                : data.touch ? (share ? 'tap here to share your result' : 'tap here to copy your result') : 'copy result',
-            L.x + 30 + capW, L.y.share + ch - 12);
-        ctx.textAlign = 'center';
+    // Why this run is worth sending - or that it was sent.
+    if (L.show.share && data.share) {
+        const st = data.share.status;
+        ctx.font = font(12, 700);
+        ctx.fillStyle = st !== 'IDLE' ? THEME.phosphor : data.share.strong ? THEME.caution : THEME.muted;
+        // Never "sent": the browser only knows an app was chosen.
+        const line = st === 'SHARED' ? 'THANK YOU FOR SHARING'
+            : st === 'COPIED' ? 'LINK COPIED - PASTE IT INTO A CHAT'
+                : data.share.text;
+        ctx.fillText(fitText(ctx, line, L.width), cx, L.y.share + 17);
     }
 
     // 6. FLY AGAIN, and the way out.
-    const button = (r: Rect, key: string, label: string, primary: boolean) => {
+    const button = (r: Rect, key: string, label: string, primary: boolean, bright = false) => {
         plate(ctx, r, {
-            fill: primary ? 'rgba(87,227,155,0.12)' : 'rgba(9,19,25,0.85)',
-            border: primary ? THEME.phosphor : THEME.edgeSoft,
+            fill: primary ? 'rgba(87,227,155,0.12)' : bright ? 'rgba(255,201,77,0.08)' : 'rgba(9,19,25,0.85)',
+            border: primary ? THEME.phosphor : bright ? THEME.caution : THEME.edgeSoft,
             radius: 6
         });
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         const capW = data.touch ? 0 : keycap(ctx, r.x + 14, r.y + r.h / 2, key, { size: primary ? 13 : 11 });
-        ctx.font = font(primary ? 16 : 13, 700);
-        ctx.fillStyle = primary ? THEME.ink : THEME.muted;
+        ctx.font = font(primary || bright ? 16 : 13, 700);
+        ctx.fillStyle = primary || bright ? THEME.ink : THEME.muted;
         const tx = r.x + 14 + (capW ? capW + 10 : 0);
         ctx.fillText(fitText(ctx, label, r.x + r.w - tx - 10), tx, r.y + r.h / 2 + 1);
         ctx.textBaseline = 'alphabetic';
@@ -363,8 +371,19 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
     };
     button(L.again, 'ENTER', 'FLY AGAIN', true);
     if (primaryPulse(age) > 0) halo(ctx, L.again, THEME.phosphor, 6 + 6 * primaryPulse(age));
+    if (L.share) {
+        // Secondary to FLY AGAIN, but lit when the run is worth bragging about.
+        const lit = !!data.share?.strong && data.share.status === 'IDLE';
+        // "REPLY TO GRANDMA MARGARET" will not fit everywhere; "REPLY" does.
+        const full = data.share?.label ?? 'SHARE';
+        ctx.font = font(16, 700);
+        const room = L.share.w - 28 - (data.touch ? 0 : keycapWidth(ctx, 'C', 11) + 10);
+        const label = ctx.measureText(full).width <= room ? full : full.startsWith('REPLY') ? 'REPLY' : 'SHARE';
+        button(L.share, 'C', label, false, true);
+        if (lit) halo(ctx, L.share, THEME.caution, 8, 6);
+    }
     button(L.missions, 'ESC', 'MISSIONS', false);
-    if (data.nextUp && !L.show.share) {
+    if (data.nextUp && !L.share) {
         ctx.font = font(11, 600);
         ctx.fillStyle = THEME.key;
         const ny = L.again.y + L.again.h + 18;

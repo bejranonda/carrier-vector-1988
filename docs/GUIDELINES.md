@@ -649,3 +649,30 @@ rendered frames. Five suites of source-reading review had missed all of them.
 - **A coach line that asks for nothing never hides one that asks for
   something.** "The plane will turn to fight" sat over FIRE NOW for a minute
   at a time (#119).
+
+## 18. Rules added in v2.3.0 (sharing - most of them learned before shipping)
+
+- **The link travels as text; the picture travels alone.** A share holding a
+  picture, a message and a link reaches each chat app as separate items, and
+  the app keeps what it likes - WhatsApp on an iPhone drops the picture,
+  Facebook and Messenger on Android drop the text. Never put the challenge
+  link in `ShareData.url`; put it on the last line of `text`.
+- **Every link starts with `https://`.** A bare `host/path` is a link in some
+  apps and plain text - with no preview - in others.
+- **Nothing says "sent".** The browser learns that an app was chosen, never
+  that a message went. Thank the player; do not report a delivery.
+- **A name never goes to a server.** It rides after `#`, is cleaned on the way
+  in and out (`cleanPilotName`), and may not contain what would make it read
+  as an address.
+- **A panel opened by a tap must survive the tap.** On a phone the opening
+  pointerdown is followed by that same tap's click, delivered to whatever is
+  now under the finger (the first build closed the share panel on its own
+  CLOSE button). Ignore clicks for a beat after opening.
+- **A share sheet opens inside the press that asked for it.** Prepare the
+  picture before the button can be pressed; no `await` before `share()`.
+- **A friend's first screen is the link's promise.** Who sent it, the score to
+  beat, what the game is in one sentence, one big button. Menus are one tap
+  away and never in the way.
+- **Offer sharing at the peaks, never force it.** No automatic share sheet,
+  no prompt after every run, no reward for sharing. The line above SHARE
+  lights only for a win, a best or a new star.
