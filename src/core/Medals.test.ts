@@ -67,5 +67,9 @@ describe('medal records', () => {
         expect(loadMedals()).toEqual({ SCRAMBLE: 99 & 0b111 });
         store.set('carrier-vector-1988.medals', '{not json');
         expect(loadMedals()).toEqual({});
+        // Prototype keys are not missions (v2.2.0 review).
+        store.set('carrier-vector-1988.medals', JSON.stringify({ constructor: 7, toString: 7, SCRAMBLE: 1 }));
+        expect(loadMedals()).toEqual({ SCRAMBLE: 1 });
+        expect(totalStars(loadMedals())).toBe(1);
     });
 });

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
     DEFAULT_PALETTE,
     MIN_LAYOUT,
+    PHONE_TEXT_BOOST_MAX,
+    textScaling,
     TEXT_SIZES,
     nextTextSize,
     uiZoomFor,
@@ -297,5 +299,23 @@ describe('text size as UI zoom (v2.1.0)', () => {
         expect(nextTextSize('LARGE')).toBe('HUGE');
         expect(nextTextSize('HUGE')).toBe('NORMAL');
         expect(TEXT_SIZES.map(t => t.scale)).toEqual([1, 1.25, 1.5]);
+    });
+});
+
+describe('textScaling (v2.2.0, Known Issues #103)', () => {
+    it('never zooms a phone, and grows its in-flight words instead', () => {
+        expect(textScaling('HUGE', 844, 390, true)).toEqual({ zoom: 1, boost: PHONE_TEXT_BOOST_MAX });
+        expect(textScaling('LARGE', 844, 390, true)).toEqual({ zoom: 1, boost: 1.25 });
+        expect(textScaling('NORMAL', 667, 375, true)).toEqual({ zoom: 1, boost: 1 });
+        // The big phone the old rule zoomed by 1.075, crowding its cockpit.
+        expect(textScaling('HUGE', 932, 430, true).zoom).toBe(1);
+    });
+
+    it('zooms everything else as before, with no extra boost', () => {
+        expect(textScaling('HUGE', 1180, 820, true)).toEqual({ zoom: 1.5, boost: 1 }); // a tablet
+        expect(textScaling('HUGE', 1440, 900, false)).toEqual({ zoom: 1.5, boost: 1 });
+        expect(textScaling('LARGE', 1280, 720, false)).toEqual({ zoom: uiZoomFor('LARGE', 1280, 720), boost: 1 });
+        // A short desktop window is not a phone: no touch, no boost.
+        expect(textScaling('HUGE', 844, 390, false).boost).toBe(1);
     });
 });

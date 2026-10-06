@@ -171,3 +171,34 @@ export function markdownControlTable(context: ControlContext): string {
     return `| Key | Action |\n| --- | --- |\n${rows}`;
 }
 
+
+/**
+ * The same instruction for a thumb (v2.2.0).
+ *
+ * The coach, the wave briefs and the pilot menu are written for a keyboard,
+ * so a phone was told "FIRE NOW - PRESS SPACE OR CLICK" and "HOLD A OR D" -
+ * orders nobody holding a phone can follow, shown to exactly the players
+ * least likely to work out what was meant. Most specific phrases first.
+ */
+const TOUCH_WORDING: readonly [RegExp, string][] = [
+    [/PRESS SPACE OR CLICK|PRESS SPACE TO FIRE|PRESS SPACE/g, 'TAP FIRE'],
+    [/Press SPACE to fire the selected weapon\./g, 'Tap FIRE to shoot.'],
+    [/TURN TOWARD THEM WITH A \/ D/g, 'TURN TOWARD THEM WITH THE LEFT STICK'],
+    [/\(A \/ D\)/g, '(LEFT STICK)'],
+    [/\(HOLD A OR D\)/g, '(STICK HARD LEFT OR RIGHT)'],
+    [/PRESS \[T\] TO LOCK ON/g, 'TAP TGT TO LOCK ON'],
+    [/PRESS 3 FOR BOMBS, OR 4 FOR A HARM AT A SAM/g, 'TAP MK82 FOR BOMBS, OR HARM FOR A SAM'],
+    [/DROP CHAFF \[X\]/g, 'TAP CHF'],
+    [/CHAFF \[X\]/g, 'TAP CHF'],
+    [/OPEN THE MENU \(ESC\)/g, 'TAP THE MENU BUTTON (TOP RIGHT)'],
+    [/PRESS ESC/g, 'TAP THE MENU BUTTON'],
+    [/\(ESC\)/g, '(the menu button, top right)'],
+    // A bracketed key with no thumb equivalent says nothing to a thumb.
+    [/ \[(?:W|S|SHIFT|CTRL|B|L)\]/g, '']
+];
+
+export function touchWording(text: string): string {
+    let out = text;
+    for (const [pattern, replacement] of TOUCH_WORDING) out = out.replace(pattern, replacement);
+    return out;
+}

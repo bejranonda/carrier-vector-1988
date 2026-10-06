@@ -1550,3 +1550,53 @@ that target; else GUN if in the gun envelope (1.8 km, cos ≥ 0.985); else NOT Y
 zoom = max(1, min(requested, w/720, h/400)); requested = 1, 1.25, 1.5. The
 canvas transform is `dpr × zoom`; layouts see `viewWidth = cssWidth / zoom`;
 pointer input is divided by the zoom in `main.ts`.
+
+## 24. Validation Pass: AI, Waves, Phones (v2.2.0)
+
+### 24.1 Enemy steering (`tactics/EnemyAI.ts`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `MAX_TURN_RATE` | 0.28 rad/s (~16°/s) | Fastest any contact swings its velocity |
+| `ENGAGE_TURN_RATE` / `INGRESS_TURN_RATE` | 1.1 / 0.4 per s | Proportional gain below the cap |
+| `aiCruiseSpeed` | the speed at first steer | Held through every turn |
+| `EXTEND_RANGE` / `EXTEND_SECONDS` | 450 m / 4 s | Inside this range a fighter breaks off and extends, guns cold - a strafing pass |
+
+Turn step = min(angle, min(MAX_TURN_RATE, gain × angle) × dt), as a rotation
+about v × d (the vertical when dead astern). Bank cue = signed horizontal turn
+rate / MAX_TURN_RATE. The player's held bank is ~12°/s in ARCADE.
+
+Tried and taken out: a second break-off for a fighter sitting in the jet's
+rear half (1.2 km, 4 s). Over 8-16 seeds per profile it cost the EASY hold-fire bot a sixth
+of its kills, ended three times as many STANDARD runs early, and cut a relaxed
+EASY player's kills by a third; the stall it was built for was the coach's
+(§23.4, `EasyMode.easyHint`: FIRE NOW now outranks everything but MISSILE
+INBOUND). Measure with `npm run balance` (`scripts/balance/balance.sim.ts`).
+
+### 24.2 SCRAMBLE waves (`core/Scramble.ts`, `GameLoop.updateScramble`)
+
+| Constant | Value | Meaning |
+| :-- | --: | :-- |
+| `bomberOutboundFrom` | 2000 m | Beyond this from the boat, bombers are placed off the far side of the jet |
+| `bomberArcDeg` | 60° | Escalation bombers' spread about that line |
+| `bomberSpawnClear` | 2500 m | No bomber appears closer to the boat |
+
+Wave outcomes: **CLEARED** (no leak, no bug-out) pays `waveClearBonus` +
+`WAVE_SURVIVED`; **HELD** (≥1 kill) pays `WAVE_SURVIVED` and counts toward
+`wavesCleared`; **OVER** (no kill) pays nothing and does not count. The jets a
+run allows (`scramble.jets`) are set at its start and only rise (EASY on).
+
+### 24.3 Phones (`renderer/TouchLayout.ts`, `Theme.textScaling`, `Controls.touchWording`)
+
+| Item | Value |
+| :-- | :-- |
+| Touch kit, EASY in SCRAMBLE | FIRE (radius × 1.45, ≤ 20% of height) + menu; a WORLD tap/hold fires |
+| Touch kit, STANDARD in SCRAMBLE | stick, throttle, GUN, AIM9, TGT, FIRE, menu |
+| Phone | touch and < 500 CSS px tall: zoom 1, in-flight text boost = min(1.4, text scale) |
+| Boosted elements | order strip, coach line (moved under the strip on touch), banners; compass hidden when boosted |
+
+### 24.4 Records
+
+- Challenge links: `?c=seed.score.waves[.e]` - `.e` when the run was flown on EASY.
+- `DailyResult.easy`; `sanitise` keeps `mode`, `bestChain`, `easy`.
+- `careerLevel` is closed-form; stored XP is capped at 1e12 (`MAX_CAREER_XP`).

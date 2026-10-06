@@ -331,3 +331,22 @@ plus a text-size zoom open the game to players who are not gamers.
 **Principle added:** fun is measured per player profile. The same change can
 be a delight for one profile and invisible to another; EASY's first version
 was exactly that, and only a profile-specific measurement showed it.
+
+## 9. The Fight That Stalled (v2.2.0)
+
+**What was in the way of fun:** dead air. Eight-minute runs showed EASY pilots
+spending about 40% of their time watching the plane circle while one or two
+contacts that could not be reached ran down the 75-second wave clock. The
+cause was not difficulty: the enemy AI bled its fighters' speed away in every
+turn until they hovered, and bombers were placed where the jet could only
+chase them. A wave could also pay out for bombers the player let through.
+
+**What changed:** fighters keep their speed and come back for another pass;
+bombers run past the jet; a wave pays only for what was shot down. On a phone,
+EASY became a one-button game in fact as well as name - one big FIRE that
+lights when a shot is good, a tap anywhere also fires, words for a thumb, and
+in-flight text that grows with the setting.
+
+**Principle added:** look for dead air, not just difficulty. A run can be
+"balanced" by every average and still be boring for minutes at a time; only a
+long run, watched second by second, shows it.

@@ -35,6 +35,8 @@ export interface BriefingProgress {
     /** v2.1.0 accessibility switches, offered on the first screen. */
     textSizeLabel?: string;
     flyStyleLabel?: string;
+    /** The mission's loss line when it depends on settings (SCRAMBLE's jets on EASY). */
+    lossLine?: string;
 }
 
 /** A small five-point star, filled or outlined. */
@@ -72,13 +74,27 @@ export interface BriefingHitAreas {
     pills: Rect[];
     daily: Rect | null;
     cta: Rect;
+    /** Centre line of the FLY button. */
+    ctaY: number;
+    /**
+     * The three phase cards and the loss line under them - null where they
+     * do not clear the button (a short or zoomed screen).
+     */
+    cards: { y: number; h: number; lossY: number } | null;
 }
+
+/** Gap between two options in the briefing's secondary row. */
+const SEC_GAP = 18;
+/** Vertical pitch when that row has to wrap. */
+const SEC_LINE_H = 19;
 
 export function briefingHitAreas(
     w: number,
     h: number,
     scenarioCount: number,
-    hasDaily: boolean
+    hasDaily: boolean,
+    /** Rows the secondary options wrap into (0 on a phone, which has none). */
+    optionRows = 1
 ): BriefingHitAreas {
     const cx = w / 2;
     const compact = h < 760 || w < 900;
@@ -98,11 +114,47 @@ export function briefingHitAreas(
         ? { x: cx - dailyW / 2, y: compact ? 74 : 98, w: dailyW, h: 30 }
         : null;
 
-    const ctaY = h - (compact ? 70 : 88);
+    // The options stack up from the bottom edge and the button sits above
+    // every row of them. v2.2.0 review: with EXTRA LARGE text on a laptop
+    // window (a ~433 px layout) the options wrapped to three rows and the
+    // first ran through the FLY button, which sat on top of the phase cards.
+    const optionsTop = optionRows > 0
+        ? (optionRows > 1 ? h - 20 : h - 30) - (optionRows - 1) * SEC_LINE_H - 12
+        : h;
+    const ctaY = Math.min(h - (compact ? 70 : 88), optionsTop - 30);
     const ctaW = Math.min(w - 60, 420);
     const cta: Rect = { x: cx - ctaW / 2, y: ctaY - 24, w: ctaW, h: 48 };
 
-    return { compact, selectorY, pills, daily, cta };
+    const headY = selectorY + (compact ? 66 : 76);
+    const cardsY = headY + (compact ? 48 : 56);
+    const cardH = compact ? 144 : 168;
+    const lossY = cardsY + cardH + (compact ? 22 : 34);
+    const cards = lossY + 6 <= cta.y - 8 ? { y: cardsY, h: cardH, lossY } : null;
+
+    return { compact, selectorY, pills, daily, cta, ctaY, cards };
+}
+
+/**
+ * The options packed into rows no wider than the screen allows. Widths are a
+ * monospace upper bound rather than measured, so the solver above needs no
+ * canvas; a real font only ever packs a little shorter.
+ */
+export function briefingOptionRows(options: [string, string][], w: number): { items: [string, string][]; width: number }[] {
+    const advance = (text: string) => text.length * 11 * 0.62;
+    const itemWidth = ([k, label]: [string, string]) => advance(k) + 14 + 5 + advance(label) + SEC_GAP;
+    const maxRowW = w - 48;
+    const rows: { items: [string, string][]; width: number }[] = [];
+    for (const item of options) {
+        const iw = itemWidth(item);
+        const last = rows[rows.length - 1];
+        if (last && last.width + iw <= maxRowW) {
+            last.items.push(item);
+            last.width += iw;
+        } else {
+            rows.push({ items: [item], width: iw });
+        }
+    }
+    return rows;
 }
 
 /**
@@ -148,11 +200,6 @@ export function briefingSecondaryOptions(opts: {
             : [])
     ];
 }
-
-/** Gap between two options in the briefing's secondary row. */
-const SEC_GAP = 18;
-/** Vertical pitch when that row has to wrap. */
-const SEC_LINE_H = 19;
 
 export class BriefingScreen {
     private carrierMesh = WireframeModels.createCarrier();
@@ -308,8 +355,6 @@ export class BriefingScreen {
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2;
-        const areas = briefingHitAreas(w, h, SCENARIOS.length, daily !== null);
-        const compact = areas.compact;
         /**
          * A phone-height briefing cannot hold the three phase cards, the loss
          * condition and a keyboard legend as well as the things you can
@@ -317,6 +362,18 @@ export class BriefingScreen {
          * are a tutorial for a screen that has room for one.
          */
         const phone = touchMode || h < 430;
+        const secs = briefingSecondaryOptions({
+            pacingLabel,
+            threatLabel,
+            mapChangeable: mapChoice?.changeable === true,
+            showPaletteHint,
+            showStickHint,
+            textSizeLabel: progress?.textSizeLabel,
+            flyStyleLabel: progress?.flyStyleLabel
+        });
+        const rows = phone ? [] : briefingOptionRows(secs, w);
+        const areas = briefingHitAreas(w, h, SCENARIOS.length, daily !== null, rows.length);
+        const compact = areas.compact;
 
         // --- Masthead ---
         ctx.textAlign = 'center';
@@ -403,32 +460,33 @@ export class BriefingScreen {
             ctx.fillText(fitText(ctx, parts.join('   ·   '), w - 40), cx, headY + 36);
         }
 
-        // --- Three phase cards, supplied by the scenario ---
+        // --- Three phase cards, supplied by the scenario - where they fit ---
         const gutter = 16;
-        if (!phone) {
-        const cardsY = headY + (compact ? 48 : 56);
-        const cardW = Math.min(320, (w - 88 - gutter * 2) / 3);
-        const cardH = compact ? 144 : 168;
-        const totalW = cardW * 3 + gutter * 2;
-        scenario.cards.forEach((card, i) => {
-            this.phaseCard(ctx, {
-                x: cx - totalW / 2 + i * (cardW + gutter),
-                y: cardsY,
-                w: cardW,
-                h: cardH
-            }, card);
-        });
+        if (!phone && areas.cards) {
+            const cardW = Math.min(320, (w - 88 - gutter * 2) / 3);
+            const totalW = cardW * 3 + gutter * 2;
+            scenario.cards.forEach((card, i) => {
+                this.phaseCard(ctx, {
+                    x: cx - totalW / 2 + i * (cardW + gutter),
+                    y: areas.cards!.y,
+                    w: cardW,
+                    h: areas.cards!.h
+                }, card);
+            });
+        }
 
-        // --- Loss condition: one line, not a paragraph ---
-        const lossY = cardsY + cardH + (compact ? 22 : 34);
-        ctx.textAlign = 'center';
-        ctx.font = font(12, 600);
-        ctx.fillStyle = THEME.alert;
-        ctx.fillText(fitText(ctx, scenario.lossCondition, w - 80), cx, lossY);
+        // --- Loss condition: one line, not a paragraph. Under the cards, or
+        // under the goal line when a short screen has no room for cards. ---
+        const lossY = areas.cards ? areas.cards.lossY : headY + 60;
+        if (!phone && lossY + 6 <= areas.cta.y - 8) {
+            ctx.textAlign = 'center';
+            ctx.font = font(12, 600);
+            ctx.fillStyle = THEME.alert;
+            ctx.fillText(fitText(ctx, progress?.lossLine ?? scenario.lossCondition, w - 80), cx, lossY);
         }
 
         // --- Primary call to action ---
-        const ctaY = h - (compact ? 70 : 88);
+        const ctaY = areas.ctaY;
         const pulse = 0.72 + 0.28 * Math.sin(timeSec * 3.2);
         ctx.save();
         ctx.globalAlpha = pulse;
@@ -468,15 +526,6 @@ export class BriefingScreen {
             return;
         }
         ctx.textBaseline = 'middle';
-        const secs = briefingSecondaryOptions({
-            pacingLabel,
-            threatLabel,
-            mapChangeable: mapChoice?.changeable === true,
-            showPaletteHint,
-            showStickHint,
-            textSizeLabel: progress?.textSizeLabel,
-            flyStyleLabel: progress?.flyStyleLabel
-        });
 
         /**
          * WRAPPED, not clipped.
@@ -488,25 +537,18 @@ export class BriefingScreen {
          * keeps every option discoverable on every screen, which is the only
          * reason the row exists.
          */
-        const itemWidth = ([k, label]: [string, string]) => {
-            ctx.font = font(11, 600);
-            const capW = ctx.measureText(k).width + 14 + 5;
-            ctx.font = font(11);
-            return capW + ctx.measureText(label).width + SEC_GAP;
-        };
-
-        const maxRowW = w - 48;
-        const rows: { items: [string, string][]; width: number }[] = [];
-        for (const item of secs) {
-            const iw = itemWidth(item);
-            const last = rows[rows.length - 1];
-            if (last && last.width + iw <= maxRowW) {
-                last.items.push(item);
-                last.width += iw;
-            } else {
-                rows.push({ items: [item], width: iw });
+        // Rows come from `briefingOptionRows` (the same packing the button's
+        // position was solved from); each is centred on its measured width.
+        const measured = (items: [string, string][]) => {
+            let width = 0;
+            for (const [k, label] of items) {
+                ctx.font = font(11, 600);
+                width += ctx.measureText(k).width + 14 + 5;
+                ctx.font = font(11);
+                width += ctx.measureText(label).width + SEC_GAP;
             }
-        }
+            return width;
+        };
 
         /**
          * Stack upward from the bottom edge. A wrapped block sits lower than a
@@ -518,7 +560,7 @@ export class BriefingScreen {
         rows.forEach((rowItems, i) => {
             const y = baseY - (rows.length - 1 - i) * SEC_LINE_H;
             // The trailing gap is not part of the visible width.
-            let sx = cx - (rowItems.width - SEC_GAP) / 2;
+            let sx = cx - (measured(rowItems.items) - SEC_GAP) / 2;
             for (const [k, label] of rowItems.items) {
                 sx += keycap(ctx, sx, y, k, { size: 11 }) + 5;
                 ctx.font = font(11);

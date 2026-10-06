@@ -459,4 +459,16 @@ describe('AIM-9 in-flight re-acquisition (v2.0.0)', () => {
         const behind: AirborneTarget = { id: 'Z', name: 'MiG-23 Z', isAlive: true, position: { x: 0, y: 0, z: -500 }, velocity: { x: 0, y: 0, z: 0 } };
         expect(WeaponsSystem.reacquire({ pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 500 } }, [behind])).toBeUndefined();
     });
+
+    it('never re-acquires through a ridge (v2.2.0 review)', () => {
+        // A wall 1 km high across the seeker's path, 500-600 m ahead.
+        const ridge = { getElevation: (_x: number, z: number) => (z > 500 && z < 600 ? 1000 : 0) };
+        const from = { x: 0, y: 200, z: 0 };
+        const masked: AirborneTarget = { id: 'M', name: 'MiG-23 M', isAlive: true, position: { x: 0, y: 200, z: 1500 }, velocity: { x: 0, y: 0, z: 0 } };
+        expect(WeaponsSystem.clearOfTerrain(ridge, from, masked.position)).toBe(false);
+        expect(WeaponsSystem.clearOfTerrain(ridge, from, { x: 0, y: 200, z: 400 })).toBe(true);
+        const seeker = { pos: from, vel: { x: 0, y: 0, z: 500 } };
+        expect(WeaponsSystem.reacquire(seeker, [masked], t => WeaponsSystem.clearOfTerrain(ridge, from, t.position))).toBeUndefined();
+        expect(WeaponsSystem.reacquire(seeker, [masked])).toBe(masked);
+    });
 });

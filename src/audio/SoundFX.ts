@@ -569,10 +569,6 @@ export class SoundFX {
         }
     }
 
-    /**
-     * How hard the soundtrack plays, 0..1 (0 = stopped). Cheap to call every
-     * frame: it only starts or stops the scheduler on a change of state.
-     */
     public get musicEnabled(): boolean {
         return this.musicOn;
     }
@@ -589,6 +585,10 @@ export class SoundFX {
         return this.musicOn;
     }
 
+    /**
+     * How hard the soundtrack plays, 0..1 (0 = stopped). Cheap to call every
+     * frame: it only starts or stops the scheduler on a change of state.
+     */
     public setMusicIntensity(intensity: number) {
         this.musicIntensity = this.musicOn ? Math.max(0, Math.min(1, intensity)) : 0;
         if (this.musicIntensity > 0 && this.musicTimer === null && this.ctx) {

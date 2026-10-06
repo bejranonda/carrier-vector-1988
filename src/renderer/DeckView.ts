@@ -60,6 +60,11 @@ export interface DeckViewContext {
     /** Width reserved at the top right for the menu button. */
     touchReserveTopRight?: number;
     /**
+     * Room for the DOM MENU button, in layout px. The button is CSS-sized, so
+     * under a text-size zoom it takes fewer layout px than its CSS width.
+     */
+    desktopMenuReserve?: number;
+    /**
      * How much of the deck to show. BRIEF is what a first-time pilot sees on
      * any screen: the orders, the turnaround, the contact picture and a short
      * log. It is the phone layout's idea - the phone build was the clearest
@@ -152,7 +157,7 @@ export class DeckView {
         // On a desktop the DOM `MENU (ESC)` button sits in the top-left corner
         // over the canvas; the title used to be drawn underneath it.
         this.drawHeader(ctx, layout.header, deck, score, context.touchReserveTopRight ?? 0,
-            context.touchMode ? 0 : DESKTOP_MENU_BUTTON_RESERVE);
+            context.touchMode ? 0 : context.desktopMenuReserve ?? DESKTOP_MENU_BUTTON_RESERVE);
 
         const p = layout.panels;
         if (p['ORDERS']) {

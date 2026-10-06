@@ -12,7 +12,7 @@
  */
 
 import type { FlyStyle } from '../core/EasyMode';
-import { THEME, fitText, font, glow, keycap, noGlow, plate } from './Theme';
+import { THEME, fitText, font, halo, keycap, noGlow, plate } from './Theme';
 import type { Rect } from './Theme';
 
 export interface FlyStyleLayout {
@@ -84,11 +84,7 @@ export function drawFlyStyleChooser(
             border: on ? THEME.phosphor : THEME.edgeSoft,
             radius: 8
         });
-        if (on) {
-            glow(ctx, THEME.phosphor, 10);
-            plate(ctx, r, { fill: 'rgba(0,0,0,0)', border: THEME.phosphor, radius: 8 });
-            noGlow(ctx);
-        }
+        if (on) halo(ctx, r, THEME.phosphor, 10, 8);
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         const pad = 20;

@@ -31,7 +31,7 @@ import type { SoundPlacement } from '../audio/SoundFX';
 import { FixedTimestepAccumulator, FIXED_DT } from './Timestep';
 import { ScoreKeeper, SCORE_VALUES } from './ScoreKeeper';
 import { ComboTracker, multiplierFor } from './Combo';
-import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, formatScrambleCard, rearmAfterWave, scrambleWave, waveClearBonus } from './Scramble';
+import { SCRAMBLE, SCRAMBLE_LOADOUT, fighterAccuracy, formatScrambleCard, keepClearOfBoat, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus } from './Scramble';
 import { KillFxSystem, drawKillFx } from '../renderer/KillFx';
 import { SpeedStreaks } from '../renderer/SpeedStreaks';
 import { scrambleIntensity } from '../audio/MusicPattern';
@@ -58,7 +58,7 @@ import type { Hint } from './Tutorial';
 import { updateEnemyAI, isBomber } from '../tactics/EnemyAI';
 import { PostProcess } from '../renderer/PostProcess';
 import type { PostQuality } from '../renderer/PostProcess';
-import { DeckView } from '../renderer/DeckView';
+import { DeckView, DESKTOP_MENU_BUTTON_RESERVE } from '../renderer/DeckView';
 import { drawPilotMenu, pilotMenuHitTest, pilotMenuLayout } from '../renderer/PilotMenuView';
 import { BriefingScreen } from '../renderer/BriefingScreen';
 import {
@@ -71,7 +71,7 @@ import {
     nextTextSize,
     saveTextSize,
     textSizeSpec,
-    uiZoomFor,
+    textScaling,
     paletteSpec,
     savePalette,
     storedPalette
@@ -94,7 +94,7 @@ import {
     shortCallout
 } from './Scenarios';
 import type { MissionSnapshot, MissionStatus, ScenarioDef, ScenarioId } from './Scenarios';
-import { loadPitchInversion, storedPitchInversion, savePitchInversion } from './Controls';
+import { loadPitchInversion, storedPitchInversion, savePitchInversion, touchWording } from './Controls';
 
 import { hitTestDeck, hitTestHud } from '../renderer/PointerInteractivity';
 import type { DeckStateSnapshot, HudStateSnapshot } from '../renderer/PointerInteractivity';
@@ -163,8 +163,8 @@ import {
 } from './Platform';
 import type { ControlScheme, SchemePreference } from './Platform';
 import { TouchInput } from './TouchInput';
-import { solveTouchLayout } from '../renderer/TouchLayout';
-import type { SafeArea, TouchControlId, TouchLayout } from '../renderer/TouchLayout';
+import { solveTouchLayout, touchKitFor } from '../renderer/TouchLayout';
+import type { SafeArea, TouchControlId, TouchKit, TouchLayout } from '../renderer/TouchLayout';
 import { drawLaunchButton, drawRotatePrompt, drawTouchControls } from '../renderer/TouchControls';
 import { pickTargetAt } from '../tactics/TargetDesignation';
 import type { ScreenTarget } from '../tactics/TargetDesignation';
@@ -334,7 +334,10 @@ export class GameLoop {
     public controlScheme: ControlScheme = 'KEYBOARD';
     public touch = new TouchInput();
     public touchLayout: TouchLayout = solveTouchLayout(1280, 800);
+    /** Safe-area insets in layout px (CSS px / UI zoom), as the layouts use them. */
     private safeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+    /** The same insets as the browser reports them, in CSS px. */
+    private cssSafeArea: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
     /** Analog stick demand, which overrides the keyboard axes when present. */
     private analog: { pitch: number; roll: number } | null = null;
     /**
@@ -425,6 +428,8 @@ export class GameLoop {
     public flyStyleChooserOpen = false;
     /** Which option the chooser's keyboard cursor is on. */
     public flyStyleChoice: FlyStyle = 'EASY';
+    /** The chooser was answered this session (storage may not remember it). */
+    private flyStyleAnswered = false;
     /** What the pilot asked to fly when the chooser interrupted them. */
     private pendingFlight: 'BRIEFING' | 'DAILY' | 'SKIP' = 'BRIEFING';
     /** EASY: seconds until a held trigger tries again. */
@@ -433,8 +438,20 @@ export class GameLoop {
     private easyGunBurst = 0;
     /** EASY: throttle on the "not yet" message. */
     private easyNotYetCooldown = 0;
+    /**
+     * The deck's wave counter when the run began. VETERAN starts it four
+     * waves on, so medals count the waves this run actually reached from
+     * there - "REACH WAVE 3" used to be met before a shot was fired.
+     */
+    private startWaveNumber = 0;
     /** The "try EASY" offer has been made this run (once per run, never on EASY). */
     public easyOffered = false;
+    /**
+     * EASY was on at some point in this run (v2.2.0). Switching it on half
+     * way still marks the run: the cards, the challenge link and the daily
+     * say EASY whenever any of the score was earned with its help.
+     */
+    public runFlownEasy = false;
     /** Seconds between a wave's last kill and its WAVE CLEARED payout. */
     public static readonly WAVE_CLEAR_BEAT = 1.1;
 
@@ -456,6 +473,17 @@ export class GameLoop {
         clearTimer: number;
         /** The live wave timed out rather than being shot down. */
         bugOut: boolean;
+        /**
+         * Jets this run allows, fixed when it starts (v2.2.0). It used to be
+         * re-read from the fly style every tick, so switching EASY off with
+         * three of five jets lost ended the run on the spot. Switching EASY
+         * on part way raises it - the run is marked EASY anyway.
+         */
+        jets: number;
+        /** Bombers that reached the boat in the live wave. */
+        leaked: number;
+        /** Contacts the player shot down in the live wave. */
+        waveKills: number;
     } | null = null;
     /** Seconds remaining on the cannon hit marker. */
     private hitMarker = 0;
@@ -538,9 +566,10 @@ export class GameLoop {
     private qualityCeiling: PostQuality = 'LOW';
 
     /**
-     * Logical (CSS pixel) viewport. The canvas backing store is this times
-     * the device pixel ratio, with the 2D context pre-scaled - so every
-     * layout number in the game stays in CSS pixels while text and vectors
+     * Logical viewport, in layout pixels: CSS pixels over the text-size zoom
+     * (v2.1.0), so CSS pixels at NORMAL text. The canvas backing store is the
+     * CSS size times the device pixel ratio, with the 2D context pre-scaled -
+     * so every layout number in the game stays in layout pixels while text and vectors
      * render at native resolution. The old build pinned the backing store to
      * CSS pixels and set `image-rendering: pixelated`, which is why HUD
      * glyphs looked soft and ragged on any HiDPI screen.
@@ -552,7 +581,7 @@ export class GameLoop {
     /** The real canvas size, CSS px. `viewWidth/Height` are these over `uiZoom`. */
     public cssWidth = 1;
     public cssHeight = 1;
-    /** Layout pixels -> CSS pixels. 1 at NORMAL text; see Theme.uiZoomFor. */
+    /** Layout pixels -> CSS pixels. 1 at NORMAL text, and on phones; see Theme.textScaling. */
     public uiZoom = 1;
 
     private lastTimestamp = 0;
@@ -702,7 +731,9 @@ export class GameLoop {
         // from "hold W": v2.0.0 playtest found the 0/6 checkout pinned over
         // every endless run a veteran flew, and a TRAINING 1/6 coach line
         // replacing combat hints a minute into the fight.
-        if (!setup.showTrainingChecklist || this.hasCompletedAMission()) this.training.skip();
+        // EASY flies the plane, so a checkout of stick and throttle has
+        // nothing to teach - and its prompt outranked FIRE NOW all sortie.
+        if (!setup.showTrainingChecklist || this.hasCompletedAMission() || this.easyMode) this.training.skip();
 
         if (setup.loadout) {
             this.deck.plannedLoadout = { ...setup.loadout };
@@ -726,6 +757,7 @@ export class GameLoop {
         };
 
         this.lastSpawnedWave = this.deck.waveNumber;
+        this.startWaveNumber = this.deck.waveNumber;
         this.airborneTargets = this.buildTargetsFromTimeline(this.deck.strikeTimeline);
 
         this.callouts.clear();
@@ -734,6 +766,14 @@ export class GameLoop {
         this.lastCautionDamage = 0;
         this.sortieKills = 0;
         this.easyOffered = false;
+        this.runFlownEasy = this.easyMode;
+        // A jet lost in the last run must not die again in this one: RESTART
+        // during the MAYDAY sequence, or a daily started from the menu, used
+        // to begin the new run with dead controls, slow motion and a jet
+        // already written off (v2.2.0 review). Airborne starts never pass
+        // through beginSortie, which is where these were cleared before.
+        this.dying = null;
+        this.lastLossCause = null;
         this.combo.reset();
         this.killFx.clear();
         this.hitStop = 0;
@@ -759,7 +799,10 @@ export class GameLoop {
                 brief: '',
                 seed: seedOverride ?? Math.floor(Math.random() * 1e9),
                 clearTimer: 0,
-                bugOut: false
+                bugOut: false,
+                jets: this.scrambleLives(),
+                leaked: 0,
+                waveKills: 0
             }
             : null;
         if (this.scramble) this.airborneTargets = [];
@@ -835,7 +878,7 @@ export class GameLoop {
             bombsRemaining: this.physics.loadout.ironBombs,
             rwrState: this.sensors.masterRwrState,
             flightAssistMode: this.effectiveAssist(),
-            jetsAllowed: this.scrambleLives()
+            jetsAllowed: this.scramble?.jets ?? this.scrambleLives()
         };
     }
 
@@ -1139,17 +1182,31 @@ export class GameLoop {
     /**
      * Re-resolve the control scheme and the thumb layout. Called from resize,
      * so an orientation change or a window drag is enough to pick it up.
+     *
+     * Takes the insets in CSS px and converts them here, at the zoom in force
+     * now - main.ts used to convert them, so a text-size change (which
+     * resizes without a window event) left them in the old zoom's units and
+     * thumb controls a few px under a notch (v2.2.0 review).
      */
-    public applyControlScheme(insets: SafeArea = this.safeArea) {
+    public applyControlScheme(cssInsets: SafeArea = this.cssSafeArea) {
+        this.cssSafeArea = cssInsets;
+        const z = this.uiZoom || 1;
+        const insets: SafeArea = {
+            top: cssInsets.top / z, right: cssInsets.right / z,
+            bottom: cssInsets.bottom / z, left: cssInsets.left / z
+        };
         this.safeArea = insets;
         const signals = readPlatformSignals();
         const previous = this.controlScheme;
+        // Device detection is in CSS px, whatever the text size: a zoomed
+        // tablet layout used to read as a phone and switch to touch controls
+        // (and the autopilot) when the text got bigger.
         this.controlScheme = resolveScheme(this.schemePreference, {
             ...signals,
-            width: this.viewWidth,
-            height: this.viewHeight
+            width: this.cssWidth,
+            height: this.cssHeight
         });
-        this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets);
+        this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, insets, this.touchKit());
         // Re-read on resize: a preference can change mid-session.
         this.motion = motionSettings(readMotionPreferences());
 
@@ -1177,7 +1234,8 @@ export class GameLoop {
         soundFX.playUiMove();
         this.schemePreference = nextSchemePreference(this.schemePreference);
         saveSchemePreference(this.schemePreference);
-        this.applyControlScheme();
+        // A full resize: phone or not decides the zoom (Theme.textScaling).
+        this.resize(this.cssWidth, this.cssHeight);
         this.deck.log(`CONTROLS: ${this.schemePreference} (${this.controlScheme}).`);
     }
 
@@ -1194,8 +1252,15 @@ export class GameLoop {
         this.cssWidth = Math.max(1, Math.round(width));
         this.cssHeight = Math.max(1, Math.round(height));
         // Text size is a UI zoom: lay out for a smaller virtual screen, then
-        // scale it up - see Theme.uiZoomFor.
-        this.uiZoom = uiZoomFor(this.textSize, this.cssWidth, this.cssHeight);
+        // scale it up - except on a phone, which is never zoomed and grows its
+        // in-flight words in place instead (see Theme.textScaling). Whether
+        // this is a phone is a CSS-px question, asked before any zoom.
+        const touch = resolveScheme(this.schemePreference, {
+            ...readPlatformSignals(), width: this.cssWidth, height: this.cssHeight
+        }) === 'TOUCH';
+        const scaling = textScaling(this.textSize, this.cssWidth, this.cssHeight, touch);
+        this.uiZoom = scaling.zoom;
+        this.hud.textBoost = scaling.boost;
         this.viewWidth = Math.max(1, Math.round(this.cssWidth / this.uiZoom));
         this.viewHeight = Math.max(1, Math.round(this.cssHeight / this.uiZoom));
 
@@ -1299,8 +1364,13 @@ export class GameLoop {
                 simElapsed = elapsed * GameLoop.HIT_STOP_SCALE;
             }
             const steps = this.timestep.consume(simElapsed);
+            const wasActive = this.phase === 'ACTIVE';
             for (let i = 0; i < steps; i++) {
                 this.fixedUpdate(FIXED_DT);
+                // The run ended on this step: its score, medals, card and
+                // daily are already recorded, so the rest of this frame's
+                // steps must not move the world the debrief describes.
+                if (wasActive && this.phase !== 'ACTIVE') break;
             }
             // Real time, so the payoff keeps moving through the hit-stop.
             this.killFx.update(Math.min(0.1, Math.max(0, elapsed)));
@@ -1309,6 +1379,18 @@ export class GameLoop {
         this.updateAdaptiveQuality(elapsed);
         this.updateMusic();
         this.draw(elapsed);
+    }
+
+    /**
+     * The tab went into the background (v2.2.0 review). The frame loop stops
+     * with it, but the soundtrack's own timer did not: the music played on
+     * over a frozen game. Stop it, and pause a live flight, so a pilot who
+     * took a phone call comes back to the menu - not to a fight already
+     * under way.
+     */
+    public onHidden() {
+        soundFX.setMusicIntensity(0);
+        if (this.phase === 'ACTIVE' && !this.menuOpen) this.toggleMenu();
     }
 
     /** The SCRAMBLE soundtrack follows the fight, and stops everywhere else. */
@@ -1444,6 +1526,21 @@ export class GameLoop {
         );
     }
 
+    /** The thumb controls this sortie actually uses (v2.2.0). */
+    private touchKit(): TouchKit {
+        return touchKitFor({ easy: this.easyMode, scramble: this.scramble !== null });
+    }
+
+    /** Re-solve the thumb layout when the kit changes - EASY toggled, a new mode. */
+    private refreshTouchKit() {
+        const kit = this.touchKit();
+        const was = this.touchLayout.kit;
+        const same = was.flight === kit.flight && was.target === kit.target && was.chaff === kit.chaff
+            && was.recover === kit.recover && was.bigFire === kit.bigFire
+            && was.stores.every((v, i) => v === kit.stores[i]);
+        if (!same) this.touchLayout = solveTouchLayout(this.viewWidth, this.viewHeight, this.safeArea, kit);
+    }
+
     /**
      * Fold the current touch state into the game: the stick becomes an analog
      * demand, the throttle track sets power directly, and every press that
@@ -1454,6 +1551,7 @@ export class GameLoop {
             this.analog = null;
             return;
         }
+        this.refreshTouchKit();
 
         const airborne = this.deck.aircraftState === 'AIRBORNE' && this.currentView === 'MICRO_FLIGHT';
         const demand = this.touch.demand(this.touchLayout);
@@ -1469,8 +1567,11 @@ export class GameLoop {
         }
 
         // The cannon is a held trigger; everything else is edge-triggered, so
-        // the same button can fire a burst or release a single bomb.
-        this.inputState[' '] = demand.firing && (this.easyMode || this.selectedWeapon === 'GUN');
+        // the same button can fire a burst or release a single bomb. On EASY
+        // a finger held anywhere on the world is the trigger too, like the
+        // mouse: no button to find at all.
+        this.inputState[' '] = (demand.firing && (this.easyMode || this.selectedWeapon === 'GUN'))
+            || (this.easyMode && this.touch.isHeld('WORLD'));
 
         for (const tap of this.touch.consumeTaps()) {
             this.handleTouchTap(tap.control, tap.x, tap.y);
@@ -1520,6 +1621,7 @@ export class GameLoop {
                 return;
             case 'WORLD':
                 this.designateAtPoint(x, y);
+                if (this.easyMode) this.easyFire();
                 return;
             default:
                 // STICK and THROTTLE are continuous, handled in updateTouch().
@@ -1559,7 +1661,7 @@ export class GameLoop {
         return chosen !== null;
     }
 
-    /** A tap on a menu screen, in CSS pixels. Returns true if it was used. */
+    /** A tap on a menu screen, in layout pixels. Returns true if it was used. */
     public handleMenuTap(x: number, y: number): boolean {
         if (this.flyStyleChooserOpen) {
             const hit = flyStyleHitTest(x, y, flyStyleLayout(this.viewWidth, this.viewHeight));
@@ -1587,6 +1689,9 @@ export class GameLoop {
             if (!this.debriefAcceptsInput()) return true;
             const layout = debriefLayout(this.viewWidth, this.viewHeight, this.debriefData());
             if (inside(layout.missions, x, y)) this.returnToBriefing();
+            // The card copies (or shares) - a tap on it used to fly again and
+            // throw the card away, so a phone could never send one.
+            else if (layout.share && inside(layout.share, x, y)) this.copyDailyCard();
             else this.flyAgain();
             return true;
         }
@@ -1822,6 +1927,12 @@ export class GameLoop {
 
     /** Toggle the recovery assist, and remember the choice. */
     public toggleApproachAssist(): boolean {
+        // L in SCRAMBLE used to say "TAKING YOU HOME", save the setting and
+        // force the stored assist to AUTO - with no deck to fly to.
+        if (this.scramble) {
+            this.callouts.push('NO DECK IN SCRAMBLE', 'MODE', 'CLEAR THE WAVE TO PATCH THE JET');
+            return this.approachAssist;
+        }
         this.approachAssist = !this.approachAssist;
         saveApproachAssist(this.approachAssist);
         if (this.approachAssist && this.assistLevel !== 'AUTO') {
@@ -1858,7 +1969,8 @@ export class GameLoop {
 
     /** Trigger the 5-second arcade flight rewind buffer. */
     public triggerTimeRewind(): boolean {
-        if (this.assistLevel !== 'MANUAL' && this.timeRewind.canRewind()) {
+        // EASY flies on the autopilot whatever the stored assist level says.
+        if (this.effectiveAssist() !== 'MANUAL' && this.timeRewind.canRewind()) {
             const ok = this.timeRewind.triggerRewind(this.physics);
             if (ok) {
                 soundFX.playMasterCaution();
@@ -1945,6 +2057,9 @@ export class GameLoop {
      * disagree about when it is time.
      */
     public isHomeward(): boolean {
+        // SCRAMBLE has no deck to go home to: heavy damage is patched by
+        // clearing the wave, and a BOAT cue at 60% damage pointed nowhere.
+        if (this.scramble) return false;
         return this.missionStatus.phase?.id === 'RECOVER'
             || this.physics.fuel < 800
             || this.physics.damage >= 60;
@@ -2147,17 +2262,33 @@ export class GameLoop {
      * because the card is on screen either way.
      */
     public copyDailyCard(): boolean {
-        if (!this.dailyCard) return false;
+        const card = this.dailyCard;
+        if (!card) return false;
+        const nav = globalThis.navigator as (Navigator & { share?: (data: { text: string }) => Promise<void> }) | undefined;
         try {
-            void globalThis.navigator?.clipboard?.writeText(this.dailyCard);
-            this.dailyCopied = true;
+            // On a phone the card goes where cards go - the share sheet,
+            // straight into a chat - rather than through the clipboard.
+            if (this.canShareCard()) {
+                nav!.share!({ text: card }).then(() => { this.dailyCopied = true; }, () => { /* dismissed */ });
+                return true;
+            }
+            const clip = nav?.clipboard;
+            // "Copied" only once it was: with no clipboard at all (an
+            // insecure page, an old browser) it used to say so anyway.
+            if (!clip?.writeText) return false;
+            clip.writeText(card).then(() => { this.dailyCopied = true; }, () => { this.dailyCopied = false; });
             return true;
         } catch {
             return false;
         }
     }
 
-    /** Fold a finished daily run into the stored record and build its card. */
+    /** A touch device with a native share sheet: the card is shared, not copied. */
+    private canShareCard(): boolean {
+        const nav = globalThis.navigator as (Navigator & { share?: unknown }) | undefined;
+        return this.controlScheme === 'TOUCH' && typeof nav?.share === 'function';
+    }
+
     /**
      * Stars, career XP and unlocks for the run that just ended (v2.0.0). A new
      * cosmetic look is equipped on the spot, so the reward is seen rather
@@ -2168,7 +2299,7 @@ export class GameLoop {
         const summary: RunSummary = {
             completed,
             score: this.score.totalScore,
-            waves: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber,
+            waves: this.scramble ? this.scramble.wavesCleared : this.deck.waveNumber - this.startWaveNumber,
             airframesLost: this.score.breakdown.airframesLost,
             traps: this.score.breakdown.traps,
             perfectTraps: this.score.breakdown.perfectTraps,
@@ -2207,8 +2338,10 @@ export class GameLoop {
                 url: challengeUrl(PLAY_URL, {
                     seed: this.scramble.seed,
                     score: this.score.totalScore,
-                    waves: this.scramble.wavesCleared
-                })
+                    waves: this.scramble.wavesCleared,
+                    easy: this.runFlownEasy
+                }),
+                easy: this.runFlownEasy
             });
         }
         this.debriefAge = 0;
@@ -2240,10 +2373,13 @@ export class GameLoop {
             ];
         const stars = totalStars(this.medals);
         const next = nextUnlock(stars);
+        // A SCRAMBLE run ends one of two ways, and the headline says which:
+        // it used to say SHOT DOWN when the jet was fine and the boat sank.
+        const carrierLost = this.deck.inventory.carrierHealth <= 0;
         const headline = won
             ? this.scenario.victoryTitle
             : this.scramble
-                ? `SHOT DOWN · WAVE ${Math.max(1, this.scramble.wave)}`
+                ? `${carrierLost ? 'CARRIER LOST' : 'SHOT DOWN'} · WAVE ${Math.max(1, this.scramble.wave)}`
                 : 'MISSION FAILED';
         // SCRAMBLE always ends in a loss of some kind; on a completed run the
         // headline is the win and the reason says how far it went first.
@@ -2251,14 +2387,16 @@ export class GameLoop {
             ? `${this.scramble.wavesCleared} waves held before the end. ${this.missionReason ?? ''}`.trim()
             : this.missionReason;
         if (this.scramble && this.challenge && !this.isDailyRun) {
-            reason = challengeVerdict(this.challenge, this.score.totalScore);
+            reason = challengeVerdict(this.challenge, this.score.totalScore, this.runFlownEasy);
         }
         return {
             outcome: won ? 'SUCCESS' : 'FAILED',
             headline,
             reason,
             scenarioName: this.scenario.name,
-            cause: won ? null : this.lastLossCause,
+            styleNote: this.runFlownEasy ? 'FLOWN ON EASY' : undefined,
+            // What got the jet - not shown when it was the carrier that went.
+            cause: won || carrierLost ? null : this.lastLossCause,
             score: this.score.totalScore,
             isNewBest: this.isNewBest,
             missionBest: recordFor(this.missionRecords, this.scenario.id).best,
@@ -2274,6 +2412,7 @@ export class GameLoop {
             nextUnlock: next ? { label: next.label, starsNeeded: next.stars - stars } : null,
             shareCard: this.dailyCard,
             copied: this.dailyCopied,
+            shareVerb: this.canShareCard() ? 'SHARE' : 'COPY',
             nextUp: this.nextUpLabel() ?? undefined,
             touch: this.controlScheme === 'TOUCH'
         };
@@ -2299,6 +2438,7 @@ export class GameLoop {
         return this.phase === 'DEBRIEF' && this.debriefAge >= GameLoop.DEBRIEF_INPUT_DELAY;
     }
 
+    /** Fold a finished daily run into the stored record and build its card. */
     private recordDailyRun() {
         const b = this.score.breakdown;
         const merged = mergeDailyResult(this.dailyResults, {
@@ -2313,7 +2453,8 @@ export class GameLoop {
             perfectTraps: b.perfectTraps,
             hullRemaining: this.deck.inventory.carrierHealth,
             completed: this.missionOutcome === 'SUCCESS',
-            ...(this.scramble ? { mode: 'SCRAMBLE' as const, bestChain: this.combo.best } : {})
+            ...(this.scramble ? { mode: 'SCRAMBLE' as const, bestChain: this.combo.best } : {}),
+            ...(this.runFlownEasy ? { easy: true } : {})
         });
 
         this.dailyResults = merged.results;
@@ -2616,7 +2757,9 @@ export class GameLoop {
         }, (enemy) => {
             // The warning that makes cannon fire a fight instead of an ambush.
             if (this.scenario.setup.combatShielded || enemy.passive) return;
-            this.callouts.push('GUNS TRACKING', 'LOSS', `${enemy.name} - BREAK TURN`);
+            // On EASY the plane does the turning; do not order the pilot to.
+            this.callouts.push('GUNS TRACKING', 'LOSS',
+                this.easyMode ? `${enemy.name} - THE PLANE IS TURNING TO FIGHT` : `${enemy.name} - BREAK TURN`);
             // Heard, not just read: the pilot is looking at the target.
             if (this.gunsWarningTimer <= 0) soundFX.playGunsTracking(this.placeAt(enemy.position));
             this.gunsWarningTimer = 4;
@@ -2742,6 +2885,10 @@ export class GameLoop {
     /** Switch EASY on or off; `remember` stores the choice. */
     public setFlyStyle(style: FlyStyle, remember = true) {
         this.flyStyle = style;
+        if (style === 'EASY') {
+            this.runFlownEasy = true;
+            if (this.scramble) this.scramble.jets = Math.max(this.scramble.jets, this.scrambleLives());
+        }
         this.callouts.holdScale = style === 'EASY' ? EASY_TUNING.calloutHold : 1;
         if (remember) saveFlyStyle(style);
     }
@@ -2756,6 +2903,9 @@ export class GameLoop {
 
     /** Whether the first-run chooser should be shown before this flight. */
     public shouldAskFlyStyle(): boolean {
+        // Answered this session counts too: with storage blocked (a private
+        // window) the question otherwise came back before every flight.
+        if (this.flyStyleAnswered) return false;
         const anyAttempts = Object.values(this.missionRecords).some(r => r.attempts > 0);
         return shouldAskFlyStyle(loadFlyStyle(), anyAttempts);
     }
@@ -2789,6 +2939,7 @@ export class GameLoop {
     /** The chooser's answer: remember it and fly what was asked for. */
     public chooseFlyStyle(style: FlyStyle) {
         this.flyStyleChooserOpen = false;
+        this.flyStyleAnswered = true;
         this.setFlyStyle(style);
         soundFX.playUiSelect();
         this.launchFlight(this.pendingFlight);
@@ -2811,9 +2962,29 @@ export class GameLoop {
         return this.easyMode ? 'AUTO' : this.assistLevel;
     }
 
-    /** SCRAMBLE jets per run: more when flying EASY. */
+    /** Would a press of FIRE do something useful right now? */
+    private shotIsGood(): boolean {
+        if (this.easyMode) return this.easyTriggerChoice() !== 'NOT_YET';
+        const d = this.tracker.designated();
+        if (!d) return false;
+        if (this.selectedWeapon === 'AIM9') return d.inMissileEnvelope && this.physics.loadout.sidewinders > 0;
+        if (this.selectedWeapon === 'GUN') return d.inGunEnvelope && this.physics.loadout.vulcanAmmo > 0;
+        return false;
+    }
+
+    /** An instruction in the words this pilot's controls use (keys, or a thumb). */
+    private forThisPilot(text: string): string {
+        return this.controlScheme === 'TOUCH' ? touchWording(text) : text;
+    }
+
+    /** SCRAMBLE jets per run for the current fly style: more when flying EASY. */
     private scrambleLives(): number {
         return this.easyMode ? EASY_TUNING.lives : SCRAMBLE.lives;
+    }
+
+    /** The jets the live run allows - fixed at its start, see `scramble.jets`. */
+    private jetsThisRun(): number {
+        return this.scramble?.jets ?? this.scrambleLives();
     }
 
     /**
@@ -2838,10 +3009,14 @@ export class GameLoop {
             this.easyGunBurst = EASY_TUNING.gunBurstSeconds;
         } else if (!silent && this.easyNotYetCooldown <= 0) {
             const inbound = !!d && this.weapons.missiles.some(m => m.targetId === d.target.id);
+            // Say why in words that are true: a ground target never earns a
+            // FIRE NOW from the air-to-air trigger, so "wait" would be a lie.
+            const ground = !!d && d.target.kind !== 'AIR' && !d.inGunEnvelope;
             this.callouts.push('NOT YET', 'MODE',
                 !d ? 'NO TARGET YET - THE PLANE WILL FIND ONE'
                     : inbound ? 'A MISSILE IS ALREADY ON ITS WAY'
-                        : 'THE PLANE IS LINING UP - WAIT FOR "FIRE NOW"',
+                        : ground ? this.forThisPilot('THAT IS ON THE GROUND - PRESS 3 FOR BOMBS, OR 4 FOR A HARM AT A SAM')
+                            : 'THE PLANE IS LINING UP - WAIT FOR "FIRE NOW"',
                 1.4, 'EASY');
             soundFX.playRelayClick();
             this.easyNotYetCooldown = 1.2;
@@ -2857,8 +3032,11 @@ export class GameLoop {
     private offerEasyIfStruggling() {
         if (this.easyMode || this.easyOffered || this.score.breakdown.airframesLost < 2) return;
         this.easyOffered = true;
+        // A phone has no ESC key: say where its menu is.
         this.callouts.push('HAVING A HARD TIME?', 'MODE',
-            'PRESS ESC AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF, YOU FIRE', 4.5, 'EASY');
+            this.controlScheme === 'TOUCH'
+                ? 'TAP THE MENU BUTTON (TOP RIGHT) AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF'
+                : 'PRESS ESC AND TURN ON EASY FLYING - THE PLANE FLIES ITSELF, YOU FIRE', 4.5, 'EASY');
         this.deck.log('TIP: EASY FLYING (ESC MENU) LETS THE PLANE FLY AND AIM ITSELF - YOU ONLY FIRE.');
     }
 
@@ -2874,7 +3052,9 @@ export class GameLoop {
                 aspect: d.aspect
             } : null,
             sidewinders: this.physics.loadout.sidewinders,
-            missileInbound: !!d && this.weapons.missiles.some(m => m.targetId === d.target.id)
+            missileInbound: !!d && this.weapons.missiles.some(m => m.targetId === d.target.id),
+            gunRounds: this.physics.loadout.vulcanAmmo,
+            heavyWeaponSelected: this.selectedWeapon === 'BOMB' || this.selectedWeapon === 'HARM'
         });
     }
 
@@ -2909,6 +3089,7 @@ export class GameLoop {
             if (!t.isAlive || !isBomber(t)) continue;
             if (Math.hypot(t.position.x, t.position.z) > SCRAMBLE.bomberStrikeRadius) continue;
             t.isAlive = false;
+            s.leaked++;
             const dmg = Math.round(SCRAMBLE.bomberHullDamage * (this.easyMode ? EASY_TUNING.carrierDamage : 1));
             this.deck.inventory.carrierHealth = Math.max(0, this.deck.inventory.carrierHealth - dmg);
             this.score.recordHullDamage(dmg);
@@ -2943,11 +3124,24 @@ export class GameLoop {
         if (s.clearTimer < GameLoop.WAVE_CLEAR_BEAT) return;
         s.clearTimer = 0;
 
-        s.wavesCleared++;
-        // A wave that ran out the clock is survived, not won: no bonus.
-        const bonus = s.bugOut ? 0 : waveClearBonus(s.wave, s.waveSeconds);
+        // Three ways a wave ends (v2.2.0). CLEARED: every contact shot down -
+        // the full bonus. HELD: some shot down, but a bomber reached the boat
+        // or the rest bugged out - it counts, without the speed bonus. OVER:
+        // nothing shot down - it does not count. A wave let through used to
+        // pay the same as one shot down, so a run that never fired earned the
+        // CLEAR WAVE 5 star and a SUCCESS debrief.
+        const won = !s.bugOut && s.leaked === 0;
+        const held = s.waveKills > 0;
+        const leaked = s.leaked;
+        const bugOut = s.bugOut;
+        const bonus = won ? waveClearBonus(s.wave, s.waveSeconds) : 0;
         s.bugOut = false;
-        this.score.recordWaveSurvived();
+        s.leaked = 0;
+        s.waveKills = 0;
+        if (held) {
+            s.wavesCleared++;
+            this.score.recordWaveSurvived();
+        }
         this.score.recordBonus(bonus);
         const rearmed = rearmAfterWave(this.physics.loadout, this.physics.damage);
         this.physics.loadout = rearmed.loadout;
@@ -2955,16 +3149,23 @@ export class GameLoop {
         // The rails are loaded again; so is the weapon a beginner fires best.
         if (this.selectedWeapon === 'GUN' && this.physics.loadout.sidewinders > 0) this.selectedWeapon = 'AIM9';
         this.lastCautionDamage = this.physics.damage;
-        this.callouts.push(
-            `WAVE ${s.wave} CLEARED`,
-            'PRAISE',
-            `+${bonus + SCORE_VALUES.WAVE_SURVIVED} PTS · REARMED & PATCHED`,
-            2.6,
-            'WAVE'
-        );
-        this.deck.log(`WAVE ${s.wave} CLEARED IN ${Math.round(s.waveSeconds)} S. +${bonus} BONUS.`);
-        soundFX.playFanfare(Math.min(12, s.wave));
-        this.flash(THEME.phosphor, 0.2);
+        const got = leaked > 0 ? `${leaked} REACHED THE SHIP` : bugOut ? 'THE REST TURNED FOR HOME' : '';
+        if (won) {
+            this.callouts.push(`WAVE ${s.wave} CLEARED`, 'PRAISE',
+                `+${bonus + SCORE_VALUES.WAVE_SURVIVED} PTS · REARMED & PATCHED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} CLEARED IN ${Math.round(s.waveSeconds)} S. +${bonus} BONUS.`);
+            soundFX.playFanfare(Math.min(12, s.wave));
+            this.flash(THEME.phosphor, 0.2);
+        } else if (held) {
+            this.callouts.push(`WAVE ${s.wave} HELD`, 'MODE',
+                `+${SCORE_VALUES.WAVE_SURVIVED} PTS · ${got} · REARMED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} HELD - ${got}.`);
+            soundFX.playUiSelect();
+        } else {
+            this.callouts.push(`WAVE ${s.wave} OVER`, 'LOSS',
+                `NONE SHOT DOWN${got ? ` · ${got}` : ''} · REARMED`, 2.6, 'WAVE');
+            this.deck.log(`WAVE ${s.wave} OVER - NONE SHOT DOWN.`);
+        }
         s.breather = SCRAMBLE.breatherSeconds;
     }
 
@@ -2975,18 +3176,20 @@ export class GameLoop {
         s.wave++;
         s.waveSeconds = 0;
         s.bugOut = false;
+        s.leaked = 0;
+        s.waveKills = 0;
         const spec = scrambleWave(s.wave, s.seed, this.easyMode);
-        s.brief = spec.brief;
+        s.brief = this.controlScheme === 'TOUCH' ? touchWording(spec.brief) : spec.brief;
 
         const p = this.physics.position;
         const yaw = this.physics.yaw;
         this.airborneTargets = spec.spawns.map((sp, i) => {
-            const a = yaw + sp.bearingDeg * (Math.PI / 180);
-            const x = p.x + Math.sin(a) * sp.rangeM;
-            const z = p.z + Math.cos(a) * sp.rangeM;
+            const a = spawnReference(sp.type, p, yaw) + sp.bearingDeg * (Math.PI / 180);
+            const bomber = sp.type === 'BOMBER';
+            const placed = { x: p.x + Math.sin(a) * sp.rangeM, z: p.z + Math.cos(a) * sp.rangeM };
+            const { x, z } = bomber ? keepClearOfBoat(placed.x, placed.z) : placed;
             const ground = this.terrain.getElevation(x, z);
             const y = Math.max(ground + 250, p.y + sp.altOffsetM, 300);
-            const bomber = sp.type === 'BOMBER';
             const speed = bomber ? 190 : 185;
             // Fighters come for the jet; bombers go for the boat.
             const tx = bomber ? -x : p.x - x;
@@ -3007,8 +3210,8 @@ export class GameLoop {
         // mode teaches later (T), not a gate in front of the first shot.
         this.hasInitialTargetAcquired = false;
         this.manualTargetCleared = false;
-        this.callouts.push(`WAVE ${s.wave}`, 'PRAISE', spec.brief, 2.6, 'WAVE');
-        this.deck.log(`WAVE ${s.wave} INBOUND: ${spec.brief}.`);
+        this.callouts.push(`WAVE ${s.wave}`, 'PRAISE', s.brief, 2.6, 'WAVE');
+        this.deck.log(`WAVE ${s.wave} INBOUND: ${s.brief}.`);
         soundFX.playUiSelect();
     }
 
@@ -3018,7 +3221,7 @@ export class GameLoop {
      * progress bar - is no part of this mode.
      */
     private respawnScramble() {
-        const jetsLeft = this.scrambleLives() - this.score.breakdown.airframesLost;
+        const jetsLeft = this.jetsThisRun() - this.score.breakdown.airframesLost;
         if (jetsLeft <= 0) {
             // The failure condition ends the run on the next tick.
             this.deck.aircraftState = 'HANGAR_MAINTENANCE';
@@ -3036,22 +3239,26 @@ export class GameLoop {
         this.physics.yaw = yaw;
         this.physics.velocity = { x: Math.sin(yaw) * 230, y: 0, z: Math.cos(yaw) * 230 };
         this.armScrambleJet();
-        this.callouts.push(`JET ${this.scrambleLives() - jetsLeft + 1} OF ${this.scrambleLives()}`, 'MODE',
+        this.timeRewind.clearHistory();
+        this.callouts.push(`JET ${this.jetsThisRun() - jetsLeft + 1} OF ${this.jetsThisRun()}`, 'MODE',
             jetsLeft === 1 ? 'LAST JET - MAKE IT COUNT' : 'BACK IN THE FIGHT', 2.2, 'WAVE');
     }
 
     private scrambleObjective(): ObjectiveStep {
         const s = this.scramble!;
-        const jets = Math.max(0, this.scrambleLives() - this.score.breakdown.airframesLost);
+        const jets = Math.max(0, this.jetsThisRun() - this.score.breakdown.airframesLost);
         const hull = Math.round(this.deck.inventory.carrierHealth);
         const status = `JETS ${jets} · HULL ${hull}%`;
         const alive = this.airborneTargets.filter(t => t.isAlive).length;
         if (s.wave === 0 || s.breather > 0 || alive === 0) {
-            const cleared = s.wave > 0 && s.breather <= 0;
+            // The beat between a wave's end and its payout says how it ended.
+            const ending = s.wave > 0 && s.breather <= 0;
+            const won = !s.bugOut && s.leaked === 0;
             return {
-                title: s.wave === 0 ? 'BANDITS INBOUND' : cleared ? `WAVE ${s.wave} CLEARED` : `WAVE ${s.wave + 1} INBOUND`,
+                title: s.wave === 0 ? 'BANDITS INBOUND'
+                    : ending ? `WAVE ${s.wave} ${won ? 'CLEARED' : 'OVER'}` : `WAVE ${s.wave + 1} INBOUND`,
                 detail: s.wave === 0 ? `Weapons hot. ${status}`
-                    : cleared ? `Splashed them all. Rearming. ${status}` : `Rearmed and patched. ${status}`,
+                    : ending ? `${won ? 'Shot them all down.' : 'Rearming.'} ${status}` : `Rearmed and patched. ${status}`,
                 urgency: 'NORMAL',
                 waiting: true
             };
@@ -3066,7 +3273,8 @@ export class GameLoop {
     }
 
     /**
-     * The shared payout for anything the player kills: extend the chain, bank
+     * The shared payout for anything the player shoots down (aircraft and
+     * SAMs; a bombed structure has its own payoff): extend the chain, bank
      * its bonus, put one escalating banner up (a chain replaces its own
      * previous banner rather than stacking), throw the ring and the points at
      * the wreck, and hold the world for a beat.
@@ -3096,6 +3304,7 @@ export class GameLoop {
         this.score.recordKill(isBomber(destroyedTarget) ? 'BOMBER' : 'FIGHTER');
 
         this.sortieKills++;
+        if (this.scramble) this.scramble.waveKills++;
         this.celebrate('FIRST_BLOOD');
         const base = isBomber(destroyedTarget) ? SCORE_VALUES.BOMBER : SCORE_VALUES.FIGHTER;
         this.payKill(destroyedTarget.position, base, splashLine(this.sortieKills), destroyedTarget.name);
@@ -3285,11 +3494,15 @@ export class GameLoop {
             ? { text: 'HEAVY DAMAGE - CLEAR THE WAVE TO PATCH THE JET', severity: contextual.severity }
             : contextual;
         if (this.easyMode) hint = easyHint(hint, this.easyTriggerChoice() !== 'NOT_YET');
-        return arbitrateHint(
+        const chosen = arbitrateHint(
             hint,
-            this.training.currentStep?.prompt ?? null,
+            // EASY switched on part way through a checkout: its stick drills
+            // no longer apply (v2.2.0 review).
+            this.easyMode ? null : this.training.currentStep?.prompt ?? null,
             this.currentObjective()
         );
+        // A phone gets the same order in words a thumb can follow.
+        return chosen && this.controlScheme === 'TOUCH' ? { ...chosen, text: touchWording(chosen.text) } : chosen;
     }
 
     // -----------------------------------------------------------------
@@ -3340,7 +3553,11 @@ export class GameLoop {
                         : null,
                     challengeLine: this.challenge && this.scenario.setup.scramble ? challengeLine(this.challenge) : null,
                     textSizeLabel: textSizeSpec(this.textSize).label,
-                    flyStyleLabel: this.easyMode ? 'EASY flying' : 'STANDARD flying'
+                    flyStyleLabel: this.easyMode ? 'EASY flying' : 'STANDARD flying',
+                    // SCRAMBLE's jets follow the fly style: say how many.
+                    lossLine: this.scenario.setup.scramble
+                        ? `Losing all ${this.scrambleLives() === 3 ? 'three' : this.scrambleLives() === 5 ? 'five' : this.scrambleLives()} jets, or the carrier.`
+                        : undefined
                 }
             );
             if (this.helpVisible) this.briefing.drawHelp(this.ctx, w, h, 'FLIGHT');
@@ -3374,6 +3591,7 @@ export class GameLoop {
                     touchReserveTopRight: this.controlScheme === 'TOUCH'
                         ? this.viewWidth - this.touchLayout.menu.x + 10
                         : undefined,
+                    desktopMenuReserve: DESKTOP_MENU_BUTTON_RESERVE / (this.uiZoom || 1),
                     detail: this.hud.hudDensity === 'FIRST_FLIGHT' ? 'BRIEF' : 'FULL'
                 },
                 w, h, this.elapsedSeconds
@@ -3455,6 +3673,7 @@ export class GameLoop {
             throttle: this.physics.throttle,
             hasDesignation: this.tracker.designatedId !== null,
             fireArmed: this.deck.aircraftState === 'AIRBORNE',
+            fireReady: this.deck.aircraftState === 'AIRBORNE' && this.shotIsGood(),
             recoveryOn: this.approachAssist
         });
     }
@@ -3717,8 +3936,12 @@ export class GameLoop {
 
     /** Fly the same sortie again from the deck, straight from the pilot menu. */
     public restartMission() {
+        // A restart is the same fight again - the daily stays the daily, as
+        // FLY AGAIN already did (it used to become an unrecorded random run).
+        const daily = this.isDailyRun;
         this.returnToBriefing();
-        this.confirmBriefing();
+        if (daily) this.startDailySortie();
+        else this.confirmBriefing();
     }
 
     // -----------------------------------------------------------------
@@ -3744,7 +3967,8 @@ export class GameLoop {
     /** The current objective, restated in plain words, for the menu's own panel. */
     public menuObjective(): { title: string; plain: string } {
         const objective = this.currentObjective();
-        return { title: objective.title, plain: plainInstruction(objective.key, objective.title) };
+        const plain = plainInstruction(objective.key, objective.title);
+        return { title: objective.title, plain: this.controlScheme === 'TOUCH' ? touchWording(plain) : plain };
     }
 
     /** ESC, the DOM menu button, and the touch MENU button all call this. */

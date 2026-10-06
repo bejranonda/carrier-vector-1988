@@ -51,6 +51,12 @@ export interface DailyResult {
     mode?: 'SCRAMBLE';
     /** Longest kill chain in the run (SCRAMBLE cards). */
     bestChain?: number;
+    /**
+     * The run was flown on EASY (v2.2.0). EASY has more jets, half damage and
+     * a wider missile cone, so its card says so: a score is never set beside
+     * one flown on STANDARD without the reader knowing.
+     */
+    easy?: boolean;
 }
 
 export type DailyResults = Record<string, DailyResult>;
@@ -119,7 +125,7 @@ export function formatShareCard(result: DailyResult, url = PLAY_URL): string {
         // the longest chain - the three numbers a SCRAMBLE pilot brags about.
         const chain = result.bestChain ?? 0;
         return [
-            `CARRIER VECTOR: 1988 — DAILY SCRAMBLE #${number}`,
+            `CARRIER VECTOR: 1988 — DAILY SCRAMBLE #${number}${result.easy ? ' · EASY' : ''}`,
             `WAVE ${result.wave} · ${result.score.toLocaleString('en-US')} PTS · ${result.rank}`,
             `${kills > 0 ? repeat('●', kills, 10) + '  ' : ''}${kills} splashed · ${chain >= 2 ? `chain x${Math.min(5, chain)}` : 'no chain'} · hull ${Math.round(result.hullRemaining)}%`,
             `attempt ${result.attempts} · ${url}`
@@ -173,7 +179,12 @@ function sanitise(raw: unknown): DailyResults {
             perfectTraps: num(v.perfectTraps),
             hullRemaining: num(v.hullRemaining),
             attempts: num(v.attempts),
-            completed: v.completed === true
+            completed: v.completed === true,
+            // v2.0.0's fields were dropped here, so after a reload a
+            // SCRAMBLE day printed the old deck card ("no trap") whenever
+            // a new attempt did not beat the stored one.
+            ...(v.mode === 'SCRAMBLE' ? { mode: 'SCRAMBLE' as const, bestChain: num(v.bestChain) } : {}),
+            ...(v.easy === true ? { easy: true } : {})
         };
     }
     return out;

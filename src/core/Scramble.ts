@@ -61,7 +61,22 @@ export const SCRAMBLE = {
      * A wave still alive after this long bugs out. A run must never stall on
      * one contact the pilot cannot find or catch.
      */
-    waveTimeoutSeconds: 75
+    waveTimeoutSeconds: 75,
+    /**
+     * Beyond this distance from the boat, bombers are placed off the far
+     * side of the jet from the carrier rather than off its nose - see
+     * `spawnReference`.
+     */
+    bomberOutboundFrom: 2000,
+    /** Escalation bombers come from within this many degrees of that line. */
+    bomberArcDeg: 60,
+    /**
+     * No bomber appears closer to the boat than this, metres. A bomber placed
+     * inside the strike radius hit the carrier on the first tick - an
+     * unavoidable -15% hull (v2.2.0 review: ~8% of escalation waves with the
+     * jet 3.5 km out).
+     */
+    bomberSpawnClear: 2500
 } as const;
 
 /** What the jet launches with. Missiles first - a beginner's first shot should land. */
@@ -77,7 +92,11 @@ export type ScrambleType = 'FIGHTER' | 'BOMBER';
 
 export interface ScrambleSpawn {
     type: ScrambleType;
-    /** Bearing relative to the player's nose, degrees, clockwise. */
+    /**
+     * Bearing, degrees, clockwise: from the player's nose for a fighter; for
+     * a bomber, from the line out from the carrier through the jet (see
+     * `spawnReference`).
+     */
     bearingDeg: number;
     /** Distance from the player, metres. */
     rangeM: number;
@@ -145,7 +164,12 @@ export function scrambleWave(wave: number, seed = 1988, easy = false): ScrambleW
     // everywhere rather than as a wall in front of the nose.
     const offset = rng() * 360;
     for (let i = 0; i < count; i++) {
-        const bearing = ((offset + (360 / count) * i + (rng() - 0.5) * 40 + 540) % 360) - 180;
+        // One draw per bearing either way, so the stream - and every other
+        // contact in the wave - is the same as before bombers got their arc.
+        const jitter = rng() - 0.5;
+        const bearing = i < bombers
+            ? jitter * 2 * SCRAMBLE.bomberArcDeg
+            : ((offset + (360 / count) * i + jitter * 40 + 540) % 360) - 180;
         const range = 2800 + rng() * 1600;
         spawns.push(i < bombers
             ? b(bearing, range, 150 + rng() * 150)
@@ -159,6 +183,31 @@ export function scrambleWave(wave: number, seed = 1988, easy = false): ScrambleW
             ? `WAVE ${n} - EVERYTHING THEY HAVE`
             : `${count} ENEMY PLANES - ${bombers} BOMBER${bombers === 1 ? '' : 'S'} GOING FOR YOUR SHIP`
     };
+}
+
+/**
+ * The heading (radians, 0 = +z, clockwise) a spawn's `bearingDeg` is
+ * measured from (v2.2.0).
+ *
+ * Fighters: the jet's nose, so "behind you" in a brief means behind you.
+ * Bombers: the line from the carrier out through the jet, once the jet is
+ * clear of the boat - so a bomber's run at the carrier comes past the jet
+ * instead of away from it. Measured in v2.1.0, bombers placed off the nose of
+ * a jet that had drifted 8-11 km out with its nose toward home were chased
+ * from behind and never caught - 35% of all stalled wave time on EASY. Next
+ * to the boat (wave 1, straight after launch) the two references agree.
+ */
+export function spawnReference(type: ScrambleType, jet: { x: number; z: number }, jetYaw: number): number {
+    if (type === 'FIGHTER') return jetYaw;
+    return Math.hypot(jet.x, jet.z) >= SCRAMBLE.bomberOutboundFrom ? Math.atan2(jet.x, jet.z) : jetYaw;
+}
+
+/** A bomber's spawn point, pushed out along its bearing from the boat if it is too close. */
+export function keepClearOfBoat(x: number, z: number, minRange: number = SCRAMBLE.bomberSpawnClear): { x: number; z: number } {
+    const r = Math.hypot(x, z);
+    if (r >= minRange) return { x, z };
+    if (r < 1) return { x: 0, z: minRange };
+    return { x: (x / r) * minRange, z: (z / r) * minRange };
 }
 
 /**
@@ -199,6 +248,8 @@ export interface ScrambleCardInput {
     kills: number;
     bestChain: number;
     url: string;
+    /** Flown on EASY: the card says so (v2.2.0). */
+    easy?: boolean;
 }
 
 /**
@@ -211,7 +262,7 @@ export function formatScrambleCard(r: ScrambleCardInput): string {
     const stars = '★'.repeat(Math.max(0, Math.min(3, r.stars))) + '☆'.repeat(3 - Math.max(0, Math.min(3, r.stars)));
     const chain = r.bestChain >= 2 ? ` · chain x${Math.min(5, r.bestChain)}` : '';
     return [
-        `CARRIER VECTOR: 1988 — SCRAMBLE ${stars}`,
+        `CARRIER VECTOR: 1988 — SCRAMBLE${r.easy ? ' · EASY' : ''} ${stars}`,
         `${r.wavesCleared} WAVE${r.wavesCleared === 1 ? '' : 'S'} HELD · ${Math.round(r.score).toLocaleString('en-US')} PTS · ${r.kills} splashed${chain}`,
         `beat it: ${r.url}`
     ].join('\n');

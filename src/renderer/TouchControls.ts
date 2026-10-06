@@ -32,6 +32,11 @@ export interface TouchChromeContext {
     hasDesignation: boolean;
     /** Highlight the fire control while a shot is actually available. */
     fireArmed: boolean;
+    /**
+     * A shot is good right now (v2.2.0): FIRE lights up as if pressed - the
+     * button's own "fire now", in the place the thumb already is.
+     */
+    fireReady?: boolean;
     /** Whether the recovery assist is engaged, to light its button. */
     recoveryOn: boolean;
 }
@@ -75,6 +80,101 @@ function ring(
 
 /** The flight controls: stick, throttle, weapons, target, fire. */
 export function drawTouchControls(
+    ctx: CanvasRenderingContext2D,
+    layout: TouchLayout,
+    context: TouchChromeContext
+) {
+    const { demand } = context;
+    const kit = layout.kit;
+
+    if (kit.flight) drawFlightControls(ctx, layout, context);
+
+    // --- Weapon pills ---
+    const ids: ('GUN' | 'AIM9' | 'BOMB' | 'HARM')[] = ['GUN', 'AIM9', 'BOMB', 'HARM'];
+    const names = ['GUN', 'AIM9', 'MK82', 'HARM'];
+    layout.weapons.forEach((r, i) => {
+        if (!kit.stores[i]) return;
+        const selected = context.selectedWeapon === ids[i];
+        const empty = context.ammo[i] <= 0;
+        const color = empty ? THEME.muted : selected ? THEME.caution : THEME.key;
+
+        ctx.save();
+        noGlow(ctx);
+        ctx.globalAlpha = selected ? ACTIVE_ALPHA : IDLE_ALPHA;
+        plate(ctx, r, {
+            fill: selected ? 'rgba(255,201,77,0.16)' : 'rgba(9,19,25,0.55)',
+            border: color,
+            radius: 5
+        });
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(11, 700);
+        ctx.fillStyle = color;
+        ctx.fillText(names[i], r.x + r.w / 2, r.y + r.h / 2 - 5);
+        ctx.font = font(9, 600);
+        ctx.fillStyle = THEME.muted;
+        ctx.fillText(`${context.ammo[i]}`, r.x + r.w / 2, r.y + r.h / 2 + 8);
+        ctx.restore();
+    });
+
+    // --- Target and fire ---
+    if (kit.target) {
+        ring(ctx, layout.target.cx, layout.target.cy, layout.target.r,
+            context.hasDesignation ? THEME.caution : THEME.key, context.hasDesignation, 'TGT', 10);
+    }
+
+    ring(ctx, layout.fire.cx, layout.fire.cy, layout.fire.r,
+        context.fireArmed ? THEME.alert : THEME.key, demand.firing || context.fireReady === true, 'FIRE', kit.bigFire ? 17 : 12);
+
+    // Chaff: amber and lit the moment a missile is in the air at you, which
+    // is the only moment it is the right button to press.
+    if (kit.chaff) {
+        const chaffColor = context.chaff <= 0 ? THEME.muted : context.missileInbound ? THEME.caution : THEME.key;
+        ring(ctx, layout.chaff.cx, layout.chaff.cy, layout.chaff.r,
+            chaffColor, context.missileInbound && context.chaff > 0, `CHF ${context.chaff}`, 9);
+    }
+
+    // --- Recovery assist ---
+    // Lit when engaged, because "am I being flown home or not" is the whole
+    // question this button answers.
+    if (kit.recover) {
+        const rec = layout.recover;
+        const recColor = context.recoveryOn ? THEME.caution : THEME.key;
+        ctx.save();
+        noGlow(ctx);
+        ctx.globalAlpha = context.recoveryOn ? ACTIVE_ALPHA : IDLE_ALPHA;
+        plate(ctx, rec, {
+            fill: context.recoveryOn ? 'rgba(255,201,77,0.16)' : 'rgba(9,19,25,0.55)',
+            border: recColor,
+            radius: 5
+        });
+        ctx.fillStyle = recColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(10, 700);
+        ctx.fillText('RCVY', rec.x + rec.w / 2, rec.y + rec.h / 2);
+        ctx.restore();
+    }
+
+    // --- Menu ---
+    ctx.save();
+    noGlow(ctx);
+    ctx.globalAlpha = IDLE_ALPHA;
+    plate(ctx, layout.menu, { fill: 'rgba(9,19,25,0.55)', border: THEME.key, radius: 5 });
+    ctx.strokeStyle = THEME.key;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+        const y = layout.menu.y + layout.menu.h / 2 - 7 + i * 7;
+        ctx.moveTo(layout.menu.x + 12, y);
+        ctx.lineTo(layout.menu.x + layout.menu.w - 12, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+/** Throttle track and stick - only when the pilot is the one flying. */
+function drawFlightControls(
     ctx: CanvasRenderingContext2D,
     layout: TouchLayout,
     context: TouchChromeContext
@@ -141,81 +241,6 @@ export function drawTouchControls(
         ring(ctx, origin.x, origin.y, layout.stick.r * 0.42, THEME.key, false);
     }
 
-    // --- Weapon pills ---
-    const ids: ('GUN' | 'AIM9' | 'BOMB' | 'HARM')[] = ['GUN', 'AIM9', 'BOMB', 'HARM'];
-    const names = ['GUN', 'AIM9', 'MK82', 'HARM'];
-    layout.weapons.forEach((r, i) => {
-        const selected = context.selectedWeapon === ids[i];
-        const empty = context.ammo[i] <= 0;
-        const color = empty ? THEME.muted : selected ? THEME.caution : THEME.key;
-
-        ctx.save();
-        noGlow(ctx);
-        ctx.globalAlpha = selected ? ACTIVE_ALPHA : IDLE_ALPHA;
-        plate(ctx, r, {
-            fill: selected ? 'rgba(255,201,77,0.16)' : 'rgba(9,19,25,0.55)',
-            border: color,
-            radius: 5
-        });
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = font(11, 700);
-        ctx.fillStyle = color;
-        ctx.fillText(names[i], r.x + r.w / 2, r.y + r.h / 2 - 5);
-        ctx.font = font(9, 600);
-        ctx.fillStyle = THEME.muted;
-        ctx.fillText(`${context.ammo[i]}`, r.x + r.w / 2, r.y + r.h / 2 + 8);
-        ctx.restore();
-    });
-
-    // --- Target and fire ---
-    ring(ctx, layout.target.cx, layout.target.cy, layout.target.r,
-        context.hasDesignation ? THEME.caution : THEME.key, context.hasDesignation, 'TGT', 10);
-
-    ring(ctx, layout.fire.cx, layout.fire.cy, layout.fire.r,
-        context.fireArmed ? THEME.alert : THEME.key, demand.firing, 'FIRE', 12);
-
-    // Chaff: amber and lit the moment a missile is in the air at you, which
-    // is the only moment it is the right button to press.
-    const chaffColor = context.chaff <= 0 ? THEME.muted : context.missileInbound ? THEME.caution : THEME.key;
-    ring(ctx, layout.chaff.cx, layout.chaff.cy, layout.chaff.r,
-        chaffColor, context.missileInbound && context.chaff > 0, `CHF ${context.chaff}`, 9);
-
-    // --- Recovery assist ---
-    // Lit when engaged, because "am I being flown home or not" is the whole
-    // question this button answers.
-    const rec = layout.recover;
-    const recColor = context.recoveryOn ? THEME.caution : THEME.key;
-    ctx.save();
-    noGlow(ctx);
-    ctx.globalAlpha = context.recoveryOn ? ACTIVE_ALPHA : IDLE_ALPHA;
-    plate(ctx, rec, {
-        fill: context.recoveryOn ? 'rgba(255,201,77,0.16)' : 'rgba(9,19,25,0.55)',
-        border: recColor,
-        radius: 5
-    });
-    ctx.fillStyle = recColor;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = font(10, 700);
-    ctx.fillText('RCVY', rec.x + rec.w / 2, rec.y + rec.h / 2);
-    ctx.restore();
-
-    // --- Menu ---
-    ctx.save();
-    noGlow(ctx);
-    ctx.globalAlpha = IDLE_ALPHA;
-    plate(ctx, layout.menu, { fill: 'rgba(9,19,25,0.55)', border: THEME.key, radius: 5 });
-    ctx.strokeStyle = THEME.key;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < 3; i++) {
-        const y = layout.menu.y + layout.menu.h / 2 - 7 + i * 7;
-        ctx.moveTo(layout.menu.x + 12, y);
-        ctx.lineTo(layout.menu.x + layout.menu.w - 12, y);
-    }
-    ctx.stroke();
-    ctx.restore();
 }
 
 /** The deck screen's single button. */

@@ -5,6 +5,160 @@ All notable changes to Carrier Vector: 1988.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-10-06
+
+**"Second Look."** The owner asked: *validate anything to improve else?* So
+v2.2.0 is a validation release: three independent code reviews of everything
+v2.0-v2.1 added (about 40 findings, every one checked against the code before
+it was fixed), eight-minute balance runs instead of three-minute ones, and a
+phone-first pass for the players v2.1.0 was built for. Evidence:
+[`docs/reviews/v2.2.0/`](docs/reviews/v2.2.0/README.md).
+
+### The fight no longer stalls (#105, #106)
+
+- **Enemy fighters stopped in mid-air.** The steering law blended the
+  velocity toward a vector shorter than the speed, so every turn bled speed
+  for good: after the first head-on pass a MiG fell from 185 m/s to 1-8 m/s
+  and hung a kilometre below the jet until the wave timed out. Measured on
+  EASY: **56% of all stalled wave time.** Fighters now turn at a capped rate
+  (~16°/s, a little better than the player's held bank) and keep their speed,
+  so they come back for another pass. This is the shared AI: every mission's
+  fighters were affected. A south-bound contact also banked the wrong way.
+- **...and then they sat on your tail.** Once they kept their speed, pure
+  pursuit parked MiGs 50-300 m behind an EASY jet - inside missile minimum
+  range, outside the gun cone - for most of a wave (the fixed AI's own stall
+  log). A fighter that closes inside 450 m now breaks off and extends for 4 s,
+  then comes round again: a **strafing pass**, with head-on shots both ways.
+- **On EASY, FIRE NOW outranks "enemy behind you"** - a line that asks
+  nothing of the pilot, and that held the coach for six seconds while a shot
+  sat in the cone. Only a missile in the air (chaff) still outranks it. The
+  stall this caused looked like an AI problem - a MiG circling on the jet's
+  tail - and a break-off rule for tail-sitters was built for it first. Over
+  8-16 seeds per profile that rule made every player worse; it was taken out.
+- **Bombers flew away from the jet.** SCRAMBLE placed them off the nose; a jet
+  that had drifted 8-11 km out, nose toward home, chased them from behind and
+  never closed - **35% of stalled time.** Bombers now come in from the far
+  side of the jet, so their run at the carrier passes it; and none appears
+  within 2.5 km of the boat (one could spawn inside the strike radius and hit
+  the carrier on its first tick).
+- **Measured with `npm run balance`** - 16 seeds a profile, the same harness
+  and seeds on both builds - v2.1.0 -> v2.2.0: EASY holding fire for 8 min,
+  **26.9 -> 39.8 kills**, hull left 73% -> 87%; the STANDARD steering bot for
+  8 min, **5.1 -> 10.0 kills**, runs shot down 16/16 -> 5/16; a relaxed EASY
+  player who fires only when told, 3 min, **9 -> 17.1 kills**. Waves are
+  counted more strictly now (#107) and the count still rose: 8.9 -> 10.3 on
+  EASY.
+
+### Waves mean what they say (#107, #108)
+
+- **CLEARED / HELD / OVER.** A wave let through used to pay like one shot
+  down - ~600 points, a WAVE CLEARED banner, and a step toward the CLEAR WAVE 5
+  star; a run that never fired could earn it and a SUCCESS debrief. Now
+  CLEARED (all shot down) pays the full bonus; HELD (some shot down, the rest
+  reached the ship or turned for home) counts without the speed bonus; OVER
+  (none shot down) does not count. The run carries on either way.
+- **The jets a run allows are fixed when it starts.** Switching EASY off with
+  three of five jets gone ended the run on the spot; switching it on part way
+  still raises the count (the run is then marked EASY).
+
+### Honest scores (#110, #111)
+
+- **EASY is on the record.** A run flown on EASY - or with EASY switched on at
+  any point - says so on its card (`SCRAMBLE · EASY`), on the daily card, in
+  its challenge link (`?c=seed.score.waves.e`; old links still open), on the
+  challenger's briefing (`FLOWN ON EASY`), in the verdict (`(they flew EASY)`)
+  and on the debrief.
+- **A SCRAMBLE day survived a reload** only in name: the stored record lost
+  its mode, and a weaker second attempt printed the old deck card ("no trap")
+  and saved it back that way.
+
+### Phones, for the players v2.1.0 was for (#103, #115, #117, #118, #123)
+
+- **EASY in SCRAMBLE shows one control.** It showed nine - stick, throttle,
+  four weapon pills (two always empty), chaff, target, fire - plus a lit
+  recovery button, while the plane flies itself, nothing fires a missile at
+  the jet and there is no deck to go home to. Now: a FIRE button half as big
+  again, which **lights up when a shot is good**, and the menu. **A tap
+  anywhere on the world fires** too, like a mouse click. STANDARD in SCRAMBLE
+  loses only what SCRAMBLE never uses; deck missions keep everything.
+- **The game speaks to a thumb.** `FIRE NOW - TAP FIRE`, not `PRESS SPACE OR
+  CLICK`; `(LEFT STICK)`, not `(A / D)`; `TAP THE MENU BUTTON`, not `PRESS
+  ESC` - across the coach, the wave briefs, the pause menu and the "having a
+  hard time?" offer.
+- **Text size works on phones.** A phone is never zoomed (that crowded the
+  cockpit), so the setting did nothing there; now LARGE and EXTRA LARGE grow,
+  in place, the three things read in flight - the order strip, the coach line
+  and the banners. On a phone the coach line also moved under the order
+  strip: its old band was the middle of the screen, where the target is.
+- **EASY hides speed and altitude** (numbers its pilot cannot act on) unless
+  the PRO instrument set is chosen.
+- **Share from the debrief.** A tap on the result card opens the phone's share
+  sheet (or copies it) - a tap there used to fly again and throw the card away,
+  so a phone could never send one. "Copied" now appears only once it was.
+- **Upright phones**: the briefing, the fly-style question and the debrief take
+  taps (they ignored every tap, with no prompt); the flight still asks you to
+  turn the phone.
+- **The pause menu fits a phone**: two columns where one does not (MISSION
+  SELECT was off the bottom of an 844 × 390 screen).
+
+### Fixed - big text on laptops (#112, #113)
+
+- **Kill banners vanished at EXTRA LARGE on any laptop window under ~600 px
+  tall**: below a 436 px layout no two-line banner was drawn at all - kills,
+  WAVE, NOT YET, MAYDAY. The newest banner now always gets room.
+- **The first screen collapsed at large text**: the FLY button sat on the
+  phase cards and the options ran through it. The button now sits above every
+  row of options, and the cards show only where they fit.
+
+### Fixed - everything else the reviews found (#109, #114, #116, #119-#124)
+
+- **HIGH: a jet's death carried into the next run** - RESTART during the
+  MAYDAY sequence (or the daily from the menu) began the new run with dead
+  controls, slow motion and a jet already written off.
+- Text size switched the control scheme on large tablets (and with it the
+  autopilot); safe-area insets went stale after a text-size change.
+- EASY: the training checkout hid FIRE NOW for a whole deck sortie; a
+  suppressed stall hint took FIRE NOW with it; the coach still said "come
+  left", "descend into the canyon", "break turn"; the trigger promised a shot
+  with a bomb selected, an empty gun or a ground target locked.
+- A held ENTER answered the once-only fly-style question; a held E flickered
+  EASY; the EASY mouse trigger stuck on after a release over the MENU button.
+- The soundtrack played on in a hidden tab over a frozen game; a hidden tab now
+  pauses the flight.
+- RESTART turned the daily into an unrecorded random run; the debrief said
+  SHOT DOWN when the carrier sank, with a stale "what got you"; VETERAN gave
+  CARRIER DEFENSE wave stars for free; a rewind after a respawn put the new jet
+  on the dead one's path; missiles could re-acquire through a ridge; a corrupt
+  career save could freeze the briefing; the chooser came back every flight
+  with storage blocked; the sim stepped a few times after the debrief opened;
+  highlight glows never drew; `PRESS C TO CHANGE LOOKS` on the one screen where
+  C copies.
+
+### Link preview
+
+- The page described itself as "6-DOF aerodynamics ... zero 3D engines" - and
+  that is what a friend saw when a challenge link was pasted into a chat. The
+  title, description and social cards now speak to players, and carry a
+  1200 × 630 preview image rendered from the game.
+
+### Engineering
+
+- 1,185 tests (was 1,134). Browser harness **66/66** (was 61): EASY's
+  phone controls, tap-anywhere fire, chaff kept in deck missions, an upright
+  phone taking taps.
+- **`npm run balance`**: whole SCRAMBLE runs through the real `GameLoop` with
+  a stub canvas, 16 seeds per profile in a few minutes, `Math.random` seeded
+  per run so any run replays exactly; `TL=1` and `DIAG_WAVE=n` for per-wave
+  logs. It decided the strafing pass and threw out the tail rule.
+- Bundle 305.7 kB (100.8 kB gzip), was 296.2 / 97.1. Zero runtime dependencies.
+
+### Still open
+
+#104 (small labels below the 28 px guideline), #97 (thresholds still
+bot-calibrated, now with 16-seed eight-minute runs behind them), menus on phones are not
+enlarged by the text size (#103, partly) - and, sixth release running, **no
+human playtest**.
+
 ## [2.1.0] — 2026-10-06
 
 **"Every Pilot."** The owner's brief: *players are not professional gamers,

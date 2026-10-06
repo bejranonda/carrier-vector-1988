@@ -57,9 +57,16 @@ export interface CareerLevel {
     span: number;
 }
 
+/** No real career gets near this; a stored value beyond it is corrupt. */
+export const MAX_CAREER_XP = 1e12;
+
 export function careerLevel(xp: number): CareerLevel {
-    const safe = Math.max(0, Number.isFinite(xp) ? xp : 0);
-    let level = 1;
+    const safe = Math.min(MAX_CAREER_XP, Math.max(0, Number.isFinite(xp) ? xp : 0));
+    // Closed form, then nudged for rounding. Stepping up one level at a time
+    // froze the briefing on a corrupt save (v2.2.0 review: XP 1e300 never
+    // returned) - this is drawn every frame.
+    let level = Math.max(1, Math.floor((1 + Math.sqrt(1 + (8 * safe) / CAREER_TUNING.levelStep)) / 2));
+    while (level > 1 && xpForLevel(level) > safe) level--;
     while (xpForLevel(level + 1) <= safe) level++;
     const base = xpForLevel(level);
     const title = level <= CAREER_TITLES.length
@@ -132,7 +139,8 @@ export function loadCareer(): Career {
         const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
         if (!raw) return { xp: 0, runs: 0 };
         const v = JSON.parse(raw) as Record<string, unknown>;
-        const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
+        const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0
+            ? Math.min(MAX_CAREER_XP, Math.floor(x)) : 0);
         return { xp: num(v?.xp), runs: num(v?.runs) };
     } catch {
         return { xp: 0, runs: 0 };

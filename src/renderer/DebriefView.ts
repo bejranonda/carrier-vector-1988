@@ -25,7 +25,7 @@
 import type { CareerLevel } from '../core/Career';
 import { formatLossCause, postMortemTip } from '../core/PostMortem';
 import type { LossCause } from '../core/PostMortem';
-import { THEME, fitText, font, glow, keycap, noGlow, plate } from './Theme';
+import { THEME, fitText, font, glow, halo, keycap, noGlow, plate } from './Theme';
 import type { Rect } from './Theme';
 
 export interface DebriefData {
@@ -35,6 +35,8 @@ export interface DebriefData {
     /** Why it ended, in one line. */
     reason: string | null;
     scenarioName: string;
+    /** Shown beside the mission name, e.g. "FLOWN ON EASY" (v2.2.0). */
+    styleNote?: string;
     cause?: LossCause | null;
     score: number;
     isNewBest: boolean;
@@ -56,6 +58,8 @@ export interface DebriefData {
     nextUnlock: { label: string; starsNeeded: number } | null;
     shareCard?: string | null;
     copied?: boolean;
+    /** What the card button does: the phone's share sheet, or the clipboard. */
+    shareVerb?: 'SHARE' | 'COPY';
     nextUp?: string;
     touch?: boolean;
 }
@@ -66,6 +70,8 @@ export interface DebriefLayout {
     x: number;
     /** Which optional sections fit. */
     show: { cause: boolean; stars: boolean; stats: boolean; xp: boolean; unlock: boolean; share: boolean };
+    /** The share card's plate - a tap on it copies (or shares) the card. */
+    share: Rect | null;
     y: { headline: number; cause: number; stars: number; score: number; stats: number; xp: number; unlock: number; share: number; buttons: number };
     again: Rect;
     missions: Rect;
@@ -134,7 +140,8 @@ export function debriefLayout(w: number, h: number, data?: Pick<DebriefData, 'ou
     return {
         top, width, x, show, y: ys,
         again: { x: bx, y: ys.buttons + 8, w: bw, h: 44 },
-        missions: { x: bx + bw + 16, y: ys.buttons + 8, w: mw, h: 44 }
+        missions: { x: bx + bw + 16, y: ys.buttons + 8, w: mw, h: 44 },
+        share: show.share ? { x: x + 20, y: ys.share, w: width - 40, h: shareHeight(data?.shareCard) - 8 } : null
     };
 }
 
@@ -179,7 +186,8 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
     ctx.fillStyle = THEME.muted;
     ctx.fillText(fitText(ctx, data.reason ?? '', L.width), cx, L.y.headline + 64);
     ctx.font = font(11, 600);
-    ctx.fillText(fitText(ctx, data.scenarioName, L.width), cx, L.y.headline + 82);
+    const nameLine = data.styleNote ? `${data.scenarioName} · ${data.styleNote}` : data.scenarioName;
+    ctx.fillText(fitText(ctx, nameLine, L.width), cx, L.y.headline + 82);
 
     // What got you, and what to do differently.
     if (L.show.cause) {
@@ -303,7 +311,8 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
         ctx.font = font(12, 700);
         if (data.unlocks.length > 0) {
             ctx.fillStyle = THEME.caution;
-            ctx.fillText(fitText(ctx, `UNLOCKED: ${data.unlocks.join(' · ')} - PRESS C TO CHANGE LOOKS`, L.width), cx, L.y.unlock + 18);
+            // C copies the card on this screen; looks change on mission select.
+            ctx.fillText(fitText(ctx, `UNLOCKED: ${data.unlocks.join(' · ')}${data.touch ? '' : ' - C ON MISSION SELECT CHANGES LOOKS'}`, L.width), cx, L.y.unlock + 18);
         } else if (data.nextUnlock) {
             ctx.fillStyle = THEME.muted;
             const n = data.nextUnlock.starsNeeded;
@@ -323,10 +332,15 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
             ctx.fillText(fitText(ctx, line, L.width - 64), cx, L.y.share + 16 + i * 16);
         });
         ctx.textAlign = 'left';
-        const capW = keycap(ctx, L.x + 30, L.y.share + ch - 12, 'C', { size: 10 });
+        // A thumb taps the card; a keyboard has C.
+        const capW = data.touch ? 0 : keycap(ctx, L.x + 30, L.y.share + ch - 12, 'C', { size: 10 }) + 8;
+        const share = data.shareVerb === 'SHARE';
         ctx.font = font(10, 600);
         ctx.fillStyle = data.copied ? THEME.phosphor : THEME.muted;
-        ctx.fillText(data.copied ? 'copied to clipboard' : 'copy result', L.x + 30 + capW + 8, L.y.share + ch - 12);
+        ctx.fillText(
+            data.copied ? (share ? 'shared' : 'copied to clipboard')
+                : data.touch ? (share ? 'tap here to share your result' : 'tap here to copy your result') : 'copy result',
+            L.x + 30 + capW, L.y.share + ch - 12);
         ctx.textAlign = 'center';
     }
 
@@ -347,9 +361,8 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'center';
     };
-    if (primaryPulse(age) > 0) glow(ctx, THEME.phosphor, 6 + 6 * primaryPulse(age));
     button(L.again, 'ENTER', 'FLY AGAIN', true);
-    noGlow(ctx);
+    if (primaryPulse(age) > 0) halo(ctx, L.again, THEME.phosphor, 6 + 6 * primaryPulse(age));
     button(L.missions, 'ESC', 'MISSIONS', false);
     if (data.nextUp && !L.show.share) {
         ctx.font = font(11, 600);

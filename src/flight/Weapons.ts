@@ -121,8 +121,17 @@ export class WeaponsSystem {
     /** How far ahead an in-flight round can re-acquire, metres. */
     public static readonly REACQUIRE_RANGE = 3000;
 
-    /** The nearest live contact in front of a missile's seeker, if any. */
-    public static reacquire(m: { pos: Vector3; vel: Vector3 }, targets: AirborneTarget[]): AirborneTarget | undefined {
+    /**
+     * The nearest live contact in front of a missile's seeker, if any.
+     * `canSee` is the seeker's line of sight: a round must not lock a
+     * contact behind a ridge, the one-way masking hole the designation gate
+     * exists to close (v2.2.0 review).
+     */
+    public static reacquire(
+        m: { pos: Vector3; vel: Vector3 },
+        targets: AirborneTarget[],
+        canSee: (target: AirborneTarget) => boolean = () => true
+    ): AirborneTarget | undefined {
         const speed = Math.hypot(m.vel.x, m.vel.y, m.vel.z) || 1;
         let best: AirborneTarget | undefined;
         let bestDist = WeaponsSystem.REACQUIRE_RANGE;
@@ -134,12 +143,27 @@ export class WeaponsSystem {
             const dist = Math.hypot(dx, dy, dz);
             if (dist >= bestDist || dist < 1) continue;
             const aspect = (dx * m.vel.x + dy * m.vel.y + dz * m.vel.z) / (dist * speed);
-            if (aspect >= WeaponsSystem.REACQUIRE_ASPECT) {
+            if (aspect >= WeaponsSystem.REACQUIRE_ASPECT && canSee(t)) {
                 best = t;
                 bestDist = dist;
             }
         }
         return best;
+    }
+
+    /** No terrain between two points, sampled every 50 m. */
+    public static clearOfTerrain(
+        terrain: { getElevation(x: number, z: number): number },
+        from: Vector3,
+        to: Vector3
+    ): boolean {
+        const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        const steps = Math.max(2, Math.floor(Math.hypot(dx, dy, dz) / 50));
+        for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            if (from.y + dy * t < terrain.getElevation(from.x + dx * t, from.z + dz * t)) return false;
+        }
+        return true;
     }
 
     public bullets: Bullet[] = [];
@@ -521,7 +545,8 @@ export class WeaponsSystem {
             // "misses" that had closed to 3-7 m of an already-dead bomber.
             let target = targets.find(t => t.id === m.targetId && t.isAlive);
             if (!target && m.targetId !== null) {
-                target = WeaponsSystem.reacquire(m, targets);
+                target = WeaponsSystem.reacquire(m, targets,
+                    t => WeaponsSystem.clearOfTerrain(world.terrain, m.pos, t.position));
                 m.targetId = target ? target.id : null;
             }
             const mSpeed = 580; // m/s

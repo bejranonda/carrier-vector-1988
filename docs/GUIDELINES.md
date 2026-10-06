@@ -611,3 +611,41 @@ rendered frames. Five suites of source-reading review had missed all of them.
 - **Measure each player profile you design for.** EASY was not accepted until
   a scripted relaxed player did measurably better with it (6 -> 11-12 kills
   in 3 minutes); the first version did not, and the bot said why.
+
+## 17. Rules added in v2.2.0 (each one encodes a bug that already shipped)
+
+- **A steering law turns the velocity; it never brakes it.** Blending a
+  velocity toward a shorter vector bled the speed out of every enemy fighter
+  until they hung in the air (#105). Normalise the direction, rotate at a
+  capped rate, and hold the speed the contact was given - and test the speed
+  through a reversal, not just the heading.
+- **A reward is earned by the action it names.** "Wave cleared" paid out for
+  bombers the player let through (#107). If the player did not do it, the
+  banner must not say they did, and the points must not pay as if they had.
+- **A run's rules are fixed when the run starts.** A setting changed mid-run
+  may make the run kinder; it may never end it (#108).
+- **Every way into a run resets the run.** Airborne starts skipped the deck's
+  `beginSortie`, so a death carried into the next run (#109). Reset run state
+  in the one place every start passes through.
+- **A loader keeps every field the type has.** A field added to a stored
+  record must be added to its `sanitise` in the same change (#110), with a
+  round-trip test.
+- **A score that can be compared says how it was made** (#111).
+- **A control that does nothing here is not drawn - and is not a hit target**
+  (#117). Hidden controls become open world, never invisible traps.
+- **Words name the input the player has.** "PRESS SPACE" to a thumb is an
+  order nobody can follow (#118). Route every instruction through
+  `touchWording` on touch.
+- **Test layouts at every size the zoom produces, not just device sizes.**
+  The zoom created 400-490 px layouts nobody had drawn, and banners, the first
+  screen and the pause menu all broke there (#112-#114).
+- **Detection in CSS px, layout in layout px - never mixed** (#116).
+- **Anything that runs on its own timer stops when the tab hides** (#122).
+- **Balance and AI changes are decided by `npm run balance`, one change at a
+  time.** Run every profile, with the change switched off and on, before
+  believing it; a single browser run is for looking, not deciding. v2.2.0
+  shipped two fixes for one stall in one build, and only measuring them
+  apart showed that one of them made every profile worse (#105).
+- **A coach line that asks for nothing never hides one that asks for
+  something.** "The plane will turn to fight" sat over FIRE NOW for a minute
+  at a time (#119).

@@ -344,8 +344,10 @@ const SCRAMBLE_MODE: ScenarioDef = {
         {
             n: '3',
             title: 'HOLD THE SKY',
-            body: 'Every wave you clear rearms and patches the jet. Bombers that reach the boat hurt it. Three jets.',
-            keys: [['X', 'chaff'], ['ESC', 'menu']]
+            body: 'Every wave you clear rearms and patches the jet. Bombers that reach the boat hurt it.',
+            // No missile is ever fired at the jet in SCRAMBLE, so chaff was a
+            // key to learn for nothing; EASY is the one a struggling pilot needs.
+            keys: [['E', 'easy flying'], ['ESC', 'menu']]
         }
     ],
     lossCondition: 'Losing all three jets, or the carrier.',

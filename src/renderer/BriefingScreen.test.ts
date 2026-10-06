@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SCENARIOS } from '../core/Scenarios';
-import { briefingHitAreas, briefingSecondaryOptions } from './BriefingScreen';
+import { briefingHitAreas, briefingOptionRows, briefingSecondaryOptions } from './BriefingScreen';
 
 
 describe('briefingHitAreas', () => {
@@ -122,5 +122,37 @@ describe('briefing accessibility options (v2.1.0)', () => {
         });
         expect(opts[1]).toEqual(['T', 'text size: LARGE']);
         expect(opts[2]).toEqual(['E', 'EASY flying']);
+    });
+});
+
+describe('briefing at large text on a laptop window (v2.2.0 review)', () => {
+    // Layout sizes the UI zoom produces: CSS size over 1.25 or 1.5.
+    const LAYOUTS: [number, number][] = [
+        [720, 433], [853, 480], [1024, 433], [720, 400], [960, 600], [1440, 900], [1280, 720], [683, 400]
+    ];
+    const firstRun = briefingSecondaryOptions({
+        pacingLabel: 'ARCADE pacing', threatLabel: 'REGULAR threat', mapChangeable: true,
+        showPaletteHint: true, showStickHint: true, textSizeLabel: 'EXTRA LARGE', flyStyleLabel: 'EASY flying'
+    });
+
+    it('keeps the FLY button clear of every row of options under it', () => {
+        for (const [w, h] of LAYOUTS) {
+            const rows = briefingOptionRows(firstRun, w).length;
+            const a = briefingHitAreas(w, h, SCENARIOS.length, true, rows);
+            const firstRowY = (rows > 1 ? h - 20 : h - 30) - (rows - 1) * 19;
+            expect(a.cta.y + a.cta.h, `${w}x${h}, ${rows} rows`).toBeLessThanOrEqual(firstRowY - 10);
+        }
+    });
+
+    it('shows the phase cards only where they and the loss line clear the button', () => {
+        for (const [w, h] of LAYOUTS) {
+            const a = briefingHitAreas(w, h, SCENARIOS.length, true, briefingOptionRows(firstRun, w).length);
+            if (a.cards) {
+                expect(a.cards.y + a.cards.h, `${w}x${h}`).toBeLessThan(a.cta.y);
+                expect(a.cards.lossY, `${w}x${h}`).toBeLessThan(a.cta.y);
+            }
+        }
+        // A roomy desktop keeps them.
+        expect(briefingHitAreas(1440, 900, SCENARIOS.length, true, 2).cards).not.toBeNull();
     });
 });

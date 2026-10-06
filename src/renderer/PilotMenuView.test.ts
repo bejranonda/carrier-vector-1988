@@ -46,3 +46,40 @@ describe('pilotMenuLayout with a long menu (v2.1.0)', () => {
         expect(pilotMenuLayout(1440, 900, 8).compact).toBe(false);
     });
 });
+
+describe('pilotMenuLayout on a landscape phone (v2.2.0 review)', () => {
+    const phones: [number, number][] = [[844, 390], [667, 375], [640, 360], [932, 430]];
+
+    it('keeps every row of the longest menu on screen and inside the panel', () => {
+        for (const [w, h] of phones) {
+            for (const n of [9, 10, 11]) {
+                const l = pilotMenuLayout(w, h, n);
+                const footerTop = l.panel.y + l.panel.h - 34;
+                for (const r of l.items) {
+                    expect(r.y + r.h, `${w}x${h}, ${n} items`).toBeLessThanOrEqual(footerTop + 1);
+                    expect(r.x + r.w, `${w}x${h}`).toBeLessThanOrEqual(l.panel.x + l.panel.w);
+                    expect(r.h, `${w}x${h}: thumb-sized`).toBeGreaterThanOrEqual(24);
+                }
+                expect(l.panel.y + l.panel.h).toBeLessThanOrEqual(h);
+            }
+        }
+    });
+
+    it('never overlaps two rows, in one column or two', () => {
+        for (const [w, h] of [...phones, [1440, 900] as [number, number]]) {
+            const l = pilotMenuLayout(w, h, 10);
+            for (let i = 0; i < l.items.length; i++) {
+                for (let j = i + 1; j < l.items.length; j++) {
+                    const a = l.items[i], b = l.items[j];
+                    const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+                    expect(overlap, `${w}x${h}: ${i} and ${j}`).toBe(false);
+                }
+            }
+        }
+    });
+
+    it('stays one column wherever one column fits', () => {
+        const l = pilotMenuLayout(1440, 900, 10);
+        expect(new Set(l.items.map(r => r.x)).size).toBe(1);
+    });
+});

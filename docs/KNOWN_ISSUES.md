@@ -1,6 +1,6 @@
 # Known Issues & Deliberate Trade-offs
 
-## Status at v2.1.0
+## Status at v2.2.0
 
 **Open, deliberately:**
 
@@ -10,8 +10,8 @@
 | 41 | No key-remapping screen (P2) | Layout independence shipped; build the screen only if feedback asks |
 | 82 | SIM approach speed is clamped | SIM's own airframe needs a pass; see below |
 | — | Deck loop depth (review R7) | Now off a beginner's path; deepening it is an owner's design call |
-| 97 | SCRAMBLE difficulty and medal thresholds are calibrated against a bot, not people | Needs the pilot-customer round; see below |
-| 103 | Phones cannot enlarge text | The zoom floor protects the touch layout; needs a phone-specific type scale |
+| 97 | SCRAMBLE difficulty and medal thresholds are calibrated against bots, not people | Eight-minute runs now behind them; needs the pilot-customer round |
+| 103 | Phone menus do not grow with the text size | In-flight words do since v2.2.0; the briefing and debrief would need their own phone type scale |
 | 104 | Small labels stay below the Xbox guideline's 28 px-at-1080p even at EXTRA LARGE | A full type-scale pass, not a zoom |
 | — | A `TURN_TO_DRONE` training step and a "ghost-lead flies the whole climb" autopilot | Less urgent now that new pilots start in SCRAMBLE; still open |
 
@@ -30,6 +30,14 @@ climb-out, an "IN RANGE" call at twice the missile's reach, the deck title
 under the menu button, stacked kill banners, missiles fired at empty sky,
 ripple-fired missiles flying on blind, a first kill gated behind four instructions, and a
 stale share card. Evidence: [`reviews/v2.0.0/`](reviews/v2.0.0/README.md).
+
+**Closed in v2.2.0:** #105–#124, found by three code reviews and the
+eight-minute balance runs - enemy fighters that stopped in mid-air, bombers
+that flew away from the jet, waves that paid when let through, a death that
+carried into the next run, EASY runs that did not say so, nine phone controls
+where EASY needs one, a coach that spoke keyboard to phones, banners and a
+first screen that collapsed at large text, and more.
+Evidence: [`reviews/v2.2.0/`](reviews/v2.2.0/README.md).
 
 **Closed in v2.1.0:** #98–#102, found while building EASY flying and the
 text-size zoom - a fly-style question whose keys did not act, an EASY coach
@@ -1142,11 +1150,13 @@ later, unrelated debrief. Every run now starts without one.
 
 ## 97. SCRAMBLE's difficulty and the medal thresholds are bot-calibrated **[Open]**
 
-A scripted steering bot (bang-bang keys, no throttle use) reaches wave 4-5 in
-three to four minutes and loses jets mainly to waves 3-5 fighters. That is a
-floor, not a player. Thresholds such as "SCORE 8,000" and "CLEAR WAVE 10" are
-estimates from the scoring tables. Calibrate both against the pilot-customer
-round's recordings before tuning further.
+v2.2.0 replaced three-minute estimates with eight-minute runs on the fixed AI
+(#105, #106), 16 seeds each (`TL=1 npm run balance`). Holding FIRE on EASY,
+CLEAR WAVE 5 came at a median 1:46 (16 of 16 runs), SCORE 8,000 at 2:26 (16
+of 16) and CLEAR WAVE 10 at 7:16 (15 of 16 inside eight minutes). The crude
+STANDARD steering bot reached CLEAR WAVE 5 at a median 5:34 (16 of 16) and
+neither of the others (best score 5,053). That is still a floor, not a player:
+calibrate against the pilot-customer round's recordings before tuning further.
 
 ## 98. The fly-style question's keys highlighted a card but did not choose it **[Fixed in 2.1.0]**
 
@@ -1182,13 +1192,17 @@ EASY forces the autopilot, so the autopilot switch was a menu item with no
 effect - against the menu's own rule. Hidden while EASY is on; TAKE ME HOME
 stays, because it still does something.
 
-## 103. Phones cannot enlarge text **[Open]**
+## 103. Phones cannot enlarge text **[Mostly fixed in 2.2.0]**
 
 Text size is a UI zoom that never lays a screen out below 720 × 400, so a
-landscape phone (e.g. 844 × 390) is never zoomed: at 1.08 the objective strip
-already crowded the instruments. Phone type is larger relative to the screen
-than desktop type, but AARP finds 84% of players over 50 play on phones, so
-this matters. Needs a touch-specific type scale rather than a zoom.
+landscape phone was never zoomed (at 1.08 the objective strip already crowded
+the instruments) - and the setting did nothing at all on the device AARP finds
+84% of players over 50 use. Since v2.2.0 a phone (touch, under 500 CSS px
+tall; `Theme.textScaling`) is still not zoomed, but LARGE and EXTRA LARGE grow
+the order strip, the coach line and the banners in place (up to 1.4×), the
+compass gives way to the grown strip, and the coach line moved under the strip
+(its old band was the middle of the screen, where the target is). **Still
+open:** the briefing and the debrief on a phone do not grow.
 
 ## 104. Small labels are below the 28 px-at-1080p guideline even at EXTRA LARGE **[Open]**
 
@@ -1197,4 +1211,187 @@ figure) as a *minimum*. At EXTRA LARGE the game's 10 px labels become 15 px,
 its headings 30-60 px. Meeting the guideline for every label needs a type-scale
 pass (fewer, larger labels), not a bigger zoom - the zoom is already at the
 smallest layout every screen is tested at.
+
+## 105. Enemy fighters stopped in mid-air **[Fixed in 2.2.0]**
+
+`EnemyAI.steerToward` blended the velocity straight toward `direction × speed`
+with the dogfight's climb component halved. A straight-line blend between two
+vectors is shorter than either, a reversal after a head-on pass shrinks the
+vector almost to nothing before it swings round, and the speed was re-read
+from the shrunken vector every frame - so every turn bled speed for good.
+Measured in SCRAMBLE: fighters fell from 185 m/s to 1-8 m/s within half a
+minute of their first pass and hung a kilometre below the jet, out of reach,
+until the wave timed out - 56% of all stalled wave time on EASY. Fighters now
+turn about an axis at a capped rate (`AI_TUNING.MAX_TURN_RATE`, ~16°/s) and
+hold their own speed (`aiCruiseSpeed`). The shared AI: every mission was
+affected. The bank cue also read the world x axis, banking a south-bound
+contact the wrong way. Four regression tests fail on the old law.
+
+The stall log on the fixed AI then showed the next wall: with their speed
+kept and a better turn than the jet's, fighters sat 50-300 m on an EASY jet's
+tail - inside missile minimum range, outside the gun cone. A fighter that
+closes inside `EXTEND_RANGE` (450 m) now extends straight, guns cold, for
+`EXTEND_SECONDS` (4 s) before coming round again: a strafing pass.
+
+A second rule - break off after 4 s anywhere in the jet's rear half inside
+1.2 km - was added after a headless run showed a MiG holding 300-700 m on the
+tail of a circling EASY jet for a minute, and removed after `npm run balance`
+measured it with the rule switched on and off: worse for every profile (EASY
+hold-fire 39.9 -> 33.2 kills in 8 min, STANDARD runs ending early 2/16 ->
+6/16, relaxed EASY 18.1 -> 12.5 kills in 3 min). That minute was the coach's
+fault, not the MiG's (#119): FIRE NOW had been hidden the whole time.
+
+## 106. SCRAMBLE bombers flew away from the jet, or appeared on the boat **[Fixed in 2.2.0]**
+
+Bombers were placed off the jet's nose and fly to the carrier. A jet that had
+drifted 8-11 km out with its nose toward home chased them from behind at
+160-190 m/s and never closed (35% of stalled time on EASY). Bombers are now
+placed off the far side of the jet from the carrier (`spawnReference`), so
+their run passes it; escalation bombers come from within 60° of that line;
+and none appears within 2.5 km of the boat (`keepClearOfBoat` - one could
+spawn inside the strike radius and cost 15% hull on its first tick). Seeds
+give different waves than in v2.1.0: old challenge links open, on new waves.
+
+## 107. A wave let through paid like a wave shot down **[Fixed in 2.2.0]**
+
+A bomber that reached the boat was removed like a kill, so the wave ended in
+the normal payout: `WAVE CLEARED`, the wave bonus with its speed bonus (~600
+points on wave 1 for never firing), and a step toward CLEAR WAVE 5. A run
+that never fired could earn the first star and a SUCCESS debrief. Waves now
+end CLEARED (all shot down: full bonus), HELD (some shot down: counts, no
+bonus) or OVER (none: does not count).
+
+## 108. Switching EASY mid-run changed the jets the run allowed **[Fixed in 2.2.0]**
+
+The allowance was re-read from the fly style every tick: an EASY pilot with
+three of five jets gone who switched EASY off ended the run at once (and read
+"All three jets shot down."). It is fixed when the run starts; switching EASY
+on part way raises it (the run is then marked EASY, #111).
+
+## 109. A jet's death carried into the next run **[Fixed in 2.2.0]**
+
+`applyScenario` never cleared the MAYDAY sequence or the loss cause - only the
+deck's `beginSortie` did. RESTART during the 2.6 s death sequence, the daily
+from the menu, or any airborne start began the new run with dead controls, the
+world in slow motion, and jet 1 written off on arrival. Found by review;
+regression test fails without the fix.
+
+## 110. A SCRAMBLE day lost its mode on reload **[Fixed in 2.2.0]**
+
+`DailySortie.sanitise` rebuilt each stored day without v2.0.0's `mode` and
+`bestChain`. After a reload, a weaker attempt kept the stored record - which
+then printed the old deck card ("no trap") and was saved back that way.
+
+## 111. Nothing said a run was flown on EASY **[Fixed in 2.2.0]**
+
+EASY has five jets, half damage and a 90° missile cone, so its scores are
+easier to reach - but cards, challenge links, the daily and the debrief did not
+say so. Now: `SCRAMBLE · EASY` on cards, `· EASY` on the daily card, `.e` on
+challenge links, `FLOWN ON EASY` on the challenger's briefing and the debrief,
+and `(they flew EASY)` / `(you flew EASY)` in the verdict.
+
+## 112. Banners vanished on short screens at large text **[Fixed in 2.2.0]**
+
+The banner stack started at the screen's centre + 118 px and stopped where
+the room ended - including for the newest banner. Below a 436 px layout (any
+laptop window under ~600 px tall at EXTRA LARGE) no two-line banner was drawn:
+kills, WAVE, NOT YET, MAYDAY. The newest banner now always gets room; on a
+phone with a coach line up, the stack starts below it.
+
+## 113. The briefing collapsed at large text on a laptop window **[Fixed in 2.2.0]**
+
+At 1080 × 650 and EXTRA LARGE (a 720 × 433 layout) the FLY button sat on the
+phase cards, the options wrapped to three rows with the first through the
+button, and the loss line printed through both. `briefingHitAreas` now places
+the button above every row of options (`briefingOptionRows`) and shows the
+cards only where they and the loss line clear it.
+
+## 114. The pause menu ran off a landscape phone **[Fixed in 2.2.0]**
+
+#101's compression floored rows at 24 px, so ten items needed 490 px: on an
+844 × 390 phone MISSION SELECT sat below the screen. Where one column does not
+fit, the rows now go into two.
+
+## 115. A phone could not share its result **[Fixed in 2.2.0]**
+
+Any tap on the debrief outside MISSIONS flew again - including a tap on the
+card labelled "copy result", which then threw the card away; copying was only
+on the C key. A tap on the card now opens the phone's share sheet (or copies
+it), and "copied" appears only once the clipboard took it.
+
+## 116. Text size changed the control scheme **[Fixed in 2.2.0]**
+
+Device detection was given the zoomed layout size: a 1366 × 1024 touch tablet
+read as a keyboard device at NORMAL and as a touch device at LARGE - switching
+on the touch defaults (autopilot, recovery) with it. Safe-area insets were
+converted for the old zoom after a text-size change. Both now use CSS px.
+
+## 117. EASY on a phone showed nine controls where it needs one **[Fixed in 2.2.0]**
+
+Stick, throttle, four weapon pills (two always empty in SCRAMBLE), chaff (no
+missile is ever fired at the jet in SCRAMBLE), target and FIRE - plus a lit
+RCVY button with no deck to recover to, whose tap forced the stored assist to
+AUTO. Touch layouts now carry a kit (`touchKitFor`): EASY in SCRAMBLE shows a
+bigger FIRE and the menu, and a tap anywhere fires; hidden controls are not hit
+targets. L, the touch recovery button and the BOAT cue do nothing in SCRAMBLE.
+
+## 118. The coach spoke keyboard to phones **[Fixed in 2.2.0]**
+
+`FIRE NOW - PRESS SPACE OR CLICK`, `(HOLD A OR D)`, `PRESS ESC AND TURN ON
+EASY FLYING` - on a phone. `Controls.touchWording` rewrites them (`TAP FIRE`,
+`(STICK HARD LEFT OR RIGHT)`, `TAP THE MENU BUTTON`) wherever a phone reads
+them: the coach, the wave briefs, the pause menu's restated order, the offer.
+
+## 119. EASY still asked for skills it removes **[Fixed in 2.2.0]**
+
+Outside SCRAMBLE the EASY coach passed through "come left and return to the
+boat", "descend into the canyon", "break behind a ridge"; `GUNS TRACKING`
+said `BREAK TURN`; the training checkout's prompt outranked FIRE NOW for a
+whole CARRIER DEFENSE sortie; a dropped stall hint took FIRE NOW with it; and
+"enemy behind you - the plane will turn to fight" (which asks for nothing)
+held the coach while a shot sat in the cone - FIRE NOW now outranks every
+line but a missile in the air. That last one was found by `npm run balance`:
+a scripted relaxed EASY player (fires only when told) stalled for a minute a
+wave; with the fix it went from 8 to 17.1 kills in three minutes (16 seeds).
+The old unit test fed a shortened coach string; the new one feeds every real
+one.
+
+## 120. The EASY trigger promised shots it would not take **[Fixed in 2.2.0]**
+
+With a bomb or HARM selected it still showed FIRE NOW for a MiG (and SPACE
+dropped the bomb); with an empty gun it offered the cannon; with a ground
+target locked it said "wait for FIRE NOW", which could never come.
+
+## 121. Held keys and a stuck mouse trigger **[Fixed in 2.2.0]**
+
+ENTER held from the briefing auto-repeated through the once-only fly-style
+question; a held E or T flickered EASY and the text size; EASY's mouse trigger
+stayed on after a release over the MENU button or a right-click, across runs.
+
+## 122. Music played on in a hidden tab **[Fixed in 2.2.0]**
+
+The soundtrack's scheduler is a timer, stopped only from the frame loop - which
+stops when the tab is hidden. A hidden tab now stops the music and pauses a
+live flight, so a pilot who took a call comes back to the menu.
+
+## 123. An upright phone ignored every tap on the menus **[Fixed in 2.2.0]**
+
+The rotate prompt swallowed input on the briefing, the fly-style question and
+the debrief - which draw fine upright - with no prompt shown. Only a flight
+now waits for the phone to turn.
+
+## 124. Smaller findings **[Fixed in 2.2.0]**
+
+RESTART turned the daily into an unrecorded random run; the SCRAMBLE debrief
+said SHOT DOWN when the carrier sank, with a stale cause; VETERAN gave CARRIER
+DEFENSE wave stars for free (medals now count waves from the run's start);
+a rewind after a respawn put the new jet on the dead one's path, and was
+refused on EASY with a stored MANUAL; missile re-acquisition ignored terrain; a
+corrupt career save could freeze the briefing (level is now closed-form) and
+prototype keys counted as medal stars; the chooser came back before every
+flight with storage blocked; the simulation stepped a few times after the
+debrief opened; highlight glows never drew; `PRESS C TO CHANGE LOOKS` on the
+one screen where C copies; the deck's menu-button reserve ignored the zoom;
+SCRAMBLE's loss line and third card said "three jets" on EASY and offered
+chaff.
 

@@ -118,7 +118,8 @@ export function loadMedals(): MedalRecords {
         if (typeof parsed !== 'object' || parsed === null) return {};
         const out: MedalRecords = {};
         for (const [id, v] of Object.entries(parsed as Record<string, unknown>)) {
-            if (id in MEDALS && typeof v === 'number' && Number.isFinite(v)) {
+            // Own keys only: `id in MEDALS` let "constructor" through as stars.
+            if (Object.prototype.hasOwnProperty.call(MEDALS, id) && typeof v === 'number' && Number.isFinite(v)) {
                 out[id as ScenarioId] = Math.max(0, Math.floor(v)) & 0b111;
             }
         }

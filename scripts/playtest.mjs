@@ -408,12 +408,24 @@ async function phoneFlight(page, shot, label) {
     const easy = await page.evaluate(() => window.__game.easyMode);
     check(`${label}: tapping EASY turns EASY flying on`, easy === true, easy);
 
-    const before = await page.evaluate(() => window.__game.physics.loadout.chaff);
-    const chaff = await page.evaluate(() => window.__game.touchLayout.chaff);
-    await page.tap('#gameCanvas', { position: { x: chaff.cx, y: chaff.cy } });
+    // v2.2.0: EASY in SCRAMBLE needs one control. No stick, no pills, no
+    // chaff (nothing fires a missile at the jet), no recovery button.
+    const kit = await page.evaluate(() => window.__game.touchLayout.kit);
+    check(`${label}: EASY in SCRAMBLE shows one big FIRE and nothing it does not use`,
+        kit.flight === false && kit.chaff === false && kit.recover === false && kit.bigFire === true
+        && kit.stores.every(v => v === false), kit);
+    // ...and a thumb anywhere on the world is the trigger.
+    for (let i = 0; i < 40; i++) {
+        const ready = await page.evaluate(() => window.__game.easyTriggerChoice() !== 'NOT_YET');
+        if (ready) break;
+        await page.waitForTimeout(150);
+    }
+    const rails = await page.evaluate(() => window.__game.physics.loadout.sidewinders);
+    await page.tap('#gameCanvas', { position: { x: vp.width * 0.18, y: vp.height * 0.7 } });
     await page.waitForTimeout(300);
-    const after = await page.evaluate(() => window.__game.physics.loadout.chaff);
-    check(`${label}: the thumb chaff button releases chaff (#44)`, after === before - 1, { before, after });
+    const railsAfter = await page.evaluate(() => window.__game.physics.loadout.sidewinders);
+    check(`${label}: on EASY a tap anywhere fires when a shot is good`, railsAfter === rails - 1, { rails, railsAfter });
+    await shot('02b-easy-controls');
 
     // The deck still works on a phone: training sortie, FLY, LAUNCH.
     await page.evaluate(() => { window.__game.returnToBriefing(); window.__game.selectScenarioById('TRAINING_SORTIE'); });
@@ -429,15 +441,32 @@ async function phoneFlight(page, shot, label) {
     await shot('04-cockpit');
     s = await snapshot(page);
     check(`${label}: tapping LAUNCH puts the jet in the air`, s.deck === 'AIRBORNE', s.deck);
+
+    // A deck mission keeps its countermeasure: SAMs fire missiles here.
+    const before = await page.evaluate(() => window.__game.physics.loadout.chaff);
+    const chaff = await page.evaluate(() => window.__game.touchLayout.chaff);
+    await page.tap('#gameCanvas', { position: { x: chaff.cx, y: chaff.cy } });
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => window.__game.physics.loadout.chaff);
+    check(`${label}: the thumb chaff button releases chaff in a deck mission (#44)`, after === before - 1, { before, after });
 }
 
 await session('phone-landscape', { width: 844, height: 390 }, true, (page, shot) => phoneFlight(page, shot, 'phone'));
 await session('phone-small', { width: 640, height: 360 }, true, (page, shot) => phoneFlight(page, shot, 'small phone'));
 
 await session('phone-portrait', { width: 390, height: 844 }, true, async (page, shot) => {
-    await shot('01-rotate');
-    const rotating = await page.evaluate(() => window.__game.awaitingRotation);
-    check('phone portrait asks the player to rotate', rotating === true, rotating);
+    await shot('01-briefing-upright');
+    // v2.2.0: the menus work upright - a tap on FLY used to be swallowed
+    // with no prompt. The flight itself still asks for landscape.
+    await page.tap('#gameCanvas', { position: { x: 195, y: 844 - 60 } });
+    await page.waitForTimeout(400);
+    const asked = await page.evaluate(() => window.__game.flyStyleChooserOpen);
+    check('phone portrait: the briefing takes a tap upright', asked === true, asked);
+    await page.evaluate(() => window.__game.chooseFlyStyle('EASY'));
+    await page.waitForTimeout(400);
+    await shot('02-rotate');
+    const rotating = await page.evaluate(() => window.__game.phase === 'ACTIVE' && window.__game.awaitingRotation);
+    check('phone portrait: the flight asks the player to rotate', rotating === true, rotating);
 });
 
 // ---------------------------------------------------------------------

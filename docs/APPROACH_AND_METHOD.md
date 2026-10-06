@@ -718,3 +718,44 @@ method, which is now the project's default for any audience question:
    multiplier is enough for big text" (overlaps at 150%), and "EASY obviously
    helps" (it did not, until the cone changed). Each correction is kept in the
    review suite on purpose.
+
+## 15. Validate by Adversarial Review and Long Runs (v2.2.0)
+
+v2.2.0 was asked a short question - *validate anything to improve else?* - and
+answered it with four instruments, each finding things the others could not:
+
+1. **Three independent code reviews in parallel**, split by area (game loop
+   and input; core logic; rendering and audio), each told to prove a finding
+   with a concrete failure scenario and, where cheap, a throwaway test against
+   the real modules. About 40 findings came back. **Every one was re-read at
+   its code site before it was fixed**, and the serious ones got a regression
+   test that was run against the old code to confirm it fails there.
+2. **Long runs, not short ones.** Three-minute bot runs had looked healthy.
+   Eight-minute runs showed ~40% of an EASY run spent on one or two
+   stragglers until the wave timed out - invisible at three minutes.
+3. **A diagnostic bot for the symptom.** Instead of tuning timeouts, a bot
+   logged every live contact relative to the jet whenever 12 s passed without
+   a kill. The log showed the cause in the physics (fighters at 1-8 m/s) and
+   in the geometry (bombers flying away) - neither was a tuning problem.
+4. **Frames at the sizes the settings create.** The zoom makes 400-490 px
+   layouts that no device has; rendering the first screen at 1080 × 650 and
+   EXTRA LARGE found it collapsed, which no unit test had asserted.
+
+5. **Many seeds, not one run.** A single eight-minute browser run is one
+   draw from a noisy distribution - one said the strafing pass made EASY
+   worse. A headless simulation of the real game loop (stub canvas, no
+   rendering, ~50-100× real time; now `npm run balance`) ran 8-16 seeds per
+   variant in a few minutes and said the opposite, with a spread to show how
+   sure; its per-wave log then found the coach hiding FIRE NOW. Decide
+   balance on distributions; use single runs only to look.
+6. **One change per measurement.** The per-wave log showed two things at
+   once - a MiG circling on the jet's tail, and FIRE NOW hidden - and both
+   got a fix in the same build. Switched on and off separately, the tail
+   rule made every profile worse; the coach fix alone did all the good. Two
+   fixes measured together are one fix measured.
+
+Three rules came out of it. *Fix the cause the measurement names, then
+measure the same thing again* (the v2.2.0 AI took the STANDARD steering bot
+from 5.1 to 10.0 kills in the same eight minutes, 16-seed
+means). *Switch each change off once before believing it.* And *a finding is
+not a fix until a test that fails on the old code passes on the new*.

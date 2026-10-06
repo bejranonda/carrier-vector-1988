@@ -57,12 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleResize = () => {
         game.resize(window.innerWidth, window.innerHeight);
-        // Insets are CSS px; the layouts work in zoomed layout px.
-        const insets = readInsets();
-        const z = game.uiZoom || 1;
-        game.applyControlScheme({
-            top: insets.top / z, right: insets.right / z, bottom: insets.bottom / z, left: insets.left / z
-        });
+        // CSS px: the game converts them for the text size in force.
+        game.applyControlScheme(readInsets());
     };
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -90,16 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const key = normalizeKey(e.key, e.code);
         game.inputState[key] = true;
 
-        // --- Global overlay / system keys ---
-        if (key === 'h' || key === 'f1') {
-            e.preventDefault();
-            if (game.menuOpen) game.closeMenu();
-            game.helpVisible = !game.helpVisible;
-            return;
-        }
-        // The first-run "how would you like to fly?" screen owns every key.
+        // The first-run "how would you like to fly?" screen owns every key -
+        // H included, which used to open the help screen invisibly behind it.
         if (game.flyStyleChooserOpen) {
             e.preventDefault();
+            // A held key must not answer a question asked once: ENTER held
+            // from the briefing used to auto-repeat straight through it.
+            if (e.repeat) return;
             // The keycap on a card means "this one, now" - one press, not
             // highlight-then-confirm. Arrows move; ENTER takes the highlight.
             if (key === '1') game.chooseFlyStyle('EASY');
@@ -109,6 +102,14 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (key === 't') game.cycleTextSize();
             else if (key === 'enter' || key === ' ') game.chooseFlyStyle(game.flyStyleChoice);
             else if (key === 'escape') game.closeFlyStyleChooser();
+            return;
+        }
+
+        // --- Global overlay / system keys ---
+        if (key === 'h' || key === 'f1') {
+            e.preventDefault();
+            if (game.menuOpen) game.closeMenu();
+            game.helpVisible = !game.helpVisible;
             return;
         }
         if (key === 'escape') {
@@ -170,6 +171,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 game.activateSelectedMenuItem();
             } else if ((key >= '1' && key <= '9') || key === 'e' || key === 't') {
                 e.preventDefault();
+                // One press, one switch: a held E flickered EASY on and off.
+                if (e.repeat) return;
                 const picked = game.menuItems().find(i => i.key.toLowerCase() === key);
                 if (picked) game.activateMenuItem(picked.id);
             }
@@ -183,10 +186,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 game.requestFlight('BRIEFING');
             } else if (key === 't') {
                 e.preventDefault();
-                game.cycleTextSize();
+                if (!e.repeat) game.cycleTextSize();
             } else if (key === 'e') {
                 e.preventDefault();
-                game.toggleFlyStyle();
+                if (!e.repeat) game.toggleFlyStyle();
             } else if (key === 'arrowup' || key === 'arrowdown') {
                 e.preventDefault();
                 game.cycleMapChoice(key === 'arrowup' ? -1 : 1);
@@ -361,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * wired into the deck or the cockpit, where a stray click must never
      * fire a catapult.
      */
-    /** Pointer position in CSS pixels, which is what every layout uses. */
+    /** Pointer position in layout pixels (CSS px / UI zoom), which is what every layout uses. */
     const pointAt = (e: PointerEvent) => {
         const rect = canvas.getBoundingClientRect();
         // Layout pixels: the canvas is drawn zoomed when text is enlarged.
@@ -377,8 +380,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         // The rotate prompt swallows input: there is nothing to press until
-        // the device is turned.
-        if (game.awaitingRotation) return;
+        // the device is turned. It is drawn only over a flight, so only a
+        // flight waits for it - the briefing, the fly-style question and the
+        // debrief all work upright, and used to ignore every tap with no
+        // prompt at all (v2.2.0 review).
+        if (game.awaitingRotation && game.phase === 'ACTIVE') return;
 
         if (game.handlePilotMenuClick(x, y)) return;
         if (game.handleMenuTap(x, y)) return;
@@ -415,7 +421,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // EASY: the mouse is a trigger. A click fires (if a shot is
             // good), and holding the button keeps firing - so the game can be
             // played with a mouse alone.
-            if (game.easyMode) {
+            // The primary button only: a right-click opening a context menu
+            // never sends the pointerup that would let go of the trigger.
+            if (game.easyMode && e.button === 0) {
                 game.inputState['mousefire'] = true;
                 game.easyFire();
             }
@@ -449,6 +457,10 @@ document.addEventListener('DOMContentLoaded', () => {
     canvas.addEventListener('pointerup', releasePointer);
     canvas.addEventListener('pointercancel', releasePointer);
     canvas.addEventListener('lostpointercapture', releasePointer);
+    // A mouse is never captured, so a button let go over the MENU overlay
+    // (or anywhere off the canvas) never told the canvas: EASY's held
+    // trigger stayed on, across runs. Any release anywhere lets go of it.
+    window.addEventListener('pointerup', () => { game.inputState['mousefire'] = false; });
 
     // A phone browser will happily scroll, zoom or bounce the page out from
     // under a game that does not say otherwise.
@@ -459,6 +471,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('blur', () => {
         game.inputState = {};
         game.touch.clear();
+    });
+    // A hidden tab freezes the frame loop but not the music's timer.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) game.onHidden();
     });
     // An orientation change fires before the viewport settles on some
     // browsers, so re-solve once it has.

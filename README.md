@@ -59,8 +59,9 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 1,134 headless Vitest tests
-npm run playtest # 61 checks in a real browser, screenshots to playtest-output/
+npm run test     # 1,185 headless Vitest tests
+npm run playtest # 66 checks in a real browser, screenshots to playtest-output/
+npm run balance  # whole SCRAMBLE runs, many seeds, headless - balance means
 npm run preview  # serve the production build
 ```
 
@@ -158,7 +159,9 @@ alone** or a single key.
 
 **Text size** - NORMAL, LARGE or EXTRA LARGE (125% / 150%) - is on `T` from the
 very first screen, in the fly-style question and in the pause menu. It zooms
-the whole interface, so boxes and spacing grow with the words.
+the whole interface, so boxes and spacing grow with the words. On a phone,
+which has no room to zoom, it grows the words you read in flight - the order
+at the top, the coach line and the banners (v2.2.0).
 
 Both are switches, not commitments: `ESC` in flight opens the pause menu with
 `EASY FLYING` second from the top and `TEXT SIZE` below it; `E` and `T` work
@@ -168,7 +171,13 @@ once, in plain words.
 
 **Measured** with a scripted relaxed player (slow reactions, never steers):
 three minutes on STANDARD gave 6 kills and 4 waves; on EASY, 11-12 kills and
-5 waves - the first medal star - with no jets lost, at 80% world speed.
+5 waves - the first medal star - with no jets lost, at 80% world speed. Over
+eight minutes on EASY (v2.2.0) the first two SCRAMBLE stars come within about
+five minutes; the third, CLEAR WAVE 10, is at the edge of an eight-minute run.
+
+**Honest scores.** A run flown on EASY says so - on its card, its challenge
+link, the daily card and the debrief - so nobody compares an EASY score with a
+STANDARD one without knowing.
 
 ## Missions
 
@@ -312,6 +321,14 @@ a phone player is a weapons officer rather than a pilot short of eight fingers.
 | `CHF` | Chaff, above `TGT` under the right thumb. It lights amber the moment a missile is in the air at you. |
 | `RCVY` | Recovery assist. It flies the ball and the speed on final and hands back at short final — the trap is still yours. |
 | ☰ | Pause and the full control reference. |
+
+**On EASY in SCRAMBLE a phone shows one button.** The plane flies itself,
+nothing fires a missile at you and there is no deck to go home to, so the
+stick, the throttle, the weapon pills, chaff, target and recovery all step
+aside: there is a big `FIRE`, which **lights up when a shot is good**, and a
+**tap anywhere** on the sky fires too. Every instruction is in words for a
+thumb (`FIRE NOW - TAP FIRE`), and a tap on the result card at the end opens
+the phone's share sheet. Deck missions keep every control, EASY or not.
 
 A phone starts on `AUTOPILOT` with the recovery assist on and the cheapest
 display mode, unless you have already chosen otherwise — a three and a half
@@ -771,7 +788,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**1,134 headless tests** across 66 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
+**1,185 headless tests** across 66 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -784,7 +801,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ### In a real browser
 
 ```bash
-npm run playtest              # 61 checks, screenshots + report in playtest-output/
+npm run playtest              # 66 checks, screenshots + report in playtest-output/
 PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
 ```
 
@@ -800,6 +817,25 @@ checklist, no contradictory orders, a held bank that actually turns, chaff
 that works on a phone, a crash that shows a recovery screen). Run it before every release; it is not in the deploy gate because its
 turn-rate check is timed against the wall clock.
 
+### Balance, over many runs
+
+```bash
+npm run balance                                         # 8 seeds x 8 min, EASY hold-fire + STANDARD steering
+SEEDS=16 PROFILES=easy-relaxed,std-relaxed SECS=180 npm run balance
+PASSES=off npm run balance                              # the same, enemy strafing passes switched off
+```
+
+One eight-minute browser run is one sample of a noisy process; v2.2.0 nearly
+shipped a regression on the strength of one. `scripts/balance/balance.sim.ts`
+plays whole SCRAMBLE runs through the real `GameLoop` with a stub canvas, at
+roughly 50-100× real time, and prints the mean kills, waves cleared, score,
+jets lost and hull per player profile - a bot holding FIRE on EASY, a crude
+steering bot on STANDARD, and two "relaxed" players who fire only when the
+screen tells them to. `Math.random` is seeded per run, so a run replays
+exactly; `TL=1` prints each run's wave timeline and `DIAG_WAVE=n` logs every
+contact around the jet during wave *n*. Not in `npm test`: it plays minutes
+of game per seed.
+
 ## Documentation
 
 | Document | Contents |
@@ -808,10 +844,11 @@ turn-rate check is timed against the wall clock.
 | [docs/APPROACH_AND_METHOD.md](docs/APPROACH_AND_METHOD.md) | Design philosophy, dual-loop architecture, rendering pipeline |
 | [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) | Mathematical reference: constants, formulas, coordinate system |
 | [docs/GUIDELINES.md](docs/GUIDELINES.md) | Contributor rules — dependency policy, palette, testing discipline |
-| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#96, status summary at the top) |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations and deliberate trade-offs (Issues #1–#124, status summary at the top) |
 | [docs/FUN_REVIEW.md](docs/FUN_REVIEW.md) | Design review of workflow, story and UX — what was changed to make it more fun, and what is still open |
 | [docs/AI_DESIGN_REVIEW.md](docs/AI_DESIGN_REVIEW.md) | Executive summary of AI design review, playtest findings, and initial roadmap |
-| [**docs/reviews/v2.1.0/**](docs/reviews/v2.1.0/README.md) | **Current suite** — "Every Pilot": accessibility research, EASY flying and text size, validated from eight player perspectives |
+| [**docs/reviews/v2.2.0/**](docs/reviews/v2.2.0/README.md) | **Current suite** — "Second Look": three code reviews, eight-minute balance runs and a stall diagnosis; the phone made a one-button game |
+| [docs/reviews/v2.1.0/](docs/reviews/v2.1.0/README.md) | "Every Pilot": accessibility research, EASY flying and text size, validated from eight player perspectives |
 | [docs/reviews/v2.0.0/](docs/reviews/v2.0.0/README.md) | a frank "would this be a hit?" review, the research behind it, the SCRAMBLE renovation, bot-measured evidence, and a self-critique of what is still weak |
 | [docs/reviews/v1.11.0/](docs/reviews/v1.11.0/README.md) | A pilot menu, plain-language coaching, and two measured bugs fixed |
 | [docs/reviews/v1.10.0/](docs/reviews/v1.10.0/README.md) | How the v1.9.0 review was implemented, measured first |
@@ -823,6 +860,15 @@ turn-rate check is timed against the wall clock.
 ---
 
 ## Future Roadmap
+
+Shipped in v2.2.0 ("Second Look") - a validation release: three code reviews
+of v2.0-v2.1 (#105-#124 fixed, including a death that carried into the next
+run), eight-minute balance runs that found the fight stalling - enemy fighters
+that bled their speed away until they hovered, and bombers that flew away from
+the jet - and a phone pass for the players v2.1.0 was built for: EASY as a
+one-button game, words for a thumb, text size that works on phones, sharing
+from the debrief. See [`docs/reviews/v2.2.0/`](docs/reviews/v2.2.0/README.md).
+The next step is still people, and an "add to home screen" path for phones.
 
 Shipped in v2.1.0 ("Every Pilot") - for players who are not gamers and older
 players who are not quick with their hands: a one-time "how would you like to

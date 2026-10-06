@@ -206,6 +206,8 @@ export interface HudLayoutInput {
     reserve?: HudReserve;
     /** Touch mode sheds the keyboard cheat strip and the systems panel. */
     touchMode?: boolean;
+    /** Extra height the top stack takes on a phone with grown text (v2.2.0). */
+    topExtra?: number;
 }
 
 export function solveHudLayout(input: HudLayoutInput): HudLayout {
@@ -288,7 +290,7 @@ export function solveHudLayout(input: HudLayoutInput): HudLayout {
     // Centre the instruments in the band that is actually free: below the
     // objective strip (and the tape, when it is shown) and above the thumbs.
     const topBand = touchMode
-        ? m.touchTopBand + (showCompass ? 44 : 0) + reserve.top
+        ? m.touchTopBand + (showCompass ? 44 : 0) + reserve.top + (input.topExtra ?? 0)
         : reserve.top;
     const instrumentCy = touchMode
         ? (topBand + (height - reserve.bottom)) / 2

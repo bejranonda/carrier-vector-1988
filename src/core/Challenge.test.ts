@@ -26,4 +26,26 @@ describe('challenge links', () => {
         expect(challengeVerdict(c, 12400)).toContain('TIED');
         expect(challengeVerdict(c, 10000)).toContain('2,400 pts short');
     });
+
+    it('carries EASY as a ".e" suffix, and old links without it still open', () => {
+        const c = { seed: 99, score: 6300, waves: 5, easy: true };
+        const url = challengeUrl('example.org/game', c);
+        expect(url).toBe('example.org/game/?c=99.6300.5.e');
+        expect(parseChallenge(url.slice(url.indexOf('?')))).toEqual(c);
+        expect(parseChallenge('?c=99.6300.5')).toEqual({ seed: 99, score: 6300, waves: 5 });
+        for (const bad of ['?c=99.6300.5.x', '?c=99.6300.5.e.e', '?c=99.6300.5e']) {
+            expect(parseChallenge(bad), bad).toBeNull();
+        }
+    });
+
+    it('tells both pilots when the runs were flown on different styles', () => {
+        const easyRun = { seed: 1, score: 5000, waves: 5, easy: true };
+        const standardRun = { seed: 1, score: 5000, waves: 5 };
+        expect(challengeLine(easyRun)).toContain('FLOWN ON EASY');
+        expect(challengeLine(standardRun)).not.toContain('EASY');
+        expect(challengeVerdict(easyRun, 6000, false)).toBe('CHALLENGE BEATEN by 1,000 pts (they flew EASY).');
+        expect(challengeVerdict(standardRun, 6000, true)).toBe('CHALLENGE BEATEN by 1,000 pts (you flew EASY).');
+        expect(challengeVerdict(easyRun, 6000, true)).toBe('CHALLENGE BEATEN by 1,000 pts.');
+        expect(challengeVerdict(standardRun, 4000)).toContain('1,000 pts short. FLY AGAIN');
+    });
 });

@@ -388,6 +388,33 @@ export function uiZoomFor(id: TextSizeId, cssWidth: number, cssHeight: number): 
     return Math.max(1, Math.min(requested, fit));
 }
 
+/** A touch screen shorter than this, in CSS px, is a phone. */
+export const PHONE_MAX_HEIGHT = 500;
+/** The most a phone's in-flight text grows in place. */
+export const PHONE_TEXT_BOOST_MAX = 1.4;
+
+/**
+ * How a screen honours the text size (v2.2.0, Known Issues #103): a zoom for
+ * the whole UI, and a boost for the in-flight words a phone cannot zoom.
+ *
+ * A phone is not zoomed - 1.08 already crowded its cockpit - so the setting
+ * did nothing there at all, on the device most older players use. Now on a
+ * phone LARGE and EXTRA LARGE enlarge, in place, the three things a pilot
+ * reads in flight: the order strip, the coach line and the banners. Anywhere
+ * else the zoom does everything and the boost is 1.
+ */
+export function textScaling(
+    id: TextSizeId,
+    cssWidth: number,
+    cssHeight: number,
+    touch: boolean
+): { zoom: number; boost: number } {
+    if (touch && cssHeight < PHONE_MAX_HEIGHT) {
+        return { zoom: 1, boost: Math.min(PHONE_TEXT_BOOST_MAX, textSizeSpec(id).scale) };
+    }
+    return { zoom: uiZoomFor(id, cssWidth, cssHeight), boost: 1 };
+}
+
 const TEXT_SIZE_KEY = 'carrier-vector-1988.textSize';
 
 export function loadTextSize(): TextSizeId {
@@ -473,6 +500,21 @@ export function plate(
         ctx.lineWidth = 1;
         ctx.stroke();
     }
+    ctx.restore();
+}
+
+/**
+ * A glowing outline round a rect - a highlight. `plate()` clears the glow on
+ * purpose (a backplate must not bloom), so a glow set before calling it drew
+ * nothing: the chooser's selected card and FLY AGAIN never lit (v2.2.0 review).
+ */
+export function halo(ctx: CanvasRenderingContext2D, r: Rect, color: string, blur: number, radius = 6) {
+    ctx.save();
+    glow(ctx, color, blur);
+    roundRect(ctx, r.x, r.y, r.w, r.h, radius);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.restore();
 }
 

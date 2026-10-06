@@ -242,3 +242,53 @@ describe('SCRAMBLE share card (v2.0.0)', () => {
         expect(lines[3]).toBe('attempt 2 · bejranonda.github.io/carrier-vector-1988');
     });
 });
+
+describe('SCRAMBLE days survive a reload (v2.2.0)', () => {
+    const scrambleDay = (over: Partial<DailyResult> = {}) => run({
+        date: '2026-10-06', score: 9000, wave: 6, samKills: 0, traps: 0, perfectTraps: 0,
+        mode: 'SCRAMBLE', bestChain: 3, ...over
+    });
+
+    it('keeps the mode, the chain and EASY through storage', () => {
+        const store = new Map<string, string>();
+        withStorage(store, () => {
+            const { results } = mergeDailyResult({}, scrambleDay({ easy: true }));
+            saveDailyResults(results);
+            const day = loadDailyResults()['2026-10-06'];
+            expect(day.mode).toBe('SCRAMBLE');
+            expect(day.bestChain).toBe(3);
+            expect(day.easy).toBe(true);
+        });
+    });
+
+    it('still prints the SCRAMBLE card for a weaker second attempt after a reload', () => {
+        // The bug: the stored day lost its mode, the weaker attempt kept the
+        // stored record, and the card fell back to "DAILY SORTIE ... no trap".
+        const store = new Map<string, string>();
+        withStorage(store, () => {
+            saveDailyResults(mergeDailyResult({}, scrambleDay()).results);
+            const second = mergeDailyResult(loadDailyResults(), scrambleDay({ score: 4000 }));
+            const card = formatShareCard(second.today);
+            expect(card).toContain('DAILY SCRAMBLE #');
+            expect(card).not.toContain('trap');
+            expect(card).toContain('attempt 2');
+        });
+    });
+
+    it('marks an EASY day on the card, and only an EASY day', () => {
+        expect(formatShareCard(scrambleDay({ easy: true })).split('\n')[0]).toMatch(/DAILY SCRAMBLE #\d+ · EASY$/);
+        expect(formatShareCard(scrambleDay()).split('\n')[0]).not.toContain('EASY');
+    });
+
+    it('ignores a forged mode or EASY flag of the wrong type', () => {
+        const store = new Map([[
+            'carrier-vector-1988.daily',
+            JSON.stringify({ '2026-10-06': { score: 10, mode: 'HACKED', easy: 'yes', bestChain: 'x' } })
+        ]]);
+        withStorage(store, () => {
+            const day = loadDailyResults()['2026-10-06'];
+            expect(day.mode).toBeUndefined();
+            expect(day.easy).toBeUndefined();
+        });
+    });
+});

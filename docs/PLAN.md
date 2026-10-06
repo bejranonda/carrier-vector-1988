@@ -797,3 +797,21 @@ simulation underneath.
 **Next (see `reviews/v2.1.0/RECOMMENDATIONS_AND_ROADMAP.md`):** a pilot-customer
 round that deliberately includes players over 50, a phone type scale (#103),
 a type-scale pass toward the 28 px guideline (#104).
+
+## 18. Validation Pass — Second Look (v2.2.0)
+
+**Goal:** answer "validate anything to improve else?" with evidence: review
+everything v2.0-v2.1 added, run the game long enough to see what short runs
+hide, and finish the phone experience for the players v2.1.0 was built for.
+
+| Phase | Shipped | Evidence |
+| :-- | :-- | :-- |
+| Review | three parallel code reviews; ~40 findings verified at the code; #105-#124 fixed | 1,182 tests; regression tests run against the old code |
+| Stalls | fighters keep their speed; bombers come past the jet | stall-diagnostic bot; 8-minute runs before/after |
+| Honest records | waves CLEARED/HELD/OVER; jets fixed per run; EASY marked everywhere | smoke + unit tests |
+| Phones | EASY one-control kit, tap-anywhere fire, thumb wording, in-flight text boost, share sheet | harness 66/66, phone screenshots |
+| Reach | player-facing link preview with an image | `index.html`, `public/og-image.png` |
+
+**Next (see `reviews/v2.2.0/RECOMMENDATIONS_AND_ROADMAP.md`):** the
+pilot-customer round (sixth release asking), phone menus at large text, an
+"add to home screen" path for phone players.

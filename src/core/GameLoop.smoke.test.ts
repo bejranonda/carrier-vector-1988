@@ -628,6 +628,108 @@ describe('GameLoop integration smoke test', () => {
         expect(game.assistLevel).toBe('ASSIST');
     });
 
+    it('makes EXTRA LARGE do something on a phone: in-flight words grow, nothing zooms (#103)', () => {
+        const game = touchGame();
+        expect(game.hud.textBoost).toBe(1);
+        game.cycleTextSize();
+        game.cycleTextSize();
+        expect(game.textSize).toBe('HUGE');
+        expect(game.uiZoom).toBe(1);
+        expect(game.hud.textBoost).toBeGreaterThan(1.3);
+        expect(game.controlScheme).toBe('TOUCH');
+        // A desktop still zooms the whole UI instead.
+        const desk = new GameLoop(makeCanvasStub());
+        desk.resize(1440, 900);
+        desk.cycleTextSize();
+        expect(desk.uiZoom).toBe(1.25);
+        expect(desk.hud.textBoost).toBe(1);
+    });
+
+    it('pauses a live flight when the tab is hidden (v2.2.0 review)', () => {
+        const game = new GameLoop(makeCanvasStub());
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 30);
+        game.onHidden();
+        expect(game.menuOpen).toBe(true);
+        expect(game.paused).toBe(true);
+        game.onHidden(); // a second hide does not toggle it shut
+        expect(game.menuOpen).toBe(true);
+    });
+
+    it('gives a phone on EASY in SCRAMBLE one big FIRE, and a tap anywhere fires (v2.2.0)', () => {
+        const game = touchGame();
+        game.setFlyStyle('EASY', false);
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 2);
+        expect(game.touchLayout.kit.flight).toBe(false);
+        expect(game.touchLayout.kit.bigFire).toBe(true);
+        expect(game.touchLayout.kit.recover).toBe(false);
+
+        // Wave 1's bomber, parked dead ahead in the missile envelope.
+        runFrames(game, 100);
+        const bomber = game.airborneTargets[0];
+        const p = game.physics.position;
+        bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+        runFrames(game, 3);
+        const rails = game.physics.loadout.sidewinders;
+        // Where the stick used to be is just the world now - and on EASY a
+        // tap on the world is a trigger pull.
+        const where = game.touchLayout.stickZone;
+        game.touch.down({ id: 1, x: where.x + where.w / 2, y: where.y + where.h / 2 }, game.touchLayout);
+        runFrames(game, 2);
+        game.touch.up(1);
+        expect(game.physics.loadout.sidewinders).toBe(rails - 1);
+        expect(game['analog']).toBeNull();
+
+        // Switching EASY off mid-flight brings the stick back.
+        game.toggleFlyStyle();
+        runFrames(game, 2);
+        expect(game.touchLayout.kit.flight).toBe(true);
+        expect(game.touchLayout.kit.stores).toEqual([true, true, false, false]);
+    });
+
+    it('a tap on the debrief card shares it instead of flying again (v2.2.0 review)', () => {
+        const shared: string[] = [];
+        vi.stubGlobal('navigator', { share: (d: { text: string }) => { shared.push(d.text); return Promise.resolve(); } });
+        const game = touchGame();
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 75);
+        game.deck.inventory.carrierHealth = 0;
+        for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+        expect(game.phase).toBe('DEBRIEF');
+        runFrames(game, 60); // past the input delay
+        const data = game.debriefData();
+        expect(data.shareVerb).toBe('SHARE');
+        const layout = debriefLayout(game.viewWidth, game.viewHeight, data);
+        expect(layout.share).not.toBeNull();
+        game.handleMenuTap(layout.share!.x + 20, layout.share!.y + 10);
+        expect(game.phase).toBe('DEBRIEF');
+        expect(game.dailyCard).not.toBeNull();
+        expect(shared).toHaveLength(1);
+        expect(shared[0]).toContain('beat it:');
+    });
+
+    it('speaks to a thumb, not a keyboard, on a phone (v2.2.0)', () => {
+        const game = touchGame();
+        game.setFlyStyle('EASY', false);
+        runFrames(game, 150);
+        game.selectScenarioById('SCRAMBLE');
+        game.confirmBriefing(7);
+        runFrames(game, 100);
+        expect(game.scramble?.brief).toBe('ONE BOMBER AHEAD - TAP FIRE');
+        const bomber = game.airborneTargets[0];
+        const p = game.physics.position;
+        bomber.position = { x: p.x, y: p.y, z: p.z + 2000 };
+        runFrames(game, 5);
+        expect(game.currentHint?.text).toBe('FIRE NOW - TAP FIRE');
+    });
+
     it('asks a phone held upright to turn, and stops asking once it is', () => {
         const game = touchGame();
         game.resize(390, 844);
@@ -2346,8 +2448,13 @@ describe('GameLoop integration smoke test', () => {
             game.confirmBriefing(7);
             return game;
         };
+        /** Shoot the whole wave down - credited as the player's kills. */
         const killAll = (game: InstanceType<typeof GameLoop>) => {
-            for (const t of game.airborneTargets) t.isAlive = false;
+            for (const t of game.airborneTargets) {
+                if (!t.isAlive) continue;
+                t.isAlive = false;
+                game.scramble!.waveKills++;
+            }
         };
 
         it('puts the jet in the air with missiles selected and no deck screen', () => {
@@ -2527,7 +2634,9 @@ describe('GameLoop integration smoke test', () => {
             runFrames(game, 2);
             expect(game.airborneTargets.some(t => t.isAlive)).toBe(false);
             runFrames(game, 90);
-            expect(game.scramble?.wavesCleared).toBe(1);
+            // The run moves on to the next wave whatever happened.
+            runFrames(game, 260);
+            expect(game.scramble?.wave).toBe(2);
         });
 
         it('a shared challenge flies the same waves, and the card carries the run', () => {
@@ -2547,15 +2656,86 @@ describe('GameLoop integration smoke test', () => {
             expect(data.shareCard).toContain('?c=424242.');
         });
 
-        it('a wave that bugs out is survived but pays no bonus', () => {
+        it('RESTART during the MAYDAY sequence starts a clean run (v2.2.0 review)', () => {
             const game = startScramble();
             runFrames(game, 75);
+            game.physics.damage = 100;
+            runFrames(game, 3);
+            expect(game.isDying).toBe(true);
+            game.restartMission();
+            expect(game.isDying).toBe(false);
+            runFrames(game, 400);
+            expect(game.score.breakdown.airframesLost).toBe(0);
+            expect(game.phase).toBe('ACTIVE');
+        });
+
+        it('RESTART keeps a daily the daily', () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.startDailySortie(new Date('2026-10-06T12:00:00Z'));
+            const seed = game.scramble?.seed;
+            game.restartMission();
+            expect(game.isDailyRun).toBe(true);
+            expect(game.scramble?.seed).toBe(seed);
+        });
+
+        it('says CARRIER LOST, not SHOT DOWN, when the boat goes and the jet is fine', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.deck.inventory.carrierHealth = 0;
+            for (let i = 0; i < 10 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            const data = game.debriefData();
+            expect(data.headline).toMatch(/^CARRIER LOST/);
+            expect(data.cause).toBeNull();
+        });
+
+        it('a wave that bugs out after a kill is HELD: it counts, but pays no bonus', () => {
+            const game = startScramble();
+            runFrames(game, 75);
+            game.scramble!.waveKills = 1;
             game.scramble!.waveSeconds = 80;
             runFrames(game, 2);
             const before = game.score.bonusPoints;
             runFrames(game, 90);
             expect(game.scramble?.wavesCleared).toBe(1);
             expect(game.score.bonusPoints).toBe(before);
+            expect(game.callouts.active().some(c => c.text === 'WAVE 1 HELD')).toBe(true);
+        });
+
+        it('a wave nobody shot at is OVER: no bonus, and it does not count (v2.2.0 review)', () => {
+            // The exploit: let wave 1's bomber reach the boat without firing,
+            // and it used to pay ~600 points and count toward CLEAR WAVE 5.
+            const game = startScramble();
+            runFrames(game, 75);
+            const bomber = game.airborneTargets[0];
+            bomber.position = { x: 100, y: 300, z: 100 };
+            const before = game.score.bonusPoints;
+            runFrames(game, 90);
+            expect(game.deck.inventory.carrierHealth).toBeLessThan(100);
+            expect(game.scramble?.wavesCleared).toBe(0);
+            expect(game.score.bonusPoints).toBe(before);
+            expect(game.callouts.active().some(c => c.text === 'WAVE 1 OVER')).toBe(true);
+            runFrames(game, 260);
+            expect(game.scramble?.wave).toBe(2);
+        });
+
+        it('fixes the jets a run allows when it starts (v2.2.0 review)', () => {
+            const game = new GameLoop(makeCanvasStub());
+            game.setFlyStyle('EASY', false);
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            runFrames(game, 75);
+            for (let jet = 0; jet < 3; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 25 && game.score.breakdown.airframesLost === jet; i++) runFrames(game, 15);
+            }
+            expect(game.score.breakdown.airframesLost).toBe(3);
+            // Switching EASY off with three of five jets gone no longer ends the run.
+            game.toggleFlyStyle();
+            runFrames(game, 30);
+            expect(game.phase).toBe('ACTIVE');
+            expect(game.currentObjective().detail).toContain('JETS 2');
         });
 
         it('offers a music switch in the pause menu, and no TAKE ME HOME', () => {
@@ -2588,6 +2768,37 @@ describe('GameLoop integration smoke test', () => {
             game.confirmBriefing(7);
             return game;
         };
+
+        it('marks an EASY run on its card, its challenge link and its debrief (v2.2.0)', () => {
+            const game = easyScramble();
+            runFrames(game, 75);
+            for (let jet = 0; jet < 5 && game.phase === 'ACTIVE'; jet++) {
+                game.physics.damage = 100;
+                for (let i = 0; i < 25 && game.phase === 'ACTIVE'; i++) runFrames(game, 15);
+            }
+            expect(game.phase).toBe('DEBRIEF');
+            const data = game.debriefData();
+            expect(data.shareCard?.split('\n')[0]).toContain('SCRAMBLE · EASY');
+            expect(data.shareCard).toMatch(/\?c=7\.\d+\.\d+\.e$/m);
+            expect(data.styleNote).toBe('FLOWN ON EASY');
+        });
+
+        it('a STANDARD run that switches EASY on half way is still marked EASY', () => {
+            const game = new GameLoop(makeCanvasStub());
+            runFrames(game, 150);
+            game.selectScenarioById('SCRAMBLE');
+            game.confirmBriefing(7);
+            expect(game.runFlownEasy).toBe(false);
+            runFrames(game, 75);
+            game.toggleFlyStyle();
+            game.toggleFlyStyle();
+            expect(game.easyMode).toBe(false);
+            expect(game.runFlownEasy).toBe(true);
+            // The next run starts clean.
+            game.returnToBriefing();
+            game.confirmBriefing(7);
+            expect(game.runFlownEasy).toBe(false);
+        });
 
         it('starts a brand-new pilot on EASY and asks once; a returning pilot keeps STANDARD', () => {
             vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} });

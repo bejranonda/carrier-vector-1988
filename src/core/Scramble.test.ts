@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    SCRAMBLE, SCRAMBLE_LOADOUT, escalationCount, fighterAccuracy, formatScrambleCard, mulberry32, rearmAfterWave, scrambleWave, waveClearBonus
+    SCRAMBLE, SCRAMBLE_LOADOUT, escalationCount, fighterAccuracy, formatScrambleCard, keepClearOfBoat, mulberry32, rearmAfterWave, scrambleWave, spawnReference, waveClearBonus
 } from './Scramble';
 
 describe('SCRAMBLE wave director', () => {
@@ -40,6 +40,40 @@ describe('SCRAMBLE wave director', () => {
                 expect(s.passive).toBe(false);
             }
         }
+    });
+
+    it('sends escalation bombers in from the far side of the jet, never from between it and the boat', () => {
+        for (let wave = 6; wave < 40; wave++) {
+            for (const s of scrambleWave(wave, 1234).spawns) {
+                if (s.type === 'BOMBER') expect(Math.abs(s.bearingDeg)).toBeLessThanOrEqual(SCRAMBLE.bomberArcDeg);
+            }
+        }
+    });
+
+    it('measures a bomber from the line out through the jet, and a fighter from the nose', () => {
+        // Jet 8 km east of the boat, nose pointed home (west).
+        const jet = { x: 8000, z: 0 };
+        const homeward = -Math.PI / 2;
+        expect(spawnReference('FIGHTER', jet, homeward)).toBe(homeward);
+        expect(spawnReference('BOMBER', jet, homeward)).toBeCloseTo(Math.PI / 2, 9);
+        // A bomber placed at bearing 0 is further out than the jet, so its run
+        // at the boat (the origin) comes straight past it.
+        const a = spawnReference('BOMBER', jet, homeward);
+        const bomber = { x: jet.x + Math.sin(a) * 3000, z: jet.z + Math.cos(a) * 3000 };
+        expect(Math.hypot(bomber.x, bomber.z)).toBeGreaterThan(Math.hypot(jet.x, jet.z));
+    });
+
+    it('never puts a bomber on top of the boat (v2.2.0 review)', () => {
+        // Inside the strike radius a bomber hit the carrier on its first tick.
+        expect(keepClearOfBoat(300, 0)).toEqual({ x: SCRAMBLE.bomberSpawnClear, z: 0 });
+        expect(keepClearOfBoat(0, 0)).toEqual({ x: 0, z: SCRAMBLE.bomberSpawnClear });
+        expect(keepClearOfBoat(4000, 1000)).toEqual({ x: 4000, z: 1000 });
+        expect(SCRAMBLE.bomberSpawnClear).toBeGreaterThan(SCRAMBLE.bomberStrikeRadius * 3);
+    });
+
+    it('keeps wave 1 dead ahead: next to the boat a bomber is measured from the nose too', () => {
+        const launch = { x: 0, z: 1200 };
+        expect(spawnReference('BOMBER', launch, 0.3)).toBe(0.3);
     });
 
     it('is reproducible from (wave, seed) and varies with the seed', () => {
@@ -104,5 +138,10 @@ describe('SCRAMBLE brag card', () => {
         ]);
         expect(formatScrambleCard({ wavesCleared: 1, score: 10, stars: 0, kills: 1, bestChain: 1, url: 'u' }))
             .toContain('1 WAVE HELD');
+    });
+
+    it('says EASY in the title of a run flown on EASY (v2.2.0)', () => {
+        const card = formatScrambleCard({ wavesCleared: 5, score: 6300, stars: 1, kills: 11, bestChain: 2, url: 'u', easy: true });
+        expect(card.split('\n')[0]).toBe('CARRIER VECTOR: 1988 — SCRAMBLE · EASY ★☆☆');
     });
 });

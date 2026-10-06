@@ -87,3 +87,25 @@ describe('unlocks', () => {
         expect(loadCareer()).toEqual({ xp: 0, runs: 0 });
     });
 });
+
+describe('career level on a corrupt save (v2.2.0 review)', () => {
+    it('answers at once for any XP, however large', () => {
+        const t0 = performance.now();
+        const huge = careerLevel(1e300);
+        expect(performance.now() - t0).toBeLessThan(50);
+        expect(huge.level).toBeGreaterThan(1000);
+        expect(Number.isFinite(huge.into)).toBe(true);
+    });
+
+    it('agrees with stepping level by level wherever stepping is cheap', () => {
+        for (let xp = 0; xp < 400_000; xp += 1237) {
+            let level = 1;
+            while (xpForLevel(level + 1) <= xp) level++;
+            expect(careerLevel(xp).level, `xp ${xp}`).toBe(level);
+        }
+        for (let n = 1; n < 60; n++) {
+            expect(careerLevel(xpForLevel(n)).level).toBe(n);
+            expect(careerLevel(xpForLevel(n) - 1).level).toBe(Math.max(1, n - 1));
+        }
+    });
+});
