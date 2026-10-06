@@ -28,7 +28,12 @@
 
 import type { ShareContent } from './ShareCard';
 
-export type ShareOutcome = 'SHARED' | 'CANCELLED' | 'FAILED';
+/**
+ * SHARED: an app was chosen (never "sent" - the browser cannot know).
+ * CANCELLED: the sheet was closed. BUSY: a sheet is already up - a double
+ * tap, which must not read as a failure. FAILED: no sheet here, or refused.
+ */
+export type ShareOutcome = 'SHARED' | 'CANCELLED' | 'BUSY' | 'FAILED';
 
 /** The slice of `navigator` this module uses. */
 export interface ShareHost {
@@ -94,8 +99,12 @@ export async function shareToSheet(host: ShareHost, data: ShareData): Promise<Sh
         await host.share(data);
         return 'SHARED';
     } catch (error) {
+        const name = (error as { name?: string } | null)?.name;
         // Closing the sheet is a choice, not a failure: say nothing.
-        return (error as { name?: string } | null)?.name === 'AbortError' ? 'CANCELLED' : 'FAILED';
+        if (name === 'AbortError') return 'CANCELLED';
+        // A second tap while the first sheet is still up (a double tap).
+        if (name === 'InvalidStateError') return 'BUSY';
+        return 'FAILED';
     }
 }
 

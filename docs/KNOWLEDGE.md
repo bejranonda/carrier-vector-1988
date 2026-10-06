@@ -1611,41 +1611,80 @@ https://bejranonda.github.io/carrier-vector-1988/c/?c=<seed>.<score>.<waves>[.e]
 
 | Part | Rule |
 | :-- | :-- |
-| `/c/` | The same page and bundle, emitted by `vite.config.ts` (`challengePage`) with challenge preview copy and **no `og:url` / `canonical`** - Facebook treats `og:url` as the destination and would drop the query |
+| `/c/` | The same page and bundle, emitted by `vite.config.ts` (`challengePage`) with challenge preview copy ("Can you beat my score? Carrier Vector: 1988 - a free jet game") and **no `og:url` / `canonical`** - Facebook treats `og:url` as the destination and would drop the query. The build **fails** (`this.error`) if `index.html` is missing or the output still carries either tag |
 | `c` | seed ≤ 2³¹−1, score ≤ 99,999,999, waves ≤ 999, all integers; `.e` = flown on EASY; anything else → no challenge |
-| `#n=` | The challenger's name, in the fragment (never sent to a server); `encodeURIComponent`; a query `&n=` is also read |
-| `cleanPilotName` | NFC; keeps `\p{L}\p{M}\p{N}`, space, `'`, `’`, `-`; collapses spaces; ≤ 16 characters (`MAX_PILOT_NAME`); needs a letter or digit; no `.`, `/`, `:` - so a name cannot read as a web address |
+| `#n=` | The challenger's name, in the fragment (never sent to a server); `encodeURIComponent` plus `'` → `%27` (a chat app's link finder can stop at an apostrophe); a query `&n=` is also read |
+| `cleanPilotName` | NFC; every whitespace (tab, no-break, ideographic) → one space; removes `LOOKALIKES` (Hangul fillers U+115F/1160/3164/FFA0, and letters that pass for `.` `/` `:` - U+A4F8-A4FB, U+1427, U+141F/1420, U+02D0/02D1, U+0971); keeps `\p{L}\p{M}\p{N}`, space, `'`, `’`, `-`; drops accents with no letter; caps accents at 4 per letter; ≤ 16 characters (`MAX_PILOT_NAME`) but never cuts an accent from its letter; needs a letter or digit |
 
 Displayed as `challengerLabel` (upper-cased name, or `A FRIEND`). The tab title
-becomes `<name> challenges you - Carrier Vector: 1988`.
+becomes `<name> challenges you - Carrier Vector: 1988`; the canvas's
+`aria-label` says the same until the welcome closes (`onChallengeWelcomeClose`
+puts the usual one back).
 
 ### 25.2 What a share sends (`core/ShareCard.ts`, `core/Share.ts`)
 
 | Share | Payload | Why |
 | :-- | :-- | :-- |
-| CHALLENGE A FRIEND / REPLY TO ANNA / INVITE A FRIEND | `{ text: message + "\n" + link }` | The link inside `text`, alone on the last line; never in `url` (some iPhone apps cut the query string from it) |
-| SEND THE PICTURE | `{ files: [png] }` | No text or title: an app given both keeps one and drops the other |
-| No share sheet | `wa.me/?text=`, `line.me/R/share?text=`, `sms:?&body=` (touch) / `mailto:` (desktop), COPY MESSAGE, SAVE PICTURE, COPY PICTURE (desktop, `ClipboardItem` with a `Promise<Blob>`) | In-app browsers on Android, Firefox desktop, Chrome on Linux |
+| CHALLENGE A FRIEND / REPLY TO ANNA / TELL ANNA / INVITE A FRIEND | `{ text: message + "\n" + link }` | The link inside `text`, alone on the last line; never in `url` (some iPhone apps cut the query string from it) |
+| ALSO SEND (OR SAVE) THE PICTURE | `{ files: [png] }` | No text or title: an app given both keeps one and drops the other. Offered only after the main share returns (any outcome but `BUSY`): side by side, the picture invites the first press, and a picture alone carries no link |
+| No share sheet | `wa.me/?text=`, `line.me/R/share?text=`, `sms:?&body=` (touch) / `mailto:` (desktop), COPY MESSAGE (primary), SAVE PICTURE, COPY PICTURE (desktop, `ClipboardItem` with a `Promise<Blob>`) | In-app browsers on Android, Firefox desktop, Chrome on Linux |
 
-Message choice: beat / tie / lost a challenge → about the challenger; the
-daily → "Daily Scramble #N (first try)"; a new best or a fresh star → "Can you
-beat me?"; otherwise an **invitation** ("Try ... EASY mode flies the plane for
-you"). `SHARED` means an app was chosen - nothing may say "sent".
+`shareToSheet` outcomes: `SHARED` (an app was chosen - nothing may say
+"sent"), `CANCELLED` (`AbortError`), `BUSY` (`InvalidStateError`: a second
+tap while the sheet is up - ignored), `FAILED` (anything else; the panel
+then shows SAVE on a phone too).
 
-### 25.3 The picture (`renderer/ShareImage.ts`)
+| Run | Message (the link follows on its own line) | Button |
+| :-- | :-- | :-- |
+| Beat a named challenge | "I beat your score, Anna! 12,400 to your 12,345 in Carrier Vector: 1988. Your turn to win it back - it's a free jet game in your browser, a few minutes:" | REPLY TO ANNA |
+| Tied | "We're tied, Anna - 12,345 points each..." | REPLY TO ANNA |
+| Lost | "You're still ahead, Anna - 15,000 to my 12,345 in Carrier Vector: 1988. I'll get you next time!" | TELL ANNA |
+| The daily | "Daily Scramble #279 (first try): 12,345 points in Carrier Vector: 1988, a free jet game. Everyone gets the same planes today - can you beat me? It plays in your browser:" | CHALLENGE A FRIEND |
+| Beat a previous best (`beatPreviousBest`: a best > 0 existed) | "My best yet: 12,345 points and 21 planes shot down in Carrier Vector: 1988, a free jet game. Can you beat me? It plays in your browser, no download:" | CHALLENGE A FRIEND |
+| A fresh star | "I scored 12,345 points and shot down 21 planes in..." | CHALLENGE A FRIEND |
+| Anything else, a first run included | "Try Carrier Vector: 1988, a free jet game - it plays in your browser, nothing to install. EASY mode flies the plane; you just press FIRE. I got 12,345 - can you beat me?" | INVITE A FRIEND |
 
-1080 × 1080, drawn in the pilot's palette. Rows (y): title 70, subtitle 118,
-moment 150-670 (960 × 520, cover-cropped at `MOMENT_ZOOM` 1.3), stars 726,
-score 860 (112 px), stats 918, pilot or versus 966, headline 1030, address 1066.
-No moment (no kill) → a radar scope.
+" (I flew on EASY)" follows any claimed score flown on EASY; a zero kill count
+is left out rather than printed. `shareNudge`: a win → "YOU BEAT ANNA - LET ANNA
+KNOW" (lit); fresh stars → lit; a beaten best → lit once a session
+(`bestNudgedThisSession`); otherwise "SHARE: YOUR FRIEND GETS THE SAME PLANES".
 
-### 25.4 In the run (`GameLoop`)
+### 25.3 The share panel (`ui/SharePanel.ts`, `index.html #share`)
+
+| Rule | Why |
+| :-- | :-- |
+| Picture drawn and encoded on open (and 250 ms after a name edit); the old picture, file and object URL are cleared on open; SEND/SAVE/COPY PICTURE are disabled until `ready` | A press must open the sheet inside the tap; the first build showed and saved the previous run's picture until the new one was encoded |
+| `flushName()` at the top of every button handler, on `change` and on close | A name typed less than 250 ms before a press was left off the link |
+| ENTER in the name field is "done" only when `!e.isComposing && keyCode !== 229` | ENTER confirms a Japanese or Chinese conversion |
+| File support asked with an empty `image/png` probe file | The buttons do not jump about while the real picture encodes |
+| Quick links rebuilt only when the set of apps changes; otherwise `href`/text updated in place | A rebuild dropped keyboard focus, and could swap a link out from under the tap following it |
+| Keys stop at the panel; `main.ts` sends any key that still arrives to `strayKey` (ESC closes, TAB re-enters); focus is re-taken on the next task after open | A mouse press on SHARE ends by focusing the canvas under it, and ESC then did nothing |
+| Clicks in the first 500 ms after opening are swallowed (capture phase) | A phone delivers the opening tap's click to whatever is under the finger - the panel |
+| CLOSE in the title row; the backdrop closes too; `.share-note` hidden on landscape ≤ 400 px tall | At the bottom, CLOSE was below the fold on a 568 × 320 phone |
+| `-webkit-touch-callout: default` on the picture | The page turns the long-press menu off; on an iPhone it is how a picture is saved to Photos |
+
+### 25.4 The picture (`renderer/ShareImage.ts`)
+
+1080 × 1080, drawn in the pilot's palette; every word ≥ 30 px (≈ 8 px in a
+270 px chat thumbnail). `SHARE_IMAGE_LAYOUT` (y): game name 62, headline 152
+(76 px, shrunk to fit down to 44 px, never cut), moment 192-572 (900 × 380,
+cover-cropped at `MOMENT_ZOOM` 1.3 and drawn twice, the second `lighter` at
+0.6, to brighten a dark frame), stars 632, score 770 (120 px) - or, after a
+challenge, a two-row scoreboard at 692 / 790 (64 px, higher score on top, the
+leader in gold) - stats 856 (non-zero numbers only), title and tags 904, footer
+band from 940 ("FREE GAME - PLAYS IN YOUR BROWSER" 996, address 1048). No
+moment (no kill) → a radar scope. Headlines: "CAN YOU BEAT TOM?" / "CAN YOU
+BEAT ME?", "TOM BEAT ANNA!" / "I BEAT ANNA!" / "CHALLENGE BEATEN!", "TIED WITH
+ANNA!" / "DEAD HEAT!". The "NEW PERSONAL BEST" tag only with a beaten best,
+never beside a lost challenge.
+
+### 25.5 In the run (`GameLoop`, `HUD`)
 
 | Item | Rule |
 | :-- | :-- |
 | `scoreTarget` | SCRAMBLE only: the challenge's score (not on the daily), else the mission best if > 0 |
-| Passing it | Live both ways (`scoreTargetPassed`); the banner (`YOU BEAT ANNA!` / `NEW PERSONAL BEST!`, group `RECORD`, 2.8 s) and fanfare once a run |
-| HUD | `4,200 / 12,345 PTS` → `13,100 PTS · AHEAD OF ANNA` / `NEW BEST`; shown on the first-flight HUD for a challenge |
-| Moment | On a kill, weight = chain × 10 + base value / 100; ≥ the best so far schedules a capture 0.3 s later, before overlays and thumb controls; downscaled to ≤ 960 px wide |
-| Welcome | `challengeWelcomeOpen` from `acceptChallenge`; ACCEPT → `requestFlight` (an EASY challenge sets EASY for a pilot never asked); SEE ALL MISSIONS → the briefing, challenge kept |
-| Debrief | A beaten challenge is the headline (`celebrate`, gold); the SHARE button reads `REPLY TO ANNA` (or `REPLY` when that does not fit) |
+| Passing it | Live both ways (`scoreTargetPassed`); once a run, the banner ("AHEAD OF ANNA!" / "AHEAD OF THE CHALLENGE!" / "PAST YOUR BEST!", group `RECORD`, 2.8 s) and fanfare - held up to 2.5 s while another banner is up. Never "YOU BEAT": the run is not over |
+| HUD | `scoreTargetOptions`, longest first: `ANNA 12,345 · YOU 4,200` → `TO BEAT 12,345 · YOU 4,200` → `BEAT 12,345 · YOU 4,200` → `YOU 4,200`; once past, `YOU 13,100 · AHEAD OF ANNA` → `· AHEAD` → `YOU 13,100`; own best `BEST 8,000 · NOW 4,200` / `NOW 9,000 · NEW BEST`. Desktop chip: 13 px then 11 px, kept clear of the objective strip (`objectiveRect`); shown on the first-flight HUD for a challenge. Touch: in the systems line, which drops G, then FUEL, before shortening the score, and never exceeds the gap between the thumb clusters |
+| Moment | On a kill, weight = chain × 10 + base value / 100; ≥ the best so far schedules a capture 0.3 s later, before overlays and thumb controls; downscaled to ≤ 960 px wide. Held back by the menu, help or rotate prompt for more than 0.5 s, it is dropped rather than taken from a later frame |
+| Welcome (`renderer/ChallengeView.ts`) | `challengeWelcomeOpen` from `acceptChallenge`; PLAY → `requestFlight` (an EASY challenge sets EASY for a pilot never asked); SEE ALL MISSIONS → the briefing, challenge kept. Text measured as monospace (`monoWidth`: 0.6 em, 1 em for CJK, 0 for an accent), wrapped then balanced (`wrapMono`), a too-wide word set smaller (≥ 60%) then broken; four modes from roomy to compact |
+| Debrief | A beaten challenge is the headline (`celebrate`, gold) over "YOU 12,400 · ANNA 12,345 - you won by 55!"; the SHARE button reads `REPLY TO ANNA`, `REPLY TO …` with a first name, or `REPLY` - whichever fits |

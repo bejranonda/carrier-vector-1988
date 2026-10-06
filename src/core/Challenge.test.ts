@@ -82,6 +82,38 @@ describe('challenge links', () => {
         }
     });
 
+    it('lets no look-alike dot, slash or colon, and no invisible letter, through (v2.3.0 review)', () => {
+        // Letters that pass for a dot or a slash would still spell an address.
+        expect(cleanPilotName('paypal\uA4F8com')).toBe('paypalcom');
+        expect(cleanPilotName('win\u1427prize\u141Fx')).toBe('winprizex');
+        expect(cleanPilotName('http\u02D0x')).toBe('httpx');
+        // Hangul fillers print as nothing: "  challenges you" from no one.
+        for (const blank of ['\u3164\u3164\u3164', '\u115F\u1160', '\uFFA0 \uFFA0']) {
+            expect(cleanPilotName(blank), JSON.stringify(blank)).toBeNull();
+        }
+    });
+
+    it('keeps every kind of space as a space, and a letter with its accents (v2.3.0 review)', () => {
+        expect(cleanPilotName('山田\u3000太郎')).toBe('山田 太郎');
+        expect(cleanPilotName('Ann\u00A0Lee')).toBe('Ann Lee');
+        expect(cleanPilotName('Ann\tLee')).toBe('Ann Lee');
+        // A tower of accents is cut back to a few; real scripts keep theirs.
+        expect(Array.from(cleanPilotName(`a${'\u0301'.repeat(15)}`)!)).toHaveLength(1 + 4);
+        expect(cleanPilotName('สมศักดิ์ ใจดี')).toBe('สมศักดิ์ ใจดี');
+        expect(cleanPilotName('བསྒྲུབས')).toBe('བསྒྲུབས');
+        // No accent on its own, and the cut never strips one from its letter.
+        expect(cleanPilotName('\u0301Anna')).toBe('Anna');
+        const long = `${'ก'.repeat(15)}นั้น`;
+        expect(cleanPilotName(long)).toBe(`${'ก'.repeat(15)}นั้`);
+    });
+
+    it('encodes an apostrophe in the link, which a chat app may stop at (v2.3.0 review)', () => {
+        const url = challengeUrl('https://example.org', { seed: 1, score: 2, waves: 3, name: "O'Brien" });
+        expect(url).toBe('https://example.org/?c=1.2.3#n=O%27Brien');
+        const u = new URL(url);
+        expect(parseChallenge(u.search, u.hash)?.name).toBe("O'Brien");
+    });
+
     it('names the challenger in the briefing line and the verdict', () => {
         const c = { seed: 1, score: 12400, waves: 7, name: 'Anna' };
         expect(challengerLabel(c)).toBe('ANNA');

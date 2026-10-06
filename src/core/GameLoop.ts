@@ -542,6 +542,7 @@ export class GameLoop {
     public scoreTarget: { score: number; who: string; challenge: boolean } | null = null;
     private scoreTargetPassed = false;
     private scoreTargetCelebrated = false;
+    private scoreTargetPassedAt = -1;
 
     /**
      * The run's best moment, kept for the share picture (v2.3.0): a copy of
@@ -557,15 +558,21 @@ export class GameLoop {
     /** The pilot's name for shares, if they gave one (v2.3.0, PilotName.ts). */
     public pilotName: string | null = loadPilotName();
     /** What the finished run would share: built at its end, named at share time. */
-    private lastShareRun: (Omit<ShareRun, 'name' | 'url'> & { seed: number; freshStars: number }) | null = null;
+    private lastShareRun: (Omit<ShareRun, 'name' | 'url'> & { seed: number; freshStars: number; bestIsNews: boolean }) | null = null;
     /** How the last share went, for the debrief's line under SHARE. */
     public shareStatus: 'IDLE' | 'SHARED' | 'COPIED' = 'IDLE';
+    /** A new best lights SHARE once a session; after that it is just a line. */
+    private bestNudgedThisSession = false;
+    /** When the rotate prompt went up, for its rotation-lock hint. */
+    private rotationWaitSince = -1;
     /**
      * Opens the share panel (main.ts, plain DOM: a real text field for the
      * name and real buttons). Unset in tests and headless runs, where SHARE
      * falls back to copying the text card.
      */
     public onShareRequest: (() => void) | null = null;
+    /** Called when the challenge welcome closes, either way (main.ts resets the canvas label). */
+    public onChallengeWelcomeClose: (() => void) | null = null;
 
     /** Personal best across sessions, shown on the briefing and the debrief. */
     public bestScore = loadBestScore();
@@ -578,6 +585,11 @@ export class GameLoop {
      */
     public missionRecords: MissionRecords = loadMissionRecords();
     private isMissionBest = false;
+    /**
+     * This run beat a best that existed before it. A first run is everyone's
+     * "best yet"; only a beaten record is shared as one (v2.3.0 review).
+     */
+    private beatPreviousBest = false;
 
     /**
      * The daily sortie: one date-seeded run everybody gets the same version
@@ -790,6 +802,7 @@ export class GameLoop {
         this.missionSeconds = 0;
         this.hasLaunched = false;
         this.isNewBest = false;
+        this.beatPreviousBest = false;
         this.missionStatus = {
             outcome: 'ACTIVE', phaseIndex: 0, phase: null,
             reason: null, secondsRemaining: null, callouts: []
@@ -819,6 +832,7 @@ export class GameLoop {
                 : best > 0 ? { score: best, who: 'YOUR BEST', challenge: false } : null;
         this.scoreTargetPassed = false;
         this.scoreTargetCelebrated = false;
+        this.scoreTargetPassedAt = -1;
         // A jet lost in the last run must not die again in this one: RESTART
         // during the MAYDAY sequence, or a daily started from the menu, used
         // to begin the new run with dead controls, slow motion and a jet
@@ -1722,7 +1736,8 @@ export class GameLoop {
             return true;
         }
         if (this.phase === 'BRIEFING' && this.challengeWelcomeOpen) {
-            const hit = challengeWelcomeHitTest(x, y, challengeWelcomeLayout(this.viewWidth, this.viewHeight));
+            const hit = challengeWelcomeHitTest(x, y,
+                challengeWelcomeLayout(this.viewWidth, this.viewHeight, this.challenge, this.controlScheme === 'TOUCH'));
             if (hit === 'ACCEPT') this.acceptChallengeWelcome();
             else if (hit === 'MISSIONS') this.closeChallengeWelcome();
             return true;
@@ -2368,6 +2383,9 @@ export class GameLoop {
         // can still type a name in the share panel.
         if (this.scramble) {
             const b = this.score.breakdown;
+            const best = this.beatPreviousBest;
+            const bestIsNews = best && !this.bestNudgedThisSession;
+            if (bestIsNews) this.bestNudgedThisSession = true;
             this.lastShareRun = {
                 daily: this.isDailyRun ? dailyNumber(new Date(`${this.dailyRunDate ?? dailyKey()}T00:00:00Z`)) : undefined,
                 attempt: this.isDailyRun ? this.dailyResults[this.dailyRunDate ?? dailyKey()]?.attempts : undefined,
@@ -2377,9 +2395,10 @@ export class GameLoop {
                 bestChain: this.combo.best,
                 stars: starCount(this.medals.SCRAMBLE ?? 0),
                 easy: this.runFlownEasy,
-                isNewBest: this.isNewBest || this.isMissionBest,
+                isNewBest: best,
                 versus: this.challenge && !this.isDailyRun ? { name: this.challenge.name ?? null, score: this.challenge.score } : null,
                 freshStars: merged.fresh.length,
+                bestIsNews,
                 seed: this.scramble.seed
             };
         }
@@ -2391,7 +2410,7 @@ export class GameLoop {
     public currentShare(): ShareContent | null {
         const r = this.lastShareRun;
         if (!r) return null;
-        const { seed, ...run } = r;
+        const { seed, bestIsNews: _news, ...run } = r;
         return shareContent({
             ...run,
             name: this.pilotName,
@@ -2440,6 +2459,14 @@ export class GameLoop {
         this.shareStatus = status;
     }
 
+    /** SHARE - or, after a friend's challenge, REPLY TO ANNA / TELL ANNA. */
+    private shareButtonLabel(): string {
+        const v = this.lastShareRun?.versus;
+        if (!v) return 'SHARE';
+        if (!v.name) return 'REPLY';
+        return `${this.lastShareRun!.score < v.score ? 'TELL' : 'REPLY TO'} ${v.name.toUpperCase()}`;
+    }
+
     /** Everything the debrief draws, assembled from the run that just ended. */
     public debriefData(): DebriefData {
         const won = this.missionOutcome === 'SUCCESS';
@@ -2449,11 +2476,11 @@ export class GameLoop {
         const stats: [string, string][] = this.scramble
             ? [
                 ['WAVES CLEARED', `${this.scramble.wavesCleared}`],
-                ['BANDITS SPLASHED', `${kills}`],
+                ['PLANES SHOT DOWN', `${kills}`],
                 ['BEST CHAIN', this.combo.best >= 2 ? `x${Math.min(5, this.combo.best)} · ${this.combo.best}` : '-'],
                 ['JETS LOST', `${b.airframesLost}`],
                 ['HULL LEFT', `${Math.round(this.deck.inventory.carrierHealth)}%`],
-                ['BONUS PTS', `${this.score.bonusPoints}`]
+                ['BONUS PTS', this.score.bonusPoints.toLocaleString('en-US')]
             ]
             : [
                 ['WAVES', `${this.deck.waveNumber}`],
@@ -2488,9 +2515,11 @@ export class GameLoop {
             if (ahead > 0) {
                 celebrate = true;
                 title = this.challenge.name ? `YOU BEAT ${challengerLabel(this.challenge)}!` : 'CHALLENGE BEATEN!';
-                const end = won ? `${this.scramble.wavesCleared} waves held`
-                    : `${carrierLost ? 'the carrier went down' : 'shot down'} at wave ${Math.max(1, this.scramble.wave)}`;
-                reason = `By ${ahead.toLocaleString('en-US')} pts - ${end}.`;
+                // The scoreboard, not how the run ended: "the carrier went
+                // down" under a win read as "so did I lose?" (UX review).
+                const pts = (n: number) => n.toLocaleString('en-US');
+                reason = `YOU ${pts(this.score.totalScore)} · ${this.challenge.name ? challengerLabel(this.challenge) : 'CHALLENGE'} `
+                    + `${pts(this.challenge.score)} - you won by ${pts(ahead)}!`;
             }
         }
         return {
@@ -2520,13 +2549,11 @@ export class GameLoop {
                     isNewBest: this.lastShareRun.isNewBest,
                     versus: this.lastShareRun.versus,
                     score: this.lastShareRun.score,
-                    freshStars: this.lastShareRun.freshStars
+                    freshStars: this.lastShareRun.freshStars,
+                    bestIsNews: this.lastShareRun.bestIsNews
                 }),
                 status: this.shareStatus,
-                // After a friend's challenge the button answers them by name.
-                label: this.lastShareRun.versus
-                    ? (this.lastShareRun.versus.name ? `REPLY TO ${this.lastShareRun.versus.name.toUpperCase()}` : 'REPLY')
-                    : 'SHARE'
+                label: this.shareButtonLabel()
             } : null,
             nextUp: this.nextUpLabel() ?? undefined,
             touch: this.controlScheme === 'TOUCH'
@@ -3186,25 +3213,32 @@ export class GameLoop {
 
     /**
      * The moment a run passes the score it was chasing (v2.3.0). Once a run:
-     * a challenger's score earns "YOU BEAT ANNA!", the pilot's own best earns
-     * NEW PERSONAL BEST - while it is happening, which is when it feels like
-     * something.
+     * "AHEAD OF ANNA!" past a challenger's score, "PAST YOUR BEST!" past the
+     * pilot's own - while it is happening, which is when it feels like
+     * something. Not "YOU BEAT ANNA": the run is not over, and a penalty can
+     * still take the lead back; the debrief says who won.
      */
     private checkScoreTarget() {
         const t = this.scoreTarget;
         if (!t) return;
-        // Live, both ways: a penalty can take the score back under the line,
-        // and then the chip says so rather than claim a win the debrief will
-        // deny. The banner and the fanfare happen once a run.
+        // Live, both ways: the chip follows the line if a penalty crosses it.
         this.scoreTargetPassed = this.score.totalScore > t.score;
-        if (!this.scoreTargetPassed || this.scoreTargetCelebrated) return;
+        if (this.scoreTargetCelebrated) return;
+        if (!this.scoreTargetPassed) {
+            this.scoreTargetPassedAt = -1;
+            return;
+        }
+        if (this.scoreTargetPassedAt < 0) this.scoreTargetPassedAt = this.missionSeconds;
+        // Its own moment: let a kill or wave banner clear first (up to 2.5 s)
+        // rather than stacking three banners at once.
+        if (this.callouts.active().length > 1 && this.missionSeconds - this.scoreTargetPassedAt < 2.5) return;
         this.scoreTargetCelebrated = true;
         const pts = t.score.toLocaleString('en-US');
         if (t.challenge) {
-            this.callouts.push(t.who === 'A FRIEND' ? 'CHALLENGE BEATEN!' : `YOU BEAT ${t.who}!`, 'PRAISE',
-                `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
+            this.callouts.push(t.who === 'A FRIEND' ? 'AHEAD OF THE CHALLENGE!' : `AHEAD OF ${t.who}!`, 'PRAISE',
+                `PAST ${pts} PTS - KEEP IT UP`, 2.8, 'RECORD');
         } else {
-            this.callouts.push('NEW PERSONAL BEST!', 'PRAISE', `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
+            this.callouts.push('PAST YOUR BEST!', 'PRAISE', `PAST ${pts} PTS - KEEP GOING`, 2.8, 'RECORD');
         }
         soundFX.playFanfare(6);
         this.flash(THEME.caution, 0.25);
@@ -3514,6 +3548,8 @@ export class GameLoop {
             : this.missionStatus.reason;
         if (outcome === 'SUCCESS') this.score.recordMissionComplete();
 
+        const bestBefore = this.bestScore;
+        const missionBestBefore = this.missionRecords[this.scenario.id]?.best ?? 0;
         const result = recordBestScore(this.score.totalScore, this.bestScore);
         this.bestScore = result.best;
         this.isNewBest = result.isNewBest;
@@ -3523,6 +3559,7 @@ export class GameLoop {
         );
         this.missionRecords = merged.records;
         this.isMissionBest = merged.isNewBest;
+        this.beatPreviousBest = (this.isNewBest && bestBefore > 0) || (this.isMissionBest && missionBestBefore > 0);
         saveMissionRecords(this.missionRecords);
         if (this.isDailyRun) this.recordDailyRun();
         this.recordProgression(outcome === 'SUCCESS');
@@ -3752,9 +3789,15 @@ export class GameLoop {
 
         // Before any overlay and before the thumb controls: the share picture
         // shows the fight, not the buttons.
-        if (this.momentDueAt > 0 && this.elapsedSeconds >= this.momentDueAt && this.currentView === 'MICRO_FLIGHT'
-            && !this.menuOpen && !this.helpVisible && !this.awaitingRotation) {
-            this.captureMoment();
+        if (this.momentDueAt > 0 && this.elapsedSeconds >= this.momentDueAt) {
+            // A beat late is fine. Held back longer - the menu, the help or
+            // the rotate prompt went up - it would photograph some later,
+            // unrelated frame at the kill's weight: drop it instead.
+            if (this.elapsedSeconds - this.momentDueAt > 0.5) {
+                this.momentDueAt = 0;
+            } else if (this.currentView === 'MICRO_FLIGHT' && !this.menuOpen && !this.helpVisible && !this.awaitingRotation) {
+                this.captureMoment();
+            }
         }
 
         if (this.helpVisible) {
@@ -3780,7 +3823,10 @@ export class GameLoop {
         // instruments, so the game asks for the device rather than shipping
         // something unreadable.
         if (this.awaitingRotation) {
-            drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds);
+            if (this.rotationWaitSince < 0) this.rotationWaitSince = this.elapsedSeconds;
+            drawRotatePrompt(this.ctx, w, h, this.elapsedSeconds, this.elapsedSeconds - this.rotationWaitSince);
+        } else {
+            this.rotationWaitSince = -1;
         }
     }
 
@@ -4078,6 +4124,7 @@ export class GameLoop {
     public acceptChallengeWelcome() {
         if (!this.challengeWelcomeOpen) return;
         this.challengeWelcomeOpen = false;
+        this.onChallengeWelcomeClose?.();
         // The challenger flew EASY and this pilot has never been asked: fly
         // EASY too, without the question - the same fight, one tap sooner.
         // A STANDARD challenge still asks: a newcomer may well want EASY.
@@ -4092,6 +4139,7 @@ export class GameLoop {
     public closeChallengeWelcome() {
         if (!this.challengeWelcomeOpen) return;
         this.challengeWelcomeOpen = false;
+        this.onChallengeWelcomeClose?.();
         soundFX.playUiMove();
     }
 
@@ -4126,6 +4174,7 @@ export class GameLoop {
         this.menuOpen = false;
         this.isNewBest = false;
         this.isMissionBest = false;
+        this.beatPreviousBest = false;
         this.isDailyRun = false;
         this.dailyRunDate = null;
         this.missionOutcome = 'ACTIVE';

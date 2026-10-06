@@ -24,17 +24,26 @@ export interface Moment {
     height: number;
 }
 
-/** Where everything goes on the 1080 square. Exported for the layout test. */
+/**
+ * Where everything goes on the 1080 square. Exported for the layout test.
+ *
+ * Laid out for a chat thumbnail (250-300 px wide), where the first review
+ * found the moment frame an almost black box and only the score readable:
+ * the headline with names goes to the top, the scores are the biggest thing,
+ * the moment is smaller and brightened, and the footer says what the game is.
+ */
 export const SHARE_IMAGE_LAYOUT = {
-    title: 70,
-    subtitle: 118,
-    moment: { x: 60, y: 150, w: 960, h: 520 } as Rect,
-    stars: 726,
-    score: 860,
-    stats: 918,
-    line: 966,
-    headline: 1030,
-    host: 1066
+    game: 62,
+    headline: 152,
+    moment: { x: 90, y: 192, w: 900, h: 380 } as Rect,
+    stars: 632,
+    score: 770,
+    board: [692, 790],
+    stats: 856,
+    tags: 904,
+    footerTop: 940,
+    footer: 996,
+    host: 1048
 } as const;
 
 export function drawShareImage(ctx: CanvasRenderingContext2D, data: SharePicture, moment: Moment | null) {
@@ -50,27 +59,31 @@ export function drawShareImage(ctx: CanvasRenderingContext2D, data: SharePicture
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
 
-    // Title, and what was flown.
-    ctx.font = font(60, 700);
+    // What it is, then what happened - with names, because a picture gets
+    // forwarded to people who do not know who "I" is.
+    ctx.font = font(44, 700);
+    ctx.fillStyle = THEME.phosphor;
+    ctx.fillText('CARRIER VECTOR: 1988', cx, L.game);
+    shrinkToFit(ctx, data.headline, S - 80, 76, 44);
     ctx.fillStyle = THEME.ink;
-    glow(ctx, THEME.phosphor, 16);
-    ctx.fillText('CARRIER VECTOR: 1988', cx, L.title);
+    glow(ctx, THEME.phosphor, 18);
+    ctx.fillText(fitText(ctx, data.headline, S - 80), cx, L.headline);
     noGlow(ctx);
-    const sub = [data.title, ...data.tags].join('  ·  ');
-    ctx.font = font(30, 700);
-    ctx.fillStyle = data.tags.length > 0 ? THEME.caution : THEME.phosphor;
-    ctx.fillText(fitText(ctx, sub, S - 80), cx, L.subtitle);
 
-    // The moment.
+    // The moment, smaller and brighter: thin green lines on black vanish in
+    // a thumbnail, so the frame is drawn twice, the second time added.
     const m = L.moment;
     ctx.save();
     roundRect(ctx, m.x, m.y, m.w, m.h, 14);
     ctx.clip();
     if (moment && moment.width > 0 && moment.height > 0) {
-        // A little closer than the whole screen: the kill happens round the
-        // gunsight, and the edges are instruments.
         const crop = coverCrop(moment.width, moment.height, m.w, m.h, MOMENT_ZOOM);
         ctx.drawImage(moment.image, crop.x, crop.y, crop.w, crop.h, m.x, m.y, m.w, m.h);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6;
+        ctx.drawImage(moment.image, crop.x, crop.y, crop.w, crop.h, m.x, m.y, m.w, m.h);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
     } else {
         drawScope(ctx, m);
     }
@@ -82,51 +95,73 @@ export function drawShareImage(ctx: CanvasRenderingContext2D, data: SharePicture
     ctx.stroke();
     noGlow(ctx);
 
-    // Stars.
-    for (let i = 0; i < 3; i++) {
-        const sx = cx + (i - 1) * 92;
-        starPath(ctx, sx, L.stars, 34);
-        if (i < data.stars) {
-            ctx.fillStyle = THEME.caution;
-            glow(ctx, THEME.caution, 16);
-            ctx.fill();
+    if (data.board && data.board.length > 0) {
+        // After a challenge: a scoreboard, the higher score on top.
+        data.board.slice(0, 2).forEach((row, i) => {
+            const y = L.board[i];
+            ctx.font = font(64, 700);
+            ctx.fillStyle = i === 0 ? THEME.caution : THEME.ink;
+            if (i === 0) glow(ctx, THEME.caution, 16);
+            ctx.textAlign = 'right';
+            const score = Math.round(row.score).toLocaleString('en-US');
+            ctx.fillText(score, m.x + m.w, y);
+            const scoreW = ctx.measureText(score).width;
+            ctx.textAlign = 'left';
+            ctx.fillText(fitText(ctx, row.name, m.w - scoreW - 40), m.x, y);
             noGlow(ctx);
-        } else {
-            ctx.strokeStyle = THEME.muted;
-            ctx.lineWidth = 3;
-            ctx.stroke();
+        });
+        ctx.textAlign = 'center';
+    } else {
+        for (let i = 0; i < 3; i++) {
+            const sx = cx + (i - 1) * 92;
+            starPath(ctx, sx, L.stars, 32);
+            if (i < data.stars) {
+                ctx.fillStyle = THEME.caution;
+                glow(ctx, THEME.caution, 16);
+                ctx.fill();
+                noGlow(ctx);
+            } else {
+                ctx.strokeStyle = THEME.muted;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
         }
+        ctx.font = font(120, 700);
+        ctx.fillStyle = THEME.caution;
+        glow(ctx, THEME.caution, 22);
+        ctx.fillText(fitText(ctx, `${Math.round(data.score).toLocaleString('en-US')} PTS`, S - 80), cx, L.score);
+        noGlow(ctx);
     }
 
-    // The score.
-    ctx.font = font(112, 700);
-    ctx.fillStyle = THEME.caution;
-    glow(ctx, THEME.caution, 22);
-    ctx.fillText(fitText(ctx, `${Math.round(data.score).toLocaleString('en-US')} PTS`, S - 80), cx, L.score);
-    noGlow(ctx);
-
-    ctx.font = font(38, 700);
-    ctx.fillStyle = THEME.ink;
-    ctx.fillText(fitText(ctx, data.stats, S - 80), cx, L.stats);
-
-    // Who flew it - or, after a challenge, both names and both scores.
-    const line = data.versus ?? (data.pilot ? `PILOT: ${data.pilot}` : null);
-    if (line) {
-        ctx.font = font(34, 700);
-        ctx.fillStyle = THEME.phosphor;
-        ctx.fillText(fitText(ctx, line, S - 80), cx, L.line);
+    if (data.stats) {
+        ctx.font = font(36, 700);
+        ctx.fillStyle = THEME.ink;
+        ctx.fillText(fitText(ctx, data.stats, S - 80), cx, L.stats);
     }
+    const tags = [data.title, ...data.tags].join('  ·  ');
+    ctx.font = font(30, 700);
+    ctx.fillStyle = data.tags.length > 0 ? THEME.caution : THEME.phosphor;
+    ctx.fillText(fitText(ctx, tags, S - 80), cx, L.tags);
 
-    // The question - the reason the picture exists.
-    ctx.font = font(56, 700);
+    // What the game is and where - big enough to read in a thumbnail.
+    ctx.fillStyle = 'rgba(87,227,155,0.12)';
+    ctx.fillRect(0, L.footerTop, S, S - L.footerTop);
+    ctx.font = font(40, 700);
     ctx.fillStyle = THEME.ink;
-    glow(ctx, THEME.phosphor, 14);
-    ctx.fillText(fitText(ctx, data.headline, S - 60), cx, L.headline);
-    noGlow(ctx);
-    ctx.font = font(26, 600);
+    ctx.fillText(fitText(ctx, 'FREE GAME - PLAYS IN YOUR BROWSER', S - 60), cx, L.footer);
+    ctx.font = font(30, 600);
     ctx.fillStyle = THEME.muted;
-    ctx.fillText(fitText(ctx, `FREE IN YOUR BROWSER · ${data.host}`, S - 60), cx, L.host);
+    ctx.fillText(fitText(ctx, data.host, S - 60), cx, L.host);
     ctx.restore();
+}
+
+/** Set the largest bold font, from `maxPx` down to `minPx`, at which `text` fits. */
+function shrinkToFit(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxPx: number, minPx: number) {
+    for (let px = maxPx; px >= minPx; px -= 4) {
+        ctx.font = font(px, 700);
+        if (ctx.measureText(text).width <= maxWidth) return;
+    }
+    ctx.font = font(minPx, 700);
 }
 
 /** How much closer than the whole screen the moment is framed. */

@@ -12,8 +12,11 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
  * the home page without the ?c= that carries the run.
  */
 export function challengePage(): Plugin {
-    const title = 'You have been challenged - Carrier Vector: 1988';
-    const description = 'A friend flew these waves and wants to see you beat their score. A free retro jet game in your browser - no download, no sign-up. New to games? EASY mode flies the plane for you.';
+    // "You have been challenged" reads like "you have been selected" - the
+    // shape of a scam text (v2.3.0 UX review). Lead with the question and
+    // with what the link is; a preview often cuts the description short.
+    const title = 'Can you beat my score? Carrier Vector: 1988 - a free jet game';
+    const description = 'Plays in your browser. No download, no sign-up, nothing to pay. EASY mode flies the plane - you tap FIRE.';
     return {
         name: 'challenge-page',
         apply: 'build',
@@ -21,13 +24,19 @@ export function challengePage(): Plugin {
         enforce: 'post',
         generateBundle(_options, bundle) {
             const index = bundle['index.html'];
-            if (!index || index.type !== 'asset') return;
+            // Loud, never silent: a /c/ page that kept og:url would send
+            // every challenge posted on Facebook to the home page, and the
+            // build would still pass (v2.3.0 review).
+            if (!index || index.type !== 'asset') this.error('challenge-page: no index.html in the bundle');
             const html = String(index.source)
                 .replace(/\s*<link rel="canonical"[^>]*>/, '')
                 .replace(/\s*<meta property="og:url"[^>]*>/, '')
                 .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
                 .replace(/(<meta (?:property="og:title"|name="twitter:title") content=")[^"]*/g, `$1${title}`)
                 .replace(/(<meta (?:property="og:description"|name="twitter:description"|name="description") content=")[^"]*/g, `$1${description}`);
+            if (/og:url|rel="canonical"/.test(html) || !html.includes(title) || !html.includes(description)) {
+                this.error('challenge-page: index.html changed shape - /c/ would keep the home page\'s link preview');
+            }
             this.emitFile({ type: 'asset', fileName: 'c/index.html', source: html });
         }
     };

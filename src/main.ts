@@ -85,8 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keydown', (e) => {
         // The share panel's text field and buttons own the keyboard while it
-        // is open (it also stops its own keys from bubbling here).
-        if (sharePanel?.isOpen()) return;
+        // is open, and stop their own keys from bubbling here. A key that
+        // still arrives came from outside it - focus left the panel (a click
+        // on its text, say): ESC must still close it, TAB goes back in, and
+        // nothing reaches the game.
+        if (sharePanel?.isOpen()) {
+            sharePanel.strayKey(e);
+            return;
+        }
         // The stick cluster by physical position, everything else by label -
         // see Controls.normalizeKey. Keyup below MUST use the same mapping, or
         // a key pressed on one layout could be released under another name
@@ -554,9 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (challenge) {
         const who = challenge.name ?? 'A friend';
         document.title = `${who} challenges you - Carrier Vector: 1988`;
-        // The welcome card is pixels; a screen reader hears this instead.
+        // The welcome card is pixels; a screen reader hears this instead -
+        // and the usual label again once it has gone.
+        const usual = canvas.getAttribute('aria-label') ?? '';
         canvas.setAttribute('aria-label', `${who} challenges you to beat ${challenge.score.toLocaleString('en-US')} points `
-            + 'in Carrier Vector 1988, on the same waves. Press Enter, or tap Accept Challenge, to fly.');
+            + 'in Carrier Vector 1988, a free game, on the same waves. Press Enter, or tap Play, to fly.');
+        game.onChallengeWelcomeClose = () => canvas.setAttribute('aria-label', usual);
     }
     game.start();
 });

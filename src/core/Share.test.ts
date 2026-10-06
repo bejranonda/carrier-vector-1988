@@ -50,6 +50,9 @@ describe('shareToSheet (v2.3.0)', () => {
         expect(await shareToSheet({ share: async () => { throw abort; } }, linkPayload(content))).toBe('CANCELLED');
         expect(await shareToSheet({ share: async () => { throw new Error('denied'); } }, linkPayload(content))).toBe('FAILED');
         expect(await shareToSheet({}, linkPayload(content))).toBe('FAILED');
+        // A double tap: the second call finds the first sheet still up.
+        const busy = Object.assign(new Error('pending'), { name: 'InvalidStateError' });
+        expect(await shareToSheet({ share: async () => { throw busy; } }, linkPayload(content))).toBe('BUSY');
     });
 });
 

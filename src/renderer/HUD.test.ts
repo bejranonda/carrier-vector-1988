@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUD, assistCaption, goHereRelativeBearing, scoreWithTarget } from './HUD';
+import { HUD, assistCaption, goHereRelativeBearing, scoreTargetOptions, scoreWithTarget } from './HUD';
 import type { AircraftPhysics } from '../flight/AircraftPhysics';
 
 /** isOnApproach only reads position and velocity. */
@@ -97,12 +97,30 @@ describe('goHereRelativeBearing', () => {
 });
 
 describe('scoreWithTarget (v2.3.0)', () => {
-    it('shows the score to beat until it is passed, then who is behind', () => {
+    it('reads as a scoreboard, never as a fraction', () => {
         expect(scoreWithTarget(4200, null)).toBe('4,200 PTS');
         const anna = { score: 12345, who: 'ANNA', challenge: true, passed: false };
-        expect(scoreWithTarget(4200, anna)).toBe('4,200 / 12,345 PTS');
-        expect(scoreWithTarget(13100, { ...anna, passed: true })).toBe('13,100 PTS · AHEAD OF ANNA');
-        expect(scoreWithTarget(13100, { ...anna, who: 'A FRIEND', passed: true })).toBe('13,100 PTS · CHALLENGE BEATEN');
-        expect(scoreWithTarget(9000, { score: 8000, who: 'YOUR BEST', challenge: false, passed: true })).toBe('9,000 PTS · NEW BEST');
+        expect(scoreWithTarget(4200, anna)).toBe('ANNA 12,345 · YOU 4,200');
+        expect(scoreWithTarget(-80, anna)).toBe('ANNA 12,345 · YOU -80');
+        expect(scoreWithTarget(13100, { ...anna, passed: true })).toBe('YOU 13,100 · AHEAD OF ANNA');
+        expect(scoreWithTarget(4200, { ...anna, who: 'A FRIEND' })).toBe('TO BEAT 12,345 · YOU 4,200');
+        expect(scoreWithTarget(13100, { ...anna, who: 'A FRIEND', passed: true })).toBe('YOU 13,100 · AHEAD');
+        const best = { score: 8000, who: 'YOUR BEST', challenge: false, passed: false };
+        expect(scoreWithTarget(4200, best)).toBe('BEST 8,000 · NOW 4,200');
+        expect(scoreWithTarget(9000, { ...best, passed: true })).toBe('NOW 9,000 · NEW BEST');
+    });
+
+    it('shortens by dropping the name first and the pilot\'s own score never', () => {
+        const anna = { score: 12345, who: 'GRANDPA MARGARET', challenge: true, passed: false };
+        const chasing = scoreTargetOptions(4200, anna);
+        expect(chasing).toEqual(['GRANDPA MARGARET 12,345 · YOU 4,200', 'TO BEAT 12,345 · YOU 4,200', 'BEAT 12,345 · YOU 4,200', 'YOU 4,200']);
+        const ahead = scoreTargetOptions(13100, { ...anna, passed: true });
+        expect(ahead).toEqual(['YOU 13,100 · AHEAD OF GRANDPA MARGARET', 'YOU 13,100 · AHEAD', 'YOU 13,100']);
+        for (const list of [chasing, ahead]) {
+            for (let i = 1; i < list.length; i++) expect(list[i].length).toBeLessThan(list[i - 1].length);
+            for (const option of list) expect(option).toContain('YOU');
+        }
+        expect(scoreTargetOptions(4200, { score: 8000, who: 'YOUR BEST', challenge: false, passed: false }))
+            .toEqual(['BEST 8,000 · NOW 4,200', 'NOW 4,200']);
     });
 });

@@ -382,7 +382,7 @@ await session('challenge', { width: 1280, height: 720 }, false, async (page, sho
         state.welcome === true && state.scenario === 'SCRAMBLE' && state.challenge?.seed === 424242
         && state.challenge?.score === 5000 && state.challenge?.name === 'Anna', state);
     check('the browser tab says who sent it', /^Anna challenges you/.test(state.title), state.title);
-    await page.keyboard.press('Enter'); // ACCEPT CHALLENGE
+    await page.keyboard.press('Enter'); // PLAY - IT'S FREE
     await page.waitForTimeout(500);
     let flight = await page.evaluate(() => ({
         phase: window.__game.phase, seed: window.__game.scramble?.seed, easy: window.__game.easyMode,
@@ -393,10 +393,12 @@ await session('challenge', { width: 1280, height: 720 }, false, async (page, sho
         flight.phase === 'ACTIVE' && flight.seed === 424242 && flight.easy === true && flight.chooser === false, flight);
     check('the run chases Anna\'s score', flight.target?.score === 5000 && flight.target?.who === 'ANNA', flight.target);
     await page.evaluate(() => window.__game.score.recordBonus(5100));
-    await page.waitForTimeout(300);
+    // Its own moment: it may wait (up to 2.5 s) for a wave banner to clear.
+    await page.waitForFunction(() => window.__game.callouts.active().some((c) => c.group === 'RECORD'), null, { timeout: 4000 }).catch(() => {});
     const banners = await page.evaluate(() => window.__game.callouts.active().map((c) => c.text));
     await shot('02-passed');
-    check('passing it puts "YOU BEAT ANNA!" on screen, there and then', banners.includes('YOU BEAT ANNA!'), banners);
+    // "Ahead", not "beat": the run is not over, and the debrief says who won.
+    check('passing it puts "AHEAD OF ANNA!" on screen, there and then', banners.includes('AHEAD OF ANNA!'), banners);
 
     await page.evaluate(() => { window.__game.deck.inventory.carrierHealth = 0; });
     await page.waitForTimeout(2800);
@@ -434,6 +436,43 @@ await session('challenge', { width: 1280, height: 720 }, false, async (page, sho
     await page.waitForTimeout(250);
     const closed = await page.evaluate(() => ({ open: !document.getElementById('share').hidden, phase: window.__game.phase }));
     check('ESC closes the panel and leaves the debrief where it was', !closed.open && closed.phase === 'DEBRIEF', closed);
+
+    // Opened by a MOUSE click (v2.3.0 review): the press used to end by
+    // handing focus back to the canvas, and ESC then did nothing.
+    const reply = await page.evaluate(() => {
+        const g = window.__game;
+        const l = window.__ui.debriefLayout(g.viewWidth, g.viewHeight, g.debriefData());
+        return { x: (l.share.x + l.share.w / 2) * g.uiZoom, y: (l.share.y + l.share.h / 2) * g.uiZoom };
+    });
+    await page.mouse.click(reply.x, reply.y);
+    await page.waitForTimeout(400);
+    const clicked = await page.evaluate(() => ({
+        open: !document.getElementById('share').hidden,
+        focusInside: document.getElementById('share').contains(document.activeElement)
+    }));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const after2 = await page.evaluate(() => !document.getElementById('share').hidden);
+    check('a click on REPLY TO ANNA opens the panel with the keyboard in it, and ESC closes it',
+        clicked.open && clicked.focusInside && !after2, { clicked, openAfterEsc: after2 });
+});
+
+// A STANDARD challenge link: a newcomer is asked how to fly first, then flies
+// the sharer's waves (v2.3.0 review - the session above only opens .e links).
+await session('challenge-standard', { width: 1280, height: 720 }, false, async (page) => {
+    await page.goto(`${url}c/?c=424242.5000.3#n=Anna`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2600);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const asked = await page.evaluate(() => ({ chooser: window.__game.flyStyleChooserOpen, phase: window.__game.phase }));
+    check('a STANDARD challenge asks a newcomer how to fly first', asked.chooser === true, asked);
+    await page.keyboard.press('1');
+    await page.waitForTimeout(600);
+    const flying = await page.evaluate(() => ({
+        phase: window.__game.phase, seed: window.__game.scramble?.seed, easy: window.__game.easyMode, target: window.__game.scoreTarget
+    }));
+    check('...then flies the same waves, chasing Anna\'s score', flying.phase === 'ACTIVE' && flying.seed === 424242
+        && flying.easy === true && flying.target?.score === 5000, flying);
 });
 
 // ---------------------------------------------------------------------

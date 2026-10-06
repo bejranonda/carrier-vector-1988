@@ -12,7 +12,7 @@
  * player's own agency, which is exactly what a control is.
  */
 
-import { THEME, font, glow, noGlow, plate, roundRect } from './Theme';
+import { THEME, fitText, font, glow, noGlow, plate, roundRect } from './Theme';
 import type { TouchLayout } from './TouchLayout';
 import type { TouchDemand } from '../core/TouchInput';
 
@@ -291,7 +291,7 @@ export function drawLaunchButton(
  * width, so rather than ship something unreadable the game asks for the
  * device to be turned.
  */
-export function drawRotatePrompt(ctx: CanvasRenderingContext2D, w: number, h: number, timeSec: number) {
+export function drawRotatePrompt(ctx: CanvasRenderingContext2D, w: number, h: number, timeSec: number, waitedSec = 0) {
     ctx.save();
     noGlow(ctx);
     ctx.fillStyle = 'rgba(7,13,17,0.96)';
@@ -318,5 +318,14 @@ export function drawRotatePrompt(ctx: CanvasRenderingContext2D, w: number, h: nu
     ctx.font = font(12);
     ctx.fillStyle = THEME.muted;
     ctx.fillText('The cockpit needs a landscape screen.', cx, cy + 94);
+    // Turned it and nothing happened? Most likely the rotation lock - which
+    // nobody thinks of, and which nothing else on the screen would explain.
+    if (waitedSec > 4) {
+        ctx.font = font(13, 600);
+        ctx.fillStyle = THEME.caution;
+        ctx.fillText(fitText(ctx, 'Not turning? Your rotation lock may be on:', w - 24), cx, cy + 126);
+        ctx.fillText(fitText(ctx, 'switch it off in quick settings (swipe down', w - 24), cx, cy + 146);
+        ctx.fillText(fitText(ctx, 'from the top of the screen).', w - 24), cx, cy + 166);
+    }
     ctx.restore();
 }

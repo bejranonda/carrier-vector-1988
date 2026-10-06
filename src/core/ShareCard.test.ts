@@ -12,109 +12,107 @@ const run = (over: Partial<ShareRun> = {}): ShareRun => ({
     isNewBest: false,
     name: null,
     versus: null,
-    url: 'https://example.org/game/?c=1.12345.7',
+    url: 'https://example.org/game/c/?c=1.12345.7',
     ...over
 });
 
 describe('shareContent (v2.3.0)', () => {
-    it('a run worth boasting about is a challenge, in plain words, with the link on its own last line', () => {
+    it('a best is a challenge, in plain words, saying what the link is, with the link alone on its last line', () => {
         const s = shareContent(run({ isNewBest: true }));
-        expect(s.text).toBe('I scored 12,345 points in Carrier Vector: 1988 and shot down 21 planes. My best yet! '
-            + 'Can you beat me? It\'s a free game in your browser - same waves, a few minutes, no download:');
+        expect(s.text).toBe('My best yet: 12,345 points and 21 planes shot down in Carrier Vector: 1988, a free jet game. '
+            + 'Can you beat me? It plays in your browser, no download:');
         expect(s.text).not.toContain('http');
-        expect(s.url).toBe('https://example.org/game/?c=1.12345.7');
         expect(s.clipboard).toBe(`${s.text}\n${s.url}`);
         expect(s.clipboard.split('\n').pop()).toBe(s.url);
         expect(s.subject).toBe('Can you beat my 12,345 in Carrier Vector: 1988?');
         expect(s.action).toBe('CHALLENGE A FRIEND');
-        // No rows of symbols, no shouting: what makes a message read as spam.
+        // No rows of symbols, no shouting, no pilot slang.
         expect(s.clipboard).not.toMatch(/[●◆▲★☆]/);
         expect(s.text).not.toMatch(/[A-Z]{6,}/);
-        expect(s.picture.headline).toBe('CAN YOU BEAT ME?');
-        expect(s.picture.title).toBe('SCRAMBLE');
-        expect(s.picture.stats).toBe('7 WAVES · 21 PLANES DOWN · CHAIN x4');
-        expect(s.picture.versus).toBeNull();
-        expect(s.picture.host).not.toMatch(/^https?:/);
+        expect(s.text).not.toMatch(/wave|splash/i);
     });
 
-    it('a run with nothing to boast about is an invitation instead', () => {
+    it('a run with nothing to boast about is a short invitation instead', () => {
         const s = shareContent(run());
-        expect(s.text.startsWith('Try Carrier Vector: 1988 - a free retro jet game in your browser, no download.')).toBe(true);
-        expect(s.text).toContain('EASY mode flies the plane for you');
-        expect(s.text).toContain('I scored 12,345 points - can you beat me?');
-        expect(s.subject).toContain('Try Carrier Vector: 1988');
+        expect(s.text).toBe('Try Carrier Vector: 1988, a free jet game - it plays in your browser, nothing to install. '
+            + 'EASY mode flies the plane; you just press FIRE. I got 12,345 - can you beat me?');
+        expect(s.text.length).toBeLessThan(180);
         expect(s.action).toBe('INVITE A FRIEND');
         // A run that scored nothing asks no one to beat it.
-        expect(shareContent(run({ score: 0 })).text).not.toContain('can you beat me');
+        expect(shareContent(run({ score: 0 })).text).not.toContain('beat');
         // A fresh star is worth a challenge.
-        expect(shareContent(run({ freshStars: 1 })).text.startsWith('I scored')).toBe(true);
+        expect(shareContent(run({ freshStars: 1 })).text.startsWith('I scored 12,345 points and shot down 21 planes')).toBe(true);
     });
 
-    it('gets the plurals right in both cases', () => {
-        const one = shareContent(run({ kills: 1, waves: 1, bestChain: 1, isNewBest: true }));
-        expect(one.text).toContain('shot down 1 plane.');
-        expect(one.picture.stats).toBe('1 WAVE · 1 PLANE DOWN');
-        expect(shareContent(run({ kills: 0, waves: 0, bestChain: 0 })).picture.stats).toBe('0 WAVES · 0 PLANES DOWN');
-    });
-
-    it('marks EASY and a personal best, in the words and on the picture', () => {
+    it('marks EASY wherever a score is claimed, and on the picture', () => {
         const s = shareContent(run({ easy: true, isNewBest: true, name: 'Tom' }));
-        expect(s.text).toContain('12,345 points on EASY in');
-        expect(s.text).toContain('My best yet!');
+        expect(s.text).toContain('in Carrier Vector: 1988 (I flew on EASY)');
         expect(s.picture.tags).toEqual(['EASY MODE', 'NEW PERSONAL BEST']);
-        expect(s.picture.pilot).toBe('TOM');
+        expect(shareContent(run({ easy: true })).text).toContain('I got 12,345 (I flew on EASY)');
+        expect(shareContent(run({ easy: true, versus: { name: 'Anna', score: 9 } })).text).toContain('(I flew on EASY)');
     });
 
-    it('caps the chain at x5 and the stars at three', () => {
-        const s = shareContent(run({ bestChain: 9, stars: 7 }));
-        expect(s.picture.stats).toContain('CHAIN x5');
-        expect(s.picture.stars).toBe(3);
+    it('shows only the numbers worth showing, plurals right', () => {
+        expect(shareContent(run()).picture.stats).toBe('7 WAVES · 21 PLANES DOWN · CHAIN x4');
+        expect(shareContent(run({ kills: 1, waves: 1, bestChain: 1 })).picture.stats).toBe('1 WAVE · 1 PLANE DOWN');
+        expect(shareContent(run({ kills: 0, waves: 0, bestChain: 0 })).picture.stats).toBe('');
+        expect(shareContent(run({ bestChain: 9 })).picture.stats).toContain('CHAIN x5');
+        expect(shareContent(run({ stars: 7 })).picture.stars).toBe(3);
+        expect(shareContent(run({ kills: 1, isNewBest: true })).text).toContain('1 plane shot down');
+        // Never "0 planes shot down".
+        expect(shareContent(run({ kills: 0, isNewBest: true })).text.startsWith('My best yet: 12,345 points in Carrier')).toBe(true);
+        expect(shareContent(run({ kills: 0, freshStars: 1 })).text.startsWith('I scored 12,345 points in Carrier')).toBe(true);
     });
 
     it('names the daily and which try it was', () => {
         const first = shareContent(run({ daily: 279, attempt: 1 }));
-        expect(first.text.startsWith('Daily Scramble #279 (first try): I scored 12,345 points')).toBe(true);
-        expect(first.text).toContain('Everyone gets the same waves today');
+        expect(first.text.startsWith('Daily Scramble #279 (first try): 12,345 points in Carrier Vector: 1988, a free jet game.')).toBe(true);
+        expect(first.text).toContain('Everyone gets the same planes today');
         expect(first.picture.title).toBe('DAILY SCRAMBLE #279 · FIRST TRY');
         const third = shareContent(run({ daily: 279, attempt: 3 }));
         expect(third.text).toContain('(try 3)');
         expect(third.picture.title).toBe('DAILY SCRAMBLE #279 · TRY 3');
     });
 
-    it('a run that beat a challenge says so - the message most worth sending back', () => {
+    it('a reply to a won challenge speaks to the friend, and the picture names both', () => {
         const s = shareContent(run({ name: 'Tom', versus: { name: 'Anna', score: 12000 } }));
-        expect(s.text.startsWith('I beat Anna! 12,345 points to 12,000 in Carrier Vector: 1988. Your turn')).toBe(true);
-        expect(s.subject).toBe('I beat Anna in Carrier Vector: 1988!');
+        expect(s.text).toBe('I beat your score, Anna! 12,345 to your 12,000 in Carrier Vector: 1988. '
+            + 'Your turn to win it back - it\'s a free jet game in your browser, a few minutes:');
+        expect(s.subject).toBe('I beat your score, Anna!');
         expect(s.action).toBe('REPLY TO ANNA');
-        expect(s.picture.headline).toBe('I BEAT ANNA!');
-        expect(s.picture.versus).toBe('ANNA 12,000 · TOM 12,345');
+        expect(s.picture.headline).toBe('TOM BEAT ANNA!');
+        expect(s.picture.board).toEqual([{ name: 'TOM', score: 12345 }, { name: 'ANNA', score: 12000 }]);
+        // Without the sender's name: "I".
+        expect(shareContent(run({ versus: { name: 'Anna', score: 12000 } })).picture.headline).toBe('I BEAT ANNA!');
         const anon = shareContent(run({ versus: { name: null, score: 12000 } }));
-        expect(anon.text.startsWith('I beat the challenge')).toBe(true);
+        expect(anon.text.startsWith('I beat the challenge - 12,345 to 12,000')).toBe(true);
         expect(anon.picture.headline).toBe('CHALLENGE BEATEN!');
-        expect(anon.picture.versus).toBe('CHALLENGE 12,000 · ME 12,345');
+        expect(anon.picture.board?.[1]).toEqual({ name: 'CHALLENGE', score: 12000 });
     });
 
-    it('a tie and a loss stay friendly, and still ask the next friend to try', () => {
+    it('a tie and a loss stay kind; a loss tells the winner instead of challenging them', () => {
         const tie = shareContent(run({ versus: { name: 'Anna', score: 12345 } }));
-        expect(tie.text).toContain('I tied Anna at 12,345 points');
+        expect(tie.text.startsWith("We're tied, Anna - 12,345 points each")).toBe(true);
         expect(tie.picture.headline).toBe('TIED WITH ANNA!');
-        const lost = shareContent(run({ isNewBest: true, versus: { name: 'Anna', score: 15000 } }));
-        expect(lost.text.startsWith('Anna is still ahead - 15,000 points to my 12,345')).toBe(true);
-        expect(lost.text).toContain('Can you beat my score?');
-        expect(lost.picture.headline).toBe('CAN YOU BEAT ME?');
-        // "New personal best" next to a lost challenge reads as a boast about losing.
+        const lost = shareContent(run({ name: 'Tom', isNewBest: true, versus: { name: 'Anna', score: 15000 } }));
+        expect(lost.text).toBe("You're still ahead, Anna - 15,000 to my 12,345 in Carrier Vector: 1988. I'll get you next time!");
+        expect(lost.action).toBe('TELL ANNA');
+        expect(lost.picture.headline).toBe('CAN YOU BEAT TOM?');
+        expect(lost.picture.board?.[0]).toEqual({ name: 'ANNA', score: 15000 });
+        // "New personal best" beside a lost challenge reads as a boast about losing.
         expect(lost.picture.tags).not.toContain('NEW PERSONAL BEST');
     });
 });
 
 describe('shareNudge (v2.3.0)', () => {
-    it('gives the strongest reason first, and a plain one otherwise', () => {
+    it('lights SHARE for a win and a star, a best once a session, and otherwise just says what it does', () => {
         expect(shareNudge({ isNewBest: true, score: 900, versus: { name: 'Anna', score: 800 }, freshStars: 1 }))
-            .toEqual({ text: 'YOU BEAT ANNA - SEND IT BACK', strong: true });
-        expect(shareNudge({ isNewBest: true, score: 900, versus: null, freshStars: 0 }).text).toBe('NEW PERSONAL BEST - SHOW YOUR FRIENDS');
-        expect(shareNudge({ isNewBest: false, score: 900, versus: null, freshStars: 2 }).text).toBe('NEW STARS - SHOW YOUR FRIENDS');
+            .toEqual({ text: 'YOU BEAT ANNA - LET ANNA KNOW', strong: true });
+        expect(shareNudge({ isNewBest: false, score: 900, versus: null, freshStars: 2 })).toEqual({ text: 'NEW STARS - SHOW YOUR FRIENDS', strong: true });
+        expect(shareNudge({ isNewBest: true, score: 900, versus: null, freshStars: 0, bestIsNews: true }).strong).toBe(true);
+        expect(shareNudge({ isNewBest: true, score: 900, versus: null, freshStars: 0, bestIsNews: false }).strong).toBe(false);
         const plain = shareNudge({ isNewBest: false, score: 900, versus: { name: 'Anna', score: 1000 }, freshStars: 0 });
         expect(plain.strong).toBe(false);
-        expect(plain.text).toContain('SAME WAVES');
+        expect(plain.text).toContain('SAME PLANES');
     });
 });

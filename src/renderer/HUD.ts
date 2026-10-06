@@ -325,6 +325,8 @@ export class HUD {
     /** Score handed through to the touch systems line for one frame. */
     private touchScore?: ScoreKeeper;
     private touchTarget?: HudContext['scoreTarget'];
+    /** Where this frame's objective strip went (the score chip keeps clear). */
+    private objectiveRect: { x: number; y: number; w: number; h: number } | null = null;
     /** Flash and motion limits for this frame. */
     private motion: MotionSettings = motionSettings({ reducedMotion: false });
     /**
@@ -386,6 +388,7 @@ export class HUD {
         }
 
         // --- Instruments (all on backplates, all outside the centre box) ---
+        this.objectiveRect = null;
         this.drawObjectiveStrip(ctx, context.objective, layout.cx, layout.touchMode);
         // A grown order strip needs the tape's band on a tall phone.
         const compassShown = layout.showCompass && vis.compass && this.textBoost <= 1;
@@ -598,6 +601,7 @@ export class HUD {
         const h = px(BAND_H.objective);
         const x = cx - w / 2;
         const y = BAND.objective;
+        this.objectiveRect = { x, y, w, h };
 
         plate(ctx, { x, y, w, h }, { fill: 'rgba(6,13,17,0.78)', border: accent, radius: 5 });
 
@@ -922,12 +926,19 @@ export class HUD {
         // The score rides here too: a separate chip in the top-right corner
         // collided with the objective strip on a narrow screen, and this
         // plate is already paid for.
-        const text = `FUEL ${Math.round(physics.fuel)}L   HULL ${Math.round(100 - physics.damage)}%   ${physics.gLoad.toFixed(1)}G`
-            + (score ? `   ${scoreWithTarget(score.totalScore, this.touchTarget)}` : '');
-        const w = ctx.measureText(text).width + 20;
-        // Centred in the free gap between the thumb clusters, at the bottom.
+        // Centred in the free gap between the thumb clusters, at the bottom -
+        // and never wider than it. A score to beat outranks the G meter and
+        // the fuel gauge, so those go before the score line shortens.
         const gapLeft = layout.reserve.left;
         const gapRight = this.width - layout.reserve.right;
+        const room = gapRight - gapLeft - 8;
+        const systems = [`FUEL ${Math.round(physics.fuel)}L`, `HULL ${Math.round(100 - physics.damage)}%`, `${physics.gLoad.toFixed(1)}G`];
+        const targets = score ? scoreTargetOptions(score.totalScore, this.touchTarget) : [''];
+        const candidates = targets.flatMap(t => [systems, systems.slice(0, 2), systems.slice(1, 2)]
+            .map(parts => [...parts, t].filter(Boolean).join('   ')));
+        const fitting = candidates.find(c => ctx.measureText(c).width + 20 <= room);
+        const text = fitting ?? fitText(ctx, candidates[candidates.length - 1], Math.max(0, room - 20));
+        const w = ctx.measureText(text).width + 20;
         const x = Math.max(gapLeft, (gapLeft + gapRight) / 2 - w / 2);
         const y = this.height - bottomAnchor(layout.reserve) - TOUCH_SYSTEMS_LINE_TOP;
 
@@ -1616,14 +1627,32 @@ export class HUD {
     private drawScoreChip(ctx: CanvasRenderingContext2D, score: ScoreKeeper, layout: HudLayout, target?: HudContext['scoreTarget']) {
         ctx.save();
         noGlow(ctx);
-        ctx.font = font(11, 600);
-        const text = target ? scoreWithTarget(score.totalScore, target) : `${score.totalScore} PTS · ${score.rank}`;
-        const w = ctx.measureText(text).width + 22;
         // The menu button lives in the top-right corner in touch mode; the
         // chip has to clear it rather than sit underneath it.
-        const x = this.width - w - 20 - (layout.touchMode ? 58 : 0);
+        const right = this.width - 20 - (layout.touchMode ? 58 : 0);
         // Below the button row, never under it.
         const y = layout.touchMode ? 18 : SCORE_CHIP_Y;
+        // Nor over the objective strip in the same band: with a challenge the
+        // chip shows on the first-flight HUD too, and covered "PLANE" at 720 px.
+        const o = this.objectiveRect;
+        const room = o && y < o.y + o.h && y + 26 > o.y ? right - (o.x + o.w) - 8 : 360;
+        // 13 px with a target: it is a score to read at a glance in a fight.
+        // Both numbers at 13, then both at 11, then just the pilot's own.
+        const options = target ? scoreTargetOptions(score.totalScore, target) : [`${score.totalScore} PTS · ${score.rank}`, `${score.totalScore} PTS`];
+        const head = options.length > 1 ? options.slice(0, -1) : options;
+        const tail = options.length > 1 ? options.slice(-1) : [];
+        const tries: [string, number][] = target
+            ? [...head.map((t): [string, number] => [t, 13]), ...head.map((t): [string, number] => [t, 11]),
+                ...tail.map((t): [string, number] => [t, 13]), ...tail.map((t): [string, number] => [t, 11])]
+            : options.map((t): [string, number] => [t, 11]);
+        const pick = tries.find(([t, size]) => {
+            ctx.font = font(size, 600);
+            return ctx.measureText(t).width + 22 <= room;
+        }) ?? tries[tries.length - 1];
+        ctx.font = font(pick[1], 600);
+        const text = fitText(ctx, pick[0], Math.max(0, room - 22));
+        const w = ctx.measureText(text).width + 22;
+        const x = right - w;
         plate(ctx, { x, y, w, h: 26 }, { border: THEME.edgeSoft, radius: 13 });
         ctx.fillStyle = score.totalScore < 0 ? THEME.alert : THEME.phosphor;
         ctx.textAlign = 'center';
@@ -2526,12 +2555,34 @@ function shortName(name: string): string {
 }
 
 /**
- * "4,200 / 12,345 PTS" while a run chases a score; "13,100 PTS · AHEAD OF
- * ANNA" (or NEW BEST) once it has passed it.
+ * A scoreboard, not a fraction ("-80 / 12,345 PTS" read as a sum): "ANNA
+ * 12,345 · YOU 4,200" while a run chases a friend, "YOU 13,100 · AHEAD OF
+ * ANNA" once past; "BEST 12,345 · NOW 4,200" / "NOW 13,100 · NEW BEST".
+ *
+ * Longest first; the HUD takes the first that fits. The name goes first,
+ * the score to beat next, the pilot's own score never: "AHEAD OF GRANDPA
+ * MARGARE" ran off a small phone, and under its FIRE button (v2.3.0 review).
  */
-export function scoreWithTarget(score: number, target: HudContext['scoreTarget'] | undefined): string {
+export function scoreTargetOptions(score: number, target: HudContext['scoreTarget'] | undefined): string[] {
     const pts = (n: number) => n.toLocaleString('en-US');
-    if (!target) return `${pts(score)} PTS`;
-    if (!target.passed) return `${pts(score)} / ${pts(target.score)} PTS`;
-    return `${pts(score)} PTS · ${target.challenge ? (target.who === 'A FRIEND' ? 'CHALLENGE BEATEN' : `AHEAD OF ${target.who}`) : 'NEW BEST'}`;
+    const you = `YOU ${pts(score)}`;
+    if (!target) return [`${pts(score)} PTS`];
+    if (target.challenge) {
+        const named = target.who !== 'A FRIEND';
+        if (target.passed) return [...(named ? [`${you} · AHEAD OF ${target.who}`] : []), `${you} · AHEAD`, you];
+        return [
+            ...(named ? [`${target.who} ${pts(target.score)} · ${you}`] : []),
+            `TO BEAT ${pts(target.score)} · ${you}`,
+            `BEAT ${pts(target.score)} · ${you}`,
+            you
+        ];
+    }
+    return target.passed
+        ? [`NOW ${pts(score)} · NEW BEST`, `NOW ${pts(score)}`]
+        : [`BEST ${pts(target.score)} · NOW ${pts(score)}`, `NOW ${pts(score)}`];
+}
+
+/** The full line (the longest option). */
+export function scoreWithTarget(score: number, target: HudContext['scoreTarget'] | undefined): string {
+    return scoreTargetOptions(score, target)[0];
 }

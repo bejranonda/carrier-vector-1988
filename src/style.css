@@ -291,6 +291,9 @@ button.shell-link {
 }
 .share-picture {
   display: block;
+  /* The page turns off the long-press menu; here it is how an iPhone saves
+     the picture to Photos. */
+  -webkit-touch-callout: default;
   width: 100%;
   max-width: 300px;
   aspect-ratio: 1 / 1;
@@ -324,6 +327,7 @@ button.shell-link {
   word-break: break-word;
 }
 .share-status { color: var(--phosphor); font-weight: 700; min-height: 1.4em; }
+.share-note { margin: -4px 0 0; color: #93a9a4; font-size: 0.78em; }
 .share-label { margin: 0; color: #b9cbc6; font-size: 0.85em; font-weight: 700; letter-spacing: 0.04em; }
 .share-label span { font-weight: 400; }
 .share-name {
@@ -392,16 +396,26 @@ button.shell-link {
   padding: 12px 10px;
 }
 .share-apps a:focus-visible { outline: 3px solid #ffc94d; outline-offset: 2px; }
-.share-close {
+.share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.share .share-close {
+  flex: none;
+  min-height: 44px;
+  padding: 8px 14px;
   color: #b9cbc6;
   background: transparent;
   border: 1px solid rgba(147, 169, 164, 0.45);
+  border-radius: 6px;
 }
 .share button:focus-visible { outline: 3px solid #ffc94d; outline-offset: 2px; }
 .share button:disabled { opacity: 0.5; cursor: default; }
 
 /* A wide, short screen - a landscape phone, a laptop at large text: the
-   picture beside the controls, so CLOSE is never below the fold. */
+   picture beside the controls, so the buttons are never below the fold. */
 @media (min-aspect-ratio: 4/3) and (max-height: 820px) {
   .share-panel {
     max-width: 820px;
@@ -418,4 +432,9 @@ button.shell-link {
 /* A landscape phone has room for the essentials only. */
 @media (orientation: landscape) and (max-height: 560px) {
   .share-sub, .share-message { display: none; }
+}
+/* A small one: the name's "(optional)" stays, its note goes, so the copy
+   button is on screen too. */
+@media (orientation: landscape) and (max-height: 400px) {
+  .share-note { display: none; }
 }

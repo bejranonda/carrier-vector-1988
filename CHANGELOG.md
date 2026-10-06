@@ -10,72 +10,135 @@ this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 **"Bring a Friend."** The owner's brief: *users should have a good experience,
 they will love to share this to friends.* So v2.3.0 walked both ends of a
 share in a browser - the player sending it, and the friend opening it - had a
-research brief written on what chat apps actually do with a share, and
-rebuilt the loop around both people. Evidence:
+research brief written on what chat apps actually do with a share, rebuilt
+the loop around both people, then put the result through a UX review and a
+code review and fixed what they found. Evidence:
 [`docs/reviews/v2.3.0/`](docs/reviews/v2.3.0/README.md).
 
 ### The friend who opens the link (#127, #128)
 
 - **"ANNA CHALLENGES YOU."** A challenge link opens on a screen of its own:
-  who sent it, the score to beat in big gold numbers, the waves and fly
-  style, one sentence on what the game is, and one big ACCEPT CHALLENGE (SEE
-  ALL MISSIONS for everything else). It used to open the full mission menu
-  with the challenge in one line of small yellow text. The browser tab says
-  who sent it, and so does the canvas's screen-reader label.
+  what the game is ("CARRIER VECTOR: 1988 · A FREE JET GAME"), who sent it,
+  the score to beat in big gold numbers, "They lasted 3 waves of planes on
+  EASY. You get the very same ones.", one sentence on the game, and one big
+  **PLAY - IT'S FREE**, with "No download, no sign-up. EASY mode flies the
+  plane - you tap FIRE." under it (and "Turn your phone sideways to play." on
+  an upright phone). SEE ALL MISSIONS opens everything else. It used to open
+  the full mission menu with the challenge in one line of small yellow text.
+  Every line wraps rather than being cut, in balanced lines; a long name in
+  any script is set smaller. The browser tab and the canvas's screen-reader
+  label say who sent it.
 - **Same fight, one tap sooner:** a newcomer accepting an EASY challenge
   flies EASY without the fly-style question; a STANDARD challenge still asks.
-- **The score to beat is on the HUD** - `4,200 / 12,345 PTS`, even on the
-  first-flight HUD - and passing it is a moment: **"YOU BEAT ANNA!"** and a
-  fanfare, there and then (once a run; the chip tracks the line both ways).
+- **The score to beat is on the HUD** as a scoreboard - `ANNA 12,345 · YOU
+  4,200`, then `YOU 13,100 · AHEAD OF ANNA` - even on the first-flight HUD.
+  Passing it is a moment: **"AHEAD OF ANNA!"** and a fanfare, once a run, in
+  a quiet beat rather than on top of a kill banner. Not "YOU BEAT ANNA": the
+  run is not over, and a penalty can still take the lead back.
 - **A win is the headline.** Beating the challenge used to be a grey line
-  under a red CARRIER LOST; it is now the debrief's headline, in gold, and
-  the share button reads **REPLY TO ANNA**.
+  under a red CARRIER LOST; it is now the debrief's headline, in gold - "YOU
+  BEAT ANNA!" over "YOU 12,400 · ANNA 12,345 - you won by 55!" - and the share
+  button reads **REPLY TO ANNA**.
+- A run without a challenge chases the pilot's own best the same way:
+  `BEST 8,000 · NOW 4,200`, then "PAST YOUR BEST!".
 
 ### The player who shares (#125, #126, #129, #131)
 
-- **SHARE** sits beside FLY AGAIN (C on a keyboard), lit when the run is worth
-  sending, with one line saying why ("NEW PERSONAL BEST - SHOW YOUR FRIENDS").
-  It used to be "C copy result" inside a small text box.
-- **The share panel**: an optional name for the card ("Your name on the card"
-  - kept on this device), a picture of the run, and the buttons the device
-  can use: CHALLENGE A FRIEND / REPLY TO ANNA / INVITE A FRIEND and SEND THE
-  PICTURE through the share sheet; WhatsApp, LINE and a text message or email
-  where there is none (Facebook's and Messenger's in-app browsers, Firefox,
-  Linux); COPY MESSAGE, SAVE PICTURE, and COPY PICTURE on a computer.
-- **The picture**: a 1080 square in the game's look and the pilot's palette -
-  the run's best moment (a frame kept a beat after the best kill, before the
-  thumb controls are drawn), the stars, the score, waves and kills, the
-  pilot's name or both names after a challenge, and "CAN YOU BEAT ME?" or "I
-  BEAT ANNA!".
-- **The message**, in plain sentences with the link alone on its last line:
-  a challenge after a best, a star or a win ("I beat Anna! 12,400 points to
-  12,345..."), an invitation after a modest run ("Try Carrier Vector: 1988 -
-  a free retro jet game in your browser... EASY mode flies the plane for
-  you"). It says what the link is, for friends who are wary of links.
+- **SHARE** sits beside FLY AGAIN (C on a keyboard). It lights up for a win, a
+  new star, or a beaten best (once a session - not every run); otherwise its
+  line just says what it does ("SHARE: YOUR FRIEND GETS THE SAME PLANES"). It
+  used to be "C copy result" inside a small text box. A first run is not
+  shared as a "best yet" - everyone's first run is one - but as an invitation.
+- **The share panel**: the picture, an optional name ("so your friend knows
+  it's you" - kept on this device), and ONE main button - CHALLENGE A FRIEND,
+  REPLY TO ANNA, TELL ANNA or INVITE A FRIEND - through the share sheet. Once
+  that has gone, the picture is offered as a second share ("ALSO SEND OR SAVE
+  THE PICTURE"; on an iPhone the sheet's Save Image puts it in Photos). Where
+  there is no share sheet (in-app browsers, Firefox, Linux): WhatsApp, LINE
+  and a text message or email, with COPY MESSAGE; SAVE PICTURE, and COPY
+  PICTURE on a computer. CLOSE sits at the top, where a dialog's way out is
+  looked for.
+- **The picture**: a 1080 square in the game's look and the pilot's palette,
+  every word at least 30 px so it reads in a chat thumbnail - the game's name;
+  a headline with names in it ("CAN YOU BEAT TOM?", "TOM BEAT ANNA!"); the
+  run's best moment, brightened (a frame kept a beat after the best kill,
+  before the thumb controls are drawn); the stars and the score - or, after a
+  challenge, a two-row scoreboard; the numbers worth showing; and a footer
+  band, "FREE GAME - PLAYS IN YOUR BROWSER", with the address.
+- **The message**, in plain sentences with the link alone on its last line,
+  addressed to the friend: "I beat your score, Anna! 12,400 to your 12,345 in
+  Carrier Vector: 1988. Your turn to win it back - it's a free jet game in
+  your browser, a few minutes:"; after a loss, "You're still ahead, Anna -
+  15,000 to my 12,345... I'll get you next time!"; after a modest run, an
+  invitation ("Try Carrier Vector: 1988, a free jet game - it plays in your
+  browser, nothing to install. EASY mode flies the plane; you just press
+  FIRE."). It says what the link is, for friends who are wary of links.
 - **Two shares, not one.** The first build sent the picture, the message and
   the link together; the research showed iPhone WhatsApp drops the picture
   and Facebook/Messenger drop the link from such a share. The challenge goes
   as text (never as a share `url`, which some iPhone apps cut the query string
   from), the picture alone.
-- **Nothing says "sent"** - the browser is only told an app was chosen.
+- **Nothing says "sent"** - the browser is only told an app was chosen, so the
+  panel says "Thank you for sharing!".
 
 ### Links (#126, #130)
 
 - `https://bejranonda.github.io/carrier-vector-1988/c/?c=seed.score.waves[.e]#n=Name`:
   the scheme, so every app makes it a link; `/c/`, the same page emitted by
   the build without the `og:url` and `canonical` that would send a Facebook
-  post to the home page, and with preview text addressed to the friend; the
-  name after `#`, which never reaches a server, cleaned so it cannot read as
-  a web address.
+  post to the home page, and with preview text addressed to the friend ("Can
+  you beat my score? Carrier Vector: 1988 - a free jet game" / "Plays in your
+  browser. No download, no sign-up, nothing to pay...") - the build now fails
+  if that page ever keeps them; the name after `#`, which never reaches a
+  server, cleaned so it cannot read as a web address (look-alike dots,
+  slashes and colons, and invisible "filler" letters, included), with an
+  apostrophe encoded so a chat app's link finder does not stop at it.
+
+### From the UX review
+
+A reviewer walked both ends again as a non-gamer and an older player:
+
+- The welcome screen cut "GRANDMA MARGARET CHALLENGES YOU" to "GRANDMA
+  MARGAR..." on an upright phone - the way most links are opened. It wraps.
+- The link preview said "You have been challenged", the shape of a scam text.
+  It now asks a question and says what the link is.
+- Two equal send buttons (the challenge and the picture) - people sent the
+  picture and no link. One main button; the picture is offered after.
+- "Card" meant nothing to a non-gamer ("Your name on the card"); a mid-run
+  "YOU BEAT ANNA!" could be followed by "25 pts short"; a lit SHARE after
+  every best felt like nagging. All fixed as above.
+- The picture led with a score and hid the names; it now leads with them.
+
+### From the code review
+
+- A second share in a session showed - and SAVE PICTURE saved - the previous
+  run's picture until the new one was drawn. The old one is cleared on open,
+  and the picture buttons wait for this run's.
+- ESC did nothing when focus had left the panel (a mouse click on SHARE ended
+  by focusing the canvas; the quick links were rebuilt under the keyboard).
+  Stray keys now reach the panel - ESC closes it, TAB goes back in - focus is
+  taken back after a click, and the links are updated in place.
+- A name typed less than a quarter-second before pressing a button was left
+  off the link; ENTER confirming a Japanese or Chinese conversion was taken as
+  "done". Both fixed.
+- The HUD's score to beat ran under the FIRE button on a small phone and over
+  the objective on a 720 px window. It now shortens to fit - the name first,
+  never the pilot's own score.
+- A long Chinese, Japanese or Korean name was measured as Latin text and cut.
+- A failed share left a phone with no way to the picture; a double tap on the
+  main button said "That did not work here" while the sheet was still open; a
+  kill photographed just before opening the menu was replaced by whatever
+  frame followed it. All fixed.
 
 ### Fixed on the way
 
 - On a phone the share panel closed itself: it opened on the tap's
   pointerdown, and the same tap's click then landed on its CLOSE button.
-- "5 WAVEs · 0 PLANEs DOWN" on the picture; cut-off lines on the welcome
-  screen, the picture and a narrow debrief button.
-- A mid-run "YOU BEAT ANNA!" could be followed by a debrief saying 25 points
-  short, after a penalty.
+- "5 WAVEs · 0 PLANEs DOWN" on the picture; "0 planes shot down" in a message.
+- The SCRAMBLE debrief says PLANES SHOT DOWN (was BANDITS SPLASHED) and
+  prints its bonus with a thousands separator.
+- After a rotation prompt has waited four seconds, it mentions the phone's
+  rotation lock.
 
 ### Removed
 
@@ -84,12 +147,13 @@ rebuilt the loop around both people. Evidence:
 
 ### Engineering
 
-- 1,215 tests (was 1,185; the twelve text-card tests went with the cards).
-  Browser harness **77/77** (was 66): the whole friend loop from a real
-  `/c/?c=...#n=Anna` link to a reply, name isolation from the game's keys,
-  and a phone tapping SHARE.
+- 1,228 tests (was 1,185; the twelve text-card tests went with the cards).
+  Browser harness **81/81** (was 66): the whole friend loop from a real
+  `/c/?c=...#n=Anna` link to a reply, a STANDARD link asking a newcomer how to
+  fly, a mouse-opened panel closing on ESC, name isolation from the game's
+  keys, and a phone tapping SHARE.
 - Gameplay unchanged: `npm run balance` replays the same runs identically.
-- Bundle 323.2 kB (106.8 kB gzip), was 305.7 / 100.8. Zero runtime dependencies.
+- Bundle 330.0 kB (109.4 kB gzip), was 305.7 / 100.8. Zero runtime dependencies.
 
 ### Still open
 

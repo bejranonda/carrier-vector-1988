@@ -826,9 +826,11 @@ tap, and make the friend's first minute as good as the sender's.
 | :-- | :-- | :-- |
 | Audit | both ends of the share walked in a browser: a small text box on the debrief; the friend landing on the full mission select | screenshots, `reviews/v2.3.0/SHARE_REVIEW.md` §1 |
 | Research | what chat apps keep, link previews, Web Share support, sharing habits of people over 50 | `SHARE_REVIEW.md` §2, with sources |
-| The friend's end | "ANNA CHALLENGES YOU" first screen; EASY challenges skip the fly-style question; the score to beat on the HUD; "YOU BEAT ANNA!" when it falls; the win is the debrief headline | harness, smoke tests |
-| The sender's end | SHARE beside FLY AGAIN; a panel with an optional name, a 1080 picture of the run's best moment, the challenge as text with its link, the picture separately, WhatsApp/LINE/text/email where there is no share sheet | harness 77/77, screenshots |
-| Links | `https://`, `/c/` page without `og:url`, the name after `#` | `Challenge.test.ts`, build output |
+| The friend's end | "ANNA CHALLENGES YOU" first screen with one PLAY - IT'S FREE; EASY challenges skip the fly-style question; the score to beat on the HUD as a scoreboard; "AHEAD OF ANNA!" when it falls; the win is the debrief headline | harness, smoke tests |
+| The sender's end | SHARE beside FLY AGAIN; a panel with an optional name, a 1080 picture with the names and the run's best moment, ONE main button for the challenge (text with its link), the picture offered after it, WhatsApp/LINE/text/email where there is no share sheet | harness, screenshots |
+| Links | `https://`, `/c/` page without `og:url` (the build fails if it ever keeps one), the name after `#`, cleaned of look-alike dots and invisible letters | `Challenge.test.ts`, build output |
+| UX review | a non-gamer and an older player at both ends: wrapped (never cut) welcome text, a preview that does not read like a scam, one send button, no "card" jargon, no premature "YOU BEAT", no nagging | `SELF_CRITIQUE.md` |
+| Code review | 12 findings (none high), every one checked in a browser and fixed: a stale picture on the second share, ESC lost after a mouse click, the HUD's score running under FIRE, names typed just before a press, and eight smaller | `SELF_CRITIQUE.md`, harness 81/81, 1,228 tests |
 
 **Next (see `reviews/v2.3.0/RECOMMENDATIONS_AND_ROADMAP.md`):** real devices
 and real chat apps; the pilot-customer round, now with a friend at each end.

@@ -85,15 +85,25 @@
         <div class="share-panel">
           <img id="share-picture" class="share-picture" alt="" />
           <div class="share-side">
-            <h2 id="share-title">SHARE YOUR RUN</h2>
-            <p class="share-sub">Your friend gets a link to fly the same waves and try to beat you.</p>
-            <label class="share-label" for="share-name">YOUR NAME ON THE CARD <span>(optional)</span></label>
+            <!-- CLOSE at the top, where a dialog's way out is looked for: at
+                 the bottom it sat below the fold on a small phone. -->
+            <div class="share-head">
+              <h2 id="share-title">SHARE YOUR RUN</h2>
+              <button id="share-close" class="share-close" type="button">CLOSE</button>
+            </div>
+            <p class="share-sub">Your friend gets a link to play against the very same planes and try to beat you.</p>
+            <label class="share-label" for="share-name">YOUR NAME <span>(optional) - so your friend knows it's you</span></label>
             <input id="share-name" class="share-name" type="text" maxlength="16" autocomplete="nickname"
-                   autocapitalize="words" spellcheck="false" enterkeyhint="done" placeholder="e.g. Grandpa Joe" />
+                   autocapitalize="words" spellcheck="false" enterkeyhint="done" placeholder="e.g. Grandpa Joe"
+                   aria-describedby="share-name-note" />
+            <p id="share-name-note" class="share-note">Kept on this device. Leave it empty to send without a name.</p>
             <!-- The challenge and the picture go separately: chat apps given
-                 both in one share keep one and drop the other. -->
+                 both in one share keep one and drop the other. One main
+                 button; the picture is offered once the challenge has gone
+                 (side by side, the picture invites the first press - and a
+                 picture alone carries no link). -->
             <button id="share-send" class="share-send" type="button">CHALLENGE A FRIEND</button>
-            <button id="share-picture-send" class="share-alt" type="button" hidden>SEND THE PICTURE</button>
+            <button id="share-picture-send" class="share-alt" type="button" hidden>ALSO SEND THE PICTURE</button>
             <!-- No share sheet here (an in-app browser, a desktop): the apps
                  people send these with, through their public share links. -->
             <p id="share-apps-label" class="share-label" hidden>SEND IT WITH</p>
@@ -105,7 +115,6 @@
             </div>
             <p id="share-status" class="share-status" role="status" aria-live="polite"></p>
             <p id="share-message" class="share-message"></p>
-            <button id="share-close" class="share-close" type="button">CLOSE</button>
           </div>
         </div>
       </div>

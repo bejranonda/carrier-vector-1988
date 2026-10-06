@@ -715,7 +715,7 @@ describe('GameLoop integration smoke test', () => {
         // What it would send: a message, the challenge link, and a picture.
         const share = game.currentShare()!;
         expect(share.url).toMatch(/^https:\/\/.+\/c\/\?c=7\.\d+\.\d+/);
-        expect(share.text).toContain('a free retro jet game in your browser');
+        expect(share.text).toMatch(/a free jet game.*plays in your browser/);
         const canvas = makeCanvasStub();
         expect(game.drawSharePicture(canvas)).toBe(true);
         expect(canvas.width).toBe(1080);
@@ -2703,7 +2703,7 @@ describe('GameLoop integration smoke test', () => {
                 // A tap anywhere but the buttons does nothing - no accidental start.
                 expect(game.handleMenuTap(2, 2)).toBe(true);
                 expect(game.phase).toBe('BRIEFING');
-                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight);
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight, game.challenge);
                 game.handleMenuTap(l.accept.x + 10, l.accept.y + 10);
                 expect(game.challengeWelcomeOpen).toBe(false);
                 expect(game.phase).toBe('ACTIVE');
@@ -2713,7 +2713,7 @@ describe('GameLoop integration smoke test', () => {
 
             it('SEE ALL MISSIONS shows the menu, and SCRAMBLE still carries the challenge', () => {
                 const game = challenged();
-                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight);
+                const l = challengeWelcomeLayout(game.viewWidth, game.viewHeight, game.challenge);
                 game.handleMenuTap(l.missions.x + 10, l.missions.y + 10);
                 expect(game.challengeWelcomeOpen).toBe(false);
                 expect(game.phase).toBe('BRIEFING');
@@ -2726,9 +2726,11 @@ describe('GameLoop integration smoke test', () => {
                 game.acceptChallengeWelcome();
                 runFrames(game, 30);
                 game.score.recordBonus(5200);
-                runFrames(game, 2);
                 const banners = () => game.callouts.active().filter(c => c.group === 'RECORD').map(c => c.text);
-                expect(banners()).toEqual(['YOU BEAT ANNA!']);
+                // Its own moment: it may wait (up to 2.5 s) for a wave banner to clear.
+                for (let i = 0; i < 200 && banners().length === 0; i++) runFrames(game, 1);
+                // "Ahead", not "beat": the run is not over yet.
+                expect(banners()).toEqual(['AHEAD OF ANNA!']);
                 expect(game['scoreTargetPassed']).toBe(true);
                 game.score.recordBonus(100);
                 runFrames(game, 2);
@@ -2738,17 +2740,22 @@ describe('GameLoop integration smoke test', () => {
                 const data = game.debriefData();
                 expect(data.headline).toBe('YOU BEAT ANNA!');
                 expect(data.celebrate).toBe(true);
-                expect(data.reason).toMatch(/^By [\d,]+ pts - /);
-                expect(data.share?.text).toBe('YOU BEAT ANNA - SEND IT BACK');
+                expect(data.reason).toMatch(/^YOU [\d,]+ · ANNA 5,000 - you won by [\d,]+!$/);
+                expect(data.share?.text).toBe('YOU BEAT ANNA - LET ANNA KNOW');
+                expect(data.share?.strong).toBe(true);
                 const share = game.currentShare()!;
                 expect(share.picture.headline).toBe('I BEAT ANNA!');
-                expect(share.text.startsWith('I beat Anna!')).toBe(true);
+                expect(share.text.startsWith('I beat your score, Anna!')).toBe(true);
                 // The reply carries the same waves, the new score - and a name once given.
                 expect(share.url).toMatch(/\/c\/\?c=424242\.\d+\.\d+$/);
                 game.setPilotName('Tom');
                 expect(game.currentShare()!.url).toMatch(/#n=Tom$/);
                 expect(game.debriefData().share?.label).toBe('REPLY TO ANNA');
-                expect(game.currentShare()!.picture.versus).toMatch(/^ANNA 5,000 · TOM /);
+                const board = game.currentShare()!.picture.board!;
+                expect(board.map(r => r.name)).toEqual(['TOM', 'ANNA']);
+                expect(board[0].score).toBeGreaterThan(5000);
+                expect(board[1].score).toBe(5000);
+                expect(game.currentShare()!.picture.headline).toBe('TOM BEAT ANNA!');
             });
 
             it('a lost challenge is not a celebration', () => {
@@ -2771,14 +2778,65 @@ describe('GameLoop integration smoke test', () => {
                 expect(game.scoreTarget).toEqual({ score: 3000, who: 'YOUR BEST', challenge: false });
                 runFrames(game, 30);
                 game.score.recordBonus(3100);
-                runFrames(game, 2);
-                expect(game.callouts.active().some(c => c.text === 'NEW PERSONAL BEST!')).toBe(true);
+                for (let i = 0; i < 200 && !game.callouts.active().some(c => c.group === 'RECORD'); i++) runFrames(game, 1);
+                expect(game.callouts.active().some(c => c.text === 'PAST YOUR BEST!')).toBe(true);
                 // A first run has nothing to chase yet.
                 const fresh = new GameLoop(makeCanvasStub());
                 runFrames(fresh, 150);
                 fresh.selectScenarioById('SCRAMBLE');
                 fresh.confirmBriefing(7);
                 expect(fresh.scoreTarget).toBeNull();
+            });
+
+            it('drops a moment held back by the menu, rather than photographing a later frame (v2.3.0 review)', () => {
+                const game = challenged();
+                game.acceptChallengeWelcome();
+                runFrames(game, 30);
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH ONE', 'MiG-23');
+                game.toggleMenu();
+                runFrames(game, 120); // two seconds on the menu
+                game.toggleMenu();
+                runFrames(game, 30);
+                expect(game['moment']).toBeNull();
+                expect(game['momentWeight']).toBe(-1);
+                // The next kill is photographed as usual.
+                game['payKill']({ x: 0, y: 500, z: 0 }, 100, 'SPLASH TWO', 'MiG-23');
+                runFrames(game, 30);
+                expect(game['moment']).not.toBeNull();
+            });
+
+            it('shares a first run as an invitation, and only a beaten best as a best (v2.3.0 review)', () => {
+                const game = new GameLoop(makeCanvasStub());
+                runFrames(game, 150);
+                game.selectScenarioById('SCRAMBLE');
+                game.confirmBriefing(7);
+                runFrames(game, 30);
+                game.score.recordBonus(3000);
+                sink(game);
+                expect(game.phase).toBe('DEBRIEF');
+                // Every first run is a "best yet": that is not news to a friend.
+                expect(game.currentShare()!.action).toBe('INVITE A FRIEND');
+                expect(game.debriefData().share?.strong).toBe(false);
+                game.restartMission();
+                runFrames(game, 30);
+                game.score.recordBonus(9000);
+                sink(game);
+                const share = game.currentShare()!;
+                expect(share.text.startsWith('My best yet: ')).toBe(true);
+                expect(share.action).toBe('CHALLENGE A FRIEND');
+                expect(game.debriefData().share).toMatchObject({ strong: true });
+            });
+
+            it('tells the shell when the welcome closes, either way', () => {
+                for (const close of ['accept', 'missions'] as const) {
+                    const game = challenged();
+                    let closed = 0;
+                    game.onChallengeWelcomeClose = () => { closed++; };
+                    if (close === 'accept') game.acceptChallengeWelcome();
+                    else game.closeChallengeWelcome();
+                    game.closeChallengeWelcome();
+                    expect(closed, close).toBe(1);
+                }
             });
 
             it('keeps the best kill of the run as the picture\'s moment', () => {

@@ -360,11 +360,14 @@ result"; and a friend who opened the link landed on a mission menu with a
 dozen key hints and one small yellow line about the challenge.
 
 **What changed:** the run chases a number you can see - your best, or a
-friend's score - and passing it is a banner and a fanfare while it happens.
-Beating a friend is the debrief's headline. SHARE sits beside FLY AGAIN and
-sends a plain-words challenge with a link, a picture of the run's best moment
-with your name on it, or both; the friend's first screen says who challenged
-them and the score to beat, with one big button.
+friend's score, as a scoreboard on the HUD - and passing it is a banner and a
+fanfare while it happens ("AHEAD OF ANNA!"). Beating a friend is the
+debrief's headline ("YOU BEAT ANNA!"). SHARE sits beside FLY AGAIN and sends a
+plain-words challenge with a link, then a picture of the run's best moment
+with both names on it; the friend's first screen says who challenged them,
+the score to beat and that it is free, with one big PLAY button - and when
+they win, REPLY TO ANNA sends "I beat your score, Anna!" back. The loop has a
+second turn, which is where a game between friends lives.
 
 **Principle added:** design both ends of every share. The person who receives
 it is a new player with no context, often on a phone, often wary of links;

@@ -66,40 +66,55 @@ share. Its findings, with the sources it cited:
 
 ## 3. What was built
 
+(As shipped, after the UX review and the code review - see `SELF_CRITIQUE.md`
+§3-4 for what each changed.)
+
 **The friend's end**
 
-- **"ANNA CHALLENGES YOU"** - the first screen of a challenge link: who sent
-  it, the score to beat, the waves and fly style, one sentence on what the
-  game is, one big ACCEPT CHALLENGE, and SEE ALL MISSIONS for everything else.
-  The browser tab says "Anna challenges you".
+- **"ANNA CHALLENGES YOU"** - the first screen of a challenge link: what the
+  game is ("A FREE JET GAME"), who sent it, the score to beat, "They lasted 3
+  waves of planes on EASY. You get the very same ones.", one sentence on the
+  game, one big **PLAY - IT'S FREE**, "No download, no sign-up. EASY mode
+  flies the plane - you tap FIRE.", and SEE ALL MISSIONS for everything else.
+  Every line wraps; nothing is cut. The browser tab says "Anna challenges
+  you".
 - An EASY challenge flies EASY for a newcomer without asking - the same
   fight, one tap sooner. A STANDARD one still asks.
-- **The score to beat is on the HUD** (`4,200 / 12,345 PTS`, even on the
-  first-flight HUD), and passing it is a moment: "YOU BEAT ANNA!" and a
-  fanfare, once. Without a challenge the run chases the pilot's own best:
-  "NEW PERSONAL BEST!" as it happens.
-- **A beaten challenge is the debrief's headline**, in gold - "YOU BEAT ANNA! /
-  By 55 pts - the carrier went down at wave 2" - and the share button reads
+- **The score to beat is on the HUD** as a scoreboard (`ANNA 12,345 · YOU
+  4,200`, even on the first-flight HUD, shortened to fit a small phone), and
+  passing it is a moment: "AHEAD OF ANNA!" and a fanfare, once - "ahead",
+  because the run is not over. Without a challenge the run chases the
+  pilot's own best: "PAST YOUR BEST!".
+- **A beaten challenge is the debrief's headline**, in gold - "YOU BEAT ANNA!
+  / YOU 12,400 · ANNA 12,345 - you won by 55!" - and the share button reads
   REPLY TO ANNA.
 
 **The sender's end**
 
-- **SHARE** beside FLY AGAIN (C on a keyboard), lit when the run is worth
-  sending, with one line saying why ("NEW PERSONAL BEST - SHOW YOUR FRIENDS").
-- **The share panel** (plain DOM): an optional name ("Your name on the card"),
-  the picture, and the right buttons for the device - REPLY TO ANNA /
-  CHALLENGE A FRIEND / INVITE A FRIEND and SEND THE PICTURE where there is a
-  share sheet; WhatsApp, LINE and a text message or email where there is not;
-  COPY MESSAGE, SAVE PICTURE, and COPY PICTURE on a computer.
-- **The picture**: a 1080 square in the game's look and the pilot's palette -
-  the run's best moment (a frame kept a beat after the best kill), the stars,
-  the score, waves and kills, the pilot's name or both names after a
-  challenge, and "CAN YOU BEAT ME?" or "I BEAT ANNA!".
-- **The message**, in plain sentences with the link alone on the last line -
-  e.g. *"I beat Anna! 12,400 points to 12,345 on EASY in Carrier Vector: 1988.
-  Your turn - same waves, a few minutes:"*.
+- **SHARE** beside FLY AGAIN (C on a keyboard), lit for a win, a new star, or
+  a beaten best once a session, with one line saying why ("YOU BEAT ANNA - LET
+  ANNA KNOW"); otherwise "SHARE: YOUR FRIEND GETS THE SAME PLANES".
+- **The share panel** (plain DOM): the picture, an optional name ("so your
+  friend knows it's you"), and one main button - REPLY TO ANNA / TELL ANNA /
+  CHALLENGE A FRIEND / INVITE A FRIEND - through the share sheet, with the
+  picture offered after it as a second share. Where there is no share sheet:
+  WhatsApp, LINE and a text message or email, and COPY MESSAGE; SAVE PICTURE,
+  and COPY PICTURE on a computer. CLOSE in the title row.
+- **The picture**: a 1080 square in the game's look and the pilot's palette,
+  every word at least 30 px - the game's name, a headline with the names
+  ("CAN YOU BEAT TOM?", "TOM BEAT ANNA!"), the run's best moment (a frame
+  kept a beat after the best kill, brightened), the stars and score or a
+  two-row scoreboard after a challenge, and "FREE GAME - PLAYS IN YOUR
+  BROWSER" with the address.
+- **The message**, in plain sentences with the link alone on the last line,
+  to the friend - e.g. *"I beat your score, Anna! 12,400 to your 12,345 in
+  Carrier Vector: 1988 (I flew on EASY). Your turn to win it back - it's a
+  free jet game in your browser, a few minutes:"*. A loss tells the winner
+  kindly ("You're still ahead, Anna... I'll get you next time!") rather than
+  challenging them back; a first run is an invitation, not a "best yet".
 
-**Links**: `https://.../c/?c=seed.score.waves[.e]#n=Name`.
+**Links**: `https://.../c/?c=seed.score.waves[.e]#n=Name`, previewed as "Can
+you beat my score? Carrier Vector: 1988 - a free jet game".
 
 ---
 
@@ -124,7 +139,7 @@ The v2.0.0 "hit" rubric, for a non-gamer:
 | :-- | :-: | :-: | :-- |
 | Hook | 8 | 8 | Unchanged for a player who finds the game; a friend's link now opens on its own screen |
 | Core loop | 8 | 8 | Unchanged |
-| Juice | 8 | 8 | "YOU BEAT ANNA!" / "NEW PERSONAL BEST!" with a fanfare - small, but at the right moment |
+| Juice | 8 | 8 | "AHEAD OF ANNA!" / "PAST YOUR BEST!" with a fanfare - small, but at the right moment |
 | Goals | 8 | **9** | A number to chase on the HUD in every SCRAMBLE run - a friend's, or your own best |
 | Persistence | 7 | 7 | Unchanged |
 | Again | 9 | 9 | Unchanged; REPLY sits next to FLY AGAIN |

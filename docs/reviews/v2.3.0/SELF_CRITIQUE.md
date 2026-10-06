@@ -28,9 +28,60 @@
   had been put there), and "REPLY TO…" on a narrow debrief button.
 - **The mid-run "YOU BEAT ANNA!" could be followed by "25 pts short"** - a
   penalty after passing the score took it back under. The HUD now tracks the
-  line both ways; the banner still fires once.
+  line both ways, and the banner says "AHEAD OF ANNA!": the run is not over,
+  so it is not a win yet.
 
-## 3. Still weak
+## 3. What the UX review found
+
+A reviewer walked both ends again as a non-gamer and as an older player, on a
+phone held upright as well as on a laptop. What it found was not bugs but
+the things that make a person close a link:
+
+| Finding | What it would have cost | Fix |
+| :-- | :-- | :-- |
+| "GRANDMA MARGARET CHALLENGES YOU" cut to "GRANDMA MARGAR..." on an upright phone | The one line that says who sent it, on the way most links are opened | Every line wraps (balanced), long names set smaller |
+| The preview said "You have been challenged" | It has the shape of a scam text ("you have been selected") | "Can you beat my score? Carrier Vector: 1988 - a free jet game", and what it costs: nothing |
+| Two equal send buttons - the challenge and the picture | The picture invites the first press, and a picture sent alone gives the friend nothing to open | One main button; the picture is offered after it |
+| "Your name on the card" | "Card" means nothing to someone who does not play games | "Your name (optional) - so your friend knows it's you" |
+| A lit SHARE after every new best | Sharing that feels asked for every time is nagging | Lit for a win or a star; a best lights it once a session |
+| The picture led with a score and hid the names | A picture forwarded to a family group says nothing about who | The names are the headline ("TOM BEAT ANNA!"), the score a scoreboard |
+
+## 4. What the code review found
+
+Twelve findings, none high, each reproduced in a browser before it was fixed
+and checked in one after (`SharePanel`, `main.ts`, `HUD`, `Challenge.ts`,
+`ChallengeView`, `GameLoop`, `vite.config.ts`):
+
+1. A **second share in a session showed - and saved - the first run's
+   picture** until the new one was encoded. Cleared on open; the picture
+   buttons wait for this run's picture.
+2. **ESC did nothing** once focus had left the panel - which a mouse click on
+   SHARE always did, by focusing the canvas under it. Stray keys now reach
+   the panel; focus is taken back.
+3. A long **Chinese, Japanese or Korean name** was measured as Latin and cut.
+4. The **HUD's score to beat ran under the FIRE button** on a 568 px phone,
+   and over the objective on a 720 px window. It now shortens to fit.
+5. A **name typed just before a press** was left off the link.
+6. **Look-alike dots** ("paypalꓸcom") and **invisible letters** got through
+   the name cleaning; other spaces were deleted rather than kept.
+7. **ENTER confirming a Japanese conversion** was taken as "done".
+8. A **kill just before opening the menu** was photographed from whatever
+   frame followed the menu.
+9. **Every first run was shared as "my best yet"**, with "0 planes shot down".
+10. The **/c/ build step could fail silently** - it now fails the build.
+11. The canvas's **screen-reader label** kept "tap Accept Challenge" all
+    session.
+12. After a **failed share, a phone had no way to the picture**.
+
+And one the review had already seen fixed in the working tree: a double tap
+on the main button said "That did not work here" while the sheet was open.
+
+**Lesson:** the code review found what no screenshot could - state carried
+from one share to the next, focus after a mouse click rather than a key,
+names from scripts the author does not type. The UX review found what no test
+could - a sentence that reads like a scam. Each needed the other.
+
+## 5. Still weak
 
 1. **No real phone, no real chat app.** Every share was exercised up to the
    call that opens the share sheet; what WhatsApp, LINE, Messages or
@@ -44,8 +95,8 @@
    run JavaScript and there is no server, so "Anna challenged you - 12,345"
    cannot be in the preview itself - only in the message above it.
 4. **The best moment is often dark.** It is an honest frame of a wireframe sky
-   - thin green lines on black - and in a chat thumbnail the score, not the
-   frame, carries the picture.
+   - thin green lines on black. It is now drawn brighter, smaller and below
+   the names; in a chat thumbnail the names and the score carry the picture.
 5. **The welcome screen is canvas.** A screen reader hears the canvas's label,
    not "Anna challenges you" (the tab title and the label now say it, but the
    card itself is pixels).

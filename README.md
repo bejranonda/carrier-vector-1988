@@ -59,8 +59,8 @@ npm run dev      # http://localhost:5173
 
 ```bash
 npm run build    # typecheck + production bundle
-npm run test     # 1,215 headless Vitest tests
-npm run playtest # 77 checks in a real browser, screenshots to playtest-output/
+npm run test     # 1,228 headless Vitest tests
+npm run playtest # 81 checks in a real browser, screenshots to playtest-output/
 npm run balance  # whole SCRAMBLE runs, many seeds, headless - balance means
 npm run preview  # serve the production build
 ```
@@ -119,33 +119,34 @@ own; the colour-blind palette is never locked).
 ### Bring a friend
 
 **SHARE** sits beside FLY AGAIN (`C` on a keyboard) and opens a panel with two
-things to send - separately, because chat apps handed a picture and a link in
-one share keep one and drop the other:
+things to send - one after the other, because chat apps handed a picture and
+a link in one share keep one and drop the other:
 
 - **the challenge** - a message in plain words with the link on its last line,
   through your phone's share sheet (or WhatsApp, LINE, a text message or an
   email where there is no share sheet):
 
-  > I scored 12,400 points in Carrier Vector: 1988 and shot down 18 planes.
-  > My best yet! Can you beat me? It's a free game in your browser - same
-  > waves, a few minutes, no download:
+  > My best yet: 12,400 points and 18 planes shot down in Carrier Vector: 1988,
+  > a free jet game. Can you beat me? It plays in your browser, no download:
   > https://bejranonda.github.io/carrier-vector-1988/c/?c=482913.12400.7#n=Anna
 
-- **a picture** of your run - a 1080 square with its best moment (the game
-  keeps a frame a beat after your best kill), your stars, your score and your
-  name.
+- **a picture** of your run - a 1080 square with the game's name, "CAN YOU
+  BEAT ANNA?", its best moment (the game keeps a frame a beat after your best
+  kill), your stars and score, and "FREE GAME - PLAYS IN YOUR BROWSER".
 
 Your name is optional and stays on your device; in the link it rides after the
 `#`, which browsers never send to a server. A run with nothing to boast about
-is shared as an invitation instead ("EASY mode flies the plane for you").
+- a first run included - is shared as an invitation instead ("EASY mode flies
+the plane; you just press FIRE").
 
 **Whoever opens it** gets a first screen of their own - `ANNA CHALLENGES YOU`,
-the score to beat, one big `ACCEPT CHALLENGE` - and flies *your exact waves*
-(they are a pure function of the seed). The score to beat stays on their HUD,
-`YOU BEAT ANNA!` goes up the moment they pass it, and their debrief leads with
-the result and a `REPLY TO ANNA` button. Without a challenge, a SCRAMBLE run
-chases your own best the same way - `NEW PERSONAL BEST!` as it happens. No
-server involved.
+the score to beat, what the game is, one big `PLAY - IT'S FREE` - and flies
+*your exact waves* (they are a pure function of the seed). The score to beat
+stays on their HUD (`ANNA 12,400 · YOU 9,850`), `AHEAD OF ANNA!` goes up the
+moment they pass it, and their debrief leads with the result - `YOU BEAT
+ANNA!` - and a `REPLY TO ANNA` button that sends "I beat your score, Anna!"
+back. Without a challenge, a SCRAMBLE run chases your own best the same way
+(`PAST YOUR BEST!`). No server involved.
 
 SCRAMBLE also has its own soundtrack: a small procedural synthwave loop that
 layers up with the fight - kick and bass while bandits are inbound, hats when a
@@ -812,7 +813,7 @@ screen offset = fov · tan(Δangle)
 npm run test
 ```
 
-**1,215 headless tests** across 72 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links and names, what a share says and the picture's layout, the share sheet and clipboard decisions, the challenge welcome screen at nine sizes, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
+**1,228 headless tests** across 72 suites — physics, ballistics, radar/RCS, carrier state machine, enemy AI, deck and cockpit layout geometry, scoring, personal bests and per-mission records, the tutorial rules engine, the objective director, the display-mode ladder, theme contrast ratios, text fitting, scenario phase progression and end conditions, mission recommendation, hardened-target hit geometry, CCIP prediction against the real bomb path, map navigability invariants, the flight-assist control laws, target ranking and weapon envelopes, ops-tempo timings, camera-shake decay, callout lifetimes, the daily seed and share card, mix structure and audio spatialisation, control-scheme detection, thumb-control placement across seven handsets, multi-touch input binding, field-of-view consistency across screen sizes, HUD label decluttering, flash-rate and reduced-motion limits, designation visibility rules, terrain-following geometry, carrier approach guidance, rushed-turnaround stamina accounting, palette contrast under a colour-blindness simulation, threat-level escalation, the timestep accumulator, projection math (including the camera transform's agreement with the flight model's own orientation basis, and that a bank tilts the horizon and the lift the right way), bank-to-turn and loops through the vertical, the tactical radar geometry, the first-time milestone latch, the enemy guns aim-time and hit chance, the SCRAMBLE wave director and economy, kill chains, kill effects, speed streaks, medal criteria, career levels and unlocks, the soundtrack pattern, challenge links and names, what a share says and the picture's layout, the share sheet and clipboard decisions, the challenge welcome screen at ten sizes and in any script, EASY flying (smart trigger, wide cone, coach rewrite), text-size zoom, and a full GameLoop integration smoke test that drives every phase - including whole SCRAMBLE runs, the medal debrief and FLY AGAIN - through a stubbed Canvas2D context.
 
 Some of those tests exist because they are the cheapest way to state a rule the
 game would otherwise break silently: every map must have a navigable corridor
@@ -825,7 +826,7 @@ The renderer's pure math is deliberately extracted (`depthFade`, `decayAlpha`, `
 ### In a real browser
 
 ```bash
-npm run playtest              # 77 checks, screenshots + report in playtest-output/
+npm run playtest              # 81 checks, screenshots + report in playtest-output/
 PLAYTEST_SLOW=1 npm run playtest   # adds the 40-second idle-on-deck check
 ```
 
@@ -889,7 +890,7 @@ of game per seed.
 Shipped in v2.3.0 ("Bring a Friend") - for "users should have a good experience
 and love to share it": a friend who opens a challenge link gets a first screen
 of their own (`ANNA CHALLENGES YOU`, the score to beat, one button), sees the
-score to beat on the HUD and `YOU BEAT ANNA!` the moment they pass it, and
+score to beat on the HUD and `AHEAD OF ANNA!` the moment they pass it, and
 replies from a debrief that leads with the result. SHARE sends a plain-words
 challenge with its link and, separately, a picture of the run's best moment -
 through the share sheet, or WhatsApp, LINE, a text or an email where there is

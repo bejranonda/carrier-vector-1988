@@ -15,8 +15,10 @@
  *   - the challenge link itself, which opens the same waves with the score
  *     to beat and the sender's name on the first screen.
  *
- * A run that answered a challenge says how it went - "I beat Anna!" - which
- * is the message most worth sending back. A run with nothing to boast about
+ * A run that answered a challenge says how it went, to the friend who sent
+ * it - "I beat your score, Anna!" - which is the message most worth sending
+ * back; a lost one tells them they are still ahead rather than challenging
+ * them back. A run with nothing to boast about
  * is shared as an invitation instead ("Try this - EASY flies the plane for
  * you"): people sending to one friend send what is useful to that friend,
  * and nobody posts what does not flatter them.
@@ -66,8 +68,8 @@ export interface SharePicture {
     pilot: string | null;
     /** Small labels: 'EASY MODE', 'NEW PERSONAL BEST'. */
     tags: string[];
-    /** 'ANNA 12,000 · TOM 12,345' when the run answered a challenge. */
-    versus: string | null;
+    /** After a challenge: both pilots and their scores, the higher first. */
+    board: { name: string; score: number }[] | null;
     /** The address, without the scheme, to print on the picture. */
     host: string;
 }
@@ -87,7 +89,6 @@ export interface ShareContent {
 
 const GAME = 'Carrier Vector: 1988';
 const pts = (n: number) => Math.round(n).toLocaleString('en-US');
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const plural = (n: number, one: string) => {
     const many = one === one.toUpperCase() ? `${one}S` : `${one}s`;
     return `${n} ${n === 1 ? one : many}`;
@@ -96,45 +97,67 @@ const plural = (n: number, one: string) => {
 export function shareContent(run: ShareRun): ShareContent {
     const v = run.versus ?? null;
     const outcome = v ? (run.score > v.score ? 'WON' : run.score === v.score ? 'TIED' : 'LOST') : null;
-    const easy = run.easy ? ' on EASY' : '';
+    // Honest about EASY wherever a score is claimed.
+    const easy = run.easy ? ' (I flew on EASY)' : '';
     const tries = run.daily === undefined || !run.attempt ? null : run.attempt === 1 ? 'first try' : `try ${run.attempt}`;
+    const what = 'a free jet game in your browser';
 
     let text: string;
     let subject = `Can you beat my ${pts(run.score)} in ${GAME}?`;
-    let action = v ? (v.name ? `REPLY TO ${v.name.toUpperCase()}` : 'SEND IT BACK') : 'CHALLENGE A FRIEND';
-    const play = 'same waves, a few minutes';
+    let action = 'CHALLENGE A FRIEND';
     if (v && outcome === 'WON') {
+        // A reply speaks to the person it answers.
         text = v.name
-            ? `I beat ${v.name}! ${pts(run.score)} points to ${pts(v.score)}${easy} in ${GAME}. Your turn - ${play}:`
-            : `I beat the challenge - ${pts(run.score)} points to ${pts(v.score)}${easy} in ${GAME}. Your turn - ${play}:`;
-        subject = v.name ? `I beat ${v.name} in ${GAME}!` : `Challenge beaten in ${GAME}!`;
+            ? `I beat your score, ${v.name}! ${pts(run.score)} to your ${pts(v.score)} in ${GAME}${easy}. Your turn to win it back - it's ${what}, a few minutes:`
+            : `I beat the challenge - ${pts(run.score)} to ${pts(v.score)} in ${GAME}${easy}! Your turn - it's ${what}, a few minutes:`;
+        subject = v.name ? `I beat your score, ${v.name}!` : `Challenge beaten in ${GAME}!`;
+        action = v.name ? `REPLY TO ${v.name.toUpperCase()}` : 'REPLY';
     } else if (v && outcome === 'TIED') {
-        text = `I tied ${v.name ?? 'the challenge'} at ${pts(run.score)} points${easy} in ${GAME}. Can you beat it? ${cap(play)}:`;
+        text = v.name
+            ? `We're tied, ${v.name} - ${pts(run.score)} points each in ${GAME}${easy}! Your turn to break it - it's ${what}:`
+            : `I tied the challenge at ${pts(run.score)} points in ${GAME}${easy}. Can you beat it? It's ${what}, a few minutes:`;
+        action = v.name ? `REPLY TO ${v.name.toUpperCase()}` : 'REPLY';
     } else if (v) {
-        text = `${v.name ?? 'The challenge'} is still ahead - ${pts(v.score)} points to my ${pts(run.score)}${easy} in ${GAME}. Can you beat my score? ${cap(play)}:`;
+        // Lost: no point challenging the one who won. Tell them - kindly.
+        text = v.name
+            ? `You're still ahead, ${v.name} - ${pts(v.score)} to my ${pts(run.score)} in ${GAME}${easy}. I'll get you next time!`
+            : `The challenge is still ahead - ${pts(v.score)} to my ${pts(run.score)} in ${GAME}${easy}. Can you beat it? It's ${what}:`;
+        subject = v.name ? `You're still ahead, ${v.name}` : subject;
+        action = v.name ? `TELL ${v.name.toUpperCase()}` : 'CHALLENGE A FRIEND';
     } else if (run.daily !== undefined) {
-        text = `Daily Scramble #${run.daily}${tries ? ` (${tries})` : ''}: I scored ${pts(run.score)} points${easy} in ${GAME} and shot down ${plural(run.kills, 'plane')}.`
-            + ` Everyone gets the same waves today - can you beat me? It's a free game in your browser:`;
-    } else if (run.isNewBest || (run.freshStars ?? 0) > 0) {
-        text = `I scored ${pts(run.score)} points${easy} in ${GAME} and shot down ${plural(run.kills, 'plane')}.${run.isNewBest ? ' My best yet!' : ''}`
-            + ` Can you beat me? It's a free game in your browser - ${play}, no download:`;
+        text = `Daily Scramble #${run.daily}${tries ? ` (${tries})` : ''}: ${pts(run.score)} points in ${GAME}${easy}, a free jet game.`
+            + ` Everyone gets the same planes today - can you beat me? It plays in your browser:`;
+    } else if (run.isNewBest) {
+        const downed = run.kills > 0 ? ` and ${plural(run.kills, 'plane')} shot down` : '';
+        text = `My best yet: ${pts(run.score)} points${downed} in ${GAME}${easy}, a free jet game.`
+            + ` Can you beat me? It plays in your browser, no download:`;
+    } else if ((run.freshStars ?? 0) > 0) {
+        const downed = run.kills > 0 ? ` and shot down ${plural(run.kills, 'plane')}` : '';
+        text = `I scored ${pts(run.score)} points${downed} in ${GAME}${easy}, a free jet game.`
+            + ` Can you beat me? It plays in your browser, no download:`;
     } else {
         // Nothing to boast about: an invitation, not a challenge.
-        text = `Try ${GAME} - a free retro jet game in your browser, no download. EASY mode flies the plane for you; you just fire.`
-            + (run.score > 0 ? ` I scored ${pts(run.score)} points${easy} - can you beat me?` : '') + ' Same waves as mine:';
-        subject = `Try ${GAME} - can you beat my ${pts(run.score)}?`;
+        text = `Try ${GAME}, a free jet game - it plays in your browser, nothing to install. EASY mode flies the plane; you just press FIRE.`
+            + (run.score > 0 ? ` I got ${pts(run.score)}${easy} - can you beat me?` : '');
+        subject = `Try ${GAME} - a free jet game`;
         action = 'INVITE A FRIEND';
     }
 
     const pilot = run.name ? run.name.toUpperCase() : null;
     const rival = v ? (v.name ? v.name.toUpperCase() : 'CHALLENGE') : null;
-    const headline = outcome === 'WON' ? (v!.name ? `I BEAT ${rival}!` : 'CHALLENGE BEATEN!')
+    // The picture gets forwarded to family groups: a name says more than "I".
+    const headline = outcome === 'WON' ? (v!.name ? `${pilot ?? 'I'} BEAT ${rival}!` : 'CHALLENGE BEATEN!')
         : outcome === 'TIED' ? (v!.name ? `TIED WITH ${rival}!` : 'DEAD HEAT!')
-            : 'CAN YOU BEAT ME?';
+            : pilot ? `CAN YOU BEAT ${pilot}?` : 'CAN YOU BEAT ME?';
     const tags: string[] = [];
     if (run.easy) tags.push('EASY MODE');
     if (run.isNewBest && outcome !== 'LOST') tags.push('NEW PERSONAL BEST');
-    const chain = run.bestChain >= 2 ? ` · CHAIN x${Math.min(5, run.bestChain)}` : '';
+    // Only the numbers worth showing: no "0 WAVES", no chain of one.
+    const stats = [
+        run.waves > 0 ? plural(run.waves, 'WAVE') : null,
+        run.kills > 0 ? `${plural(run.kills, 'PLANE')} DOWN` : null,
+        run.bestChain >= 2 ? `CHAIN x${Math.min(5, run.bestChain)}` : null
+    ].filter(Boolean).join(' · ');
 
     return {
         text,
@@ -147,10 +170,11 @@ export function shareContent(run: ShareRun): ShareContent {
             headline,
             score: run.score,
             stars: Math.max(0, Math.min(3, Math.round(run.stars))),
-            stats: `${plural(run.waves, 'WAVE')} · ${plural(run.kills, 'PLANE')} DOWN${chain}`,
+            stats,
             pilot,
             tags,
-            versus: v ? `${rival} ${pts(v.score)} · ${pilot ?? 'ME'} ${pts(run.score)}` : null,
+            board: v ? [{ name: pilot ?? 'ME', score: run.score }, { name: rival!, score: v.score }]
+                .sort((a, b) => b.score - a.score) : null,
             host: PLAY_HOST
         }
     };
@@ -160,10 +184,16 @@ export function shareContent(run: ShareRun): ShareContent {
  * The debrief's one line above SHARE: why this run is worth sending, or -
  * when it is not especially - what the friend gets.
  */
-export function shareNudge(run: Pick<ShareRun, 'isNewBest' | 'versus' | 'score'> & { freshStars: number }): { text: string; strong: boolean } {
+export function shareNudge(
+    run: Pick<ShareRun, 'isNewBest' | 'versus' | 'score'> & { freshStars: number; /** First best this session. */ bestIsNews?: boolean }
+): { text: string; strong: boolean } {
     const v = run.versus ?? null;
-    if (v && run.score > v.score) return { text: `YOU BEAT ${v.name ? v.name.toUpperCase() : 'THE CHALLENGE'} - SEND IT BACK`, strong: true };
-    if (run.isNewBest) return { text: 'NEW PERSONAL BEST - SHOW YOUR FRIENDS', strong: true };
+    if (v && run.score > v.score) {
+        return { text: v.name ? `YOU BEAT ${v.name.toUpperCase()} - LET ${v.name.toUpperCase()} KNOW` : 'CHALLENGE BEATEN - REPLY WITH YOUR SCORE', strong: true };
+    }
     if (run.freshStars > 0) return { text: `NEW STAR${run.freshStars === 1 ? '' : 'S'} - SHOW YOUR FRIENDS`, strong: true };
-    return { text: 'SHARE: YOUR FRIEND FLIES THESE SAME WAVES', strong: false };
+    // Early on nearly every run is a best; lighting SHARE for each one is a
+    // nag. Once a session, then it is just a line.
+    if (run.isNewBest) return { text: 'NEW PERSONAL BEST - SHOW YOUR FRIENDS', strong: run.bestIsNews !== false };
+    return { text: 'SHARE: YOUR FRIEND GETS THE SAME PLANES', strong: false };
 }

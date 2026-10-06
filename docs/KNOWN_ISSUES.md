@@ -45,9 +45,13 @@ Evidence: [`reviews/v2.2.0/`](reviews/v2.2.0/README.md).
 research brief on what chat apps do with one - a share nobody would send,
 links without `https://`, a friend landing on the mission menu, a win drawn
 as a loss, a picture-and-link share that loses one, Facebook following
-`og:url` home, and in-app browsers with no share sheet. #130 is unverified
-until the page is live; #132 is by design. Evidence:
-[`reviews/v2.3.0/`](reviews/v2.3.0/README.md).
+`og:url` home, and in-app browsers with no share sheet. #133–#139, from a UX
+review and a code review of the new loop before release - a stale picture on
+the second share, a panel that lost the keyboard after a mouse click, the
+score to beat under the FIRE button, names that slipped the cleaning, a first
+run shared as a boast, and a welcome screen and preview that a cautious
+non-gamer would close. #130 is unverified until the page is live; #132 is by
+design. Evidence: [`reviews/v2.3.0/`](reviews/v2.3.0/README.md).
 
 **Closed in v2.1.0:** #98–#102, found while building EASY flying and the
 text-size zoom - a fly-style question whose keys did not act, an EASY coach
@@ -1427,7 +1431,7 @@ preview card for it. Every link now starts with `https://`.
 The challenge was one line of small yellow text under the title of the full
 mission select (seven tabs, a daily banner, three cards, eleven key hints).
 The link now opens on its own screen - who sent it, the score to beat, one
-sentence on the game, ACCEPT CHALLENGE - and an EASY challenge flies a
+sentence on the game, PLAY - IT'S FREE - and an EASY challenge flies a
 newcomer on EASY without the fly-style question.
 
 ## 128. Beating a friend was a grey line under a red headline **[Fixed in 2.3.0]**
@@ -1469,3 +1473,70 @@ SAVE PICTURE and, on a computer, COPY PICTURE.
 Link previews are built by the chat app's server from the page's static meta
 tags; it does not run JavaScript. Without a server of our own, the preview
 cannot say "Anna challenged you - 12,345"; the message above it does.
+
+## 133. The second share in a session showed the first run's picture **[Fixed in 2.3.0 - code review]**
+
+The share panel cleared its picture file on opening but not the picture on
+show or its object URL, and SAVE PICTURE only checked the URL: share run 1,
+fly run 2, open SHARE, and run 1's picture stayed up - and was saved under run
+2's score - until run 2's had been encoded (for the whole session, had that
+encode failed). Everything of the old picture is now cleared on open, and the
+picture buttons are disabled until the picture for this run and this name is
+ready.
+
+## 134. The share panel lost the keyboard after a mouse click **[Fixed in 2.3.0 - code review]**
+
+The game ignores every key while the panel is open, and only the panel's own
+listener handled ESC - so focus outside the panel meant ESC did nothing. A
+mouse click on SHARE always put it there: the press ends by focusing the
+canvas under it, after the panel had focused its button. Rebuilding the quick
+links when the picture finished encoding dropped focus too. Keys that reach
+the page now go to the panel (ESC closes, TAB goes back in), focus is taken
+back after the click, and the links are updated in place.
+
+## 135. The score to beat ran under the FIRE button on a small phone **[Fixed in 2.3.0 - code review]**
+
+The touch systems line was clamped at its left edge only: at 568 × 320 "...
+GRANDPA MARGARET 5,000 · YOU 0" ran under FIRE for the whole run. The desktop
+chip, now shown on the first-flight HUD for a challenge, covered the
+objective's text on a 720 px window. Both now take the longest of several
+versions that fits - the touch line drops the G meter and fuel first, then
+the name - and the chip stays clear of the objective strip.
+
+## 136. Names slipped the cleaning, or were cut **[Fixed in 2.3.0 - code review]**
+
+Letters that pass for a dot ("paypalꓸcom") got through a rule meant to keep
+web addresses off a friend's screen; Hangul filler letters made a name of
+nothing; a no-break or Japanese space was deleted instead of kept; accents
+could stack fifteen high. A name typed less than a quarter-second before a
+press was left off the link; ENTER confirming a Japanese conversion was taken
+as "done"; a long Chinese, Japanese or Korean name was measured as Latin and
+cut on the welcome screen; an apostrophe could end a link in a chat app's
+link finder. All fixed (`cleanPilotName`, `SharePanel`, `ChallengeView`).
+
+## 137. Every first run was shared as "my best yet" **[Fixed in 2.3.0 - code review]**
+
+A first run is always a new personal best, so it was shared as a boast ("My
+best yet: 3,000 points and 0 planes shot down") with SHARE lit. Only a run
+that beats a best that existed is shared as one now; a first run is an
+invitation, and a message never prints zero kills.
+
+## 138. Smaller code-review findings **[Fixed in 2.3.0]**
+
+A kill photographed just before the menu opened was taken from whatever frame
+followed the menu, minutes later (now dropped after 0.5 s); the build's `/c/`
+step would have kept `og:url` silently had `index.html` changed shape (it now
+fails the build); the canvas's screen-reader label kept the welcome's text all
+session; a failed share left a phone with no way to the picture; a double tap
+on the main button said "That did not work here" while the sheet was still
+open.
+
+## 139. What a cautious non-gamer would close **[Fixed in 2.3.0 - UX review]**
+
+The link preview read "You have been challenged" - the shape of a scam text;
+the welcome screen cut "GRANDMA MARGARET CHALLENGES YOU" on an upright phone;
+two equal send buttons invited the picture first, and a picture alone carries
+no link; "your name on the card" meant nothing to someone who does not play
+games; a mid-run "YOU BEAT ANNA!" could be followed by "25 pts short"; a lit
+SHARE after every new best read as nagging. See
+`reviews/v2.3.0/SELF_CRITIQUE.md` §3.

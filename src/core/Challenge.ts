@@ -38,20 +38,42 @@ const MAX_SEED = 2 ** 31 - 1;
 export const MAX_PILOT_NAME = 16;
 
 /**
+ * Letters that print as nothing - the Hangul fillers, the classic "blank
+ * name" - or that pass for a dot, a slash or a colon ("paypalꓸcom"): with
+ * them a link could still show a friend an address, or no one at all, as
+ * "X challenges you" (v2.3.0 review).
+ */
+const LOOKALIKES = /[\u115F\u1160\u3164\uFFA0\uA4F8-\uA4FB\u1427\u141F\u1420\u02D0\u02D1\u0971]/gu;
+/** Accents one letter may carry: enough for Thai or Tibetan, not a tower. */
+const MAX_MARKS = 4;
+const TOWER = new RegExp(`(\\p{M}{${MAX_MARKS}})\\p{M}+`, 'gu');
+
+/**
  * A name fit to print on someone else's screen. Letters and combining marks
  * of any script (a Thai or a Greek name is a name), digits, spaces, hyphens
- * and apostrophes - and nothing else: no dots, slashes or colons, so a link
- * can never put a web address in front of a friend as "X challenges you",
- * and no markup. Runs of space collapse; the result is cut to
- * MAX_PILOT_NAME characters. Null when nothing is left.
+ * and apostrophes - and nothing else: no dots, slashes or colons (nor
+ * letters that look like them), so a link can never put a web address in
+ * front of a friend as "X challenges you", and no markup. Every kind of
+ * space is a space, and runs of them are one; the result is cut to
+ * MAX_PILOT_NAME characters, a letter keeping its accents. Null when
+ * nothing is left.
  */
 export function cleanPilotName(raw: unknown): string | null {
     if (typeof raw !== 'string') return null;
     const kept = raw.normalize('NFC')
+        // A tab, a no-break space, the wide Japanese space: all spaces.
+        .replace(/\s+/gu, ' ')
+        .replace(LOOKALIKES, '')
         .replace(/[^\p{L}\p{M}\p{N} '’-]/gu, '')
-        .replace(/\s+/g, ' ')
+        // Accents belong to a letter: none on their own, never a tower.
+        .replace(/(^|[ '’-])\p{M}+/gu, '$1')
+        .replace(TOWER, '$1')
+        .replace(/ {2,}/g, ' ')
         .trim();
-    const cut = Array.from(kept).slice(0, MAX_PILOT_NAME).join('').trim();
+    const chars = Array.from(kept);
+    let end = Math.min(chars.length, MAX_PILOT_NAME);
+    while (end < chars.length && /\p{M}/u.test(chars[end])) end++;
+    const cut = chars.slice(0, end).join('').trim();
     // A name needs at least one letter or digit: "-'-" is not a name.
     return /[\p{L}\p{N}]/u.test(cut) ? cut : null;
 }
@@ -84,7 +106,10 @@ export function challengeUrl(base: string, c: Challenge): string {
     const score = Math.max(0, Math.min(99_999_999, Math.floor(c.score)));
     const waves = Math.max(0, Math.min(999, Math.floor(c.waves)));
     const name = cleanPilotName(c.name);
-    return `${base}/?c=${seed}.${score}.${waves}${c.easy ? '.e' : ''}${name ? `#n=${encodeURIComponent(name)}` : ''}`;
+    // An apostrophe is encoded too: a chat app's link finder can stop at
+    // one, and "O'Brien" would arrive as "O".
+    const tag = name ? `#n=${encodeURIComponent(name).replace(/'/g, '%27')}` : '';
+    return `${base}/?c=${seed}.${score}.${waves}${c.easy ? '.e' : ''}${tag}`;
 }
 
 /** Who sent it, for a headline: the name, or "A FRIEND". */

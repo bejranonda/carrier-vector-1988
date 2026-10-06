@@ -675,4 +675,24 @@ rendered frames. Five suites of source-reading review had missed all of them.
   away and never in the way.
 - **Offer sharing at the peaks, never force it.** No automatic share sheet,
   no prompt after every run, no reward for sharing. The line above SHARE
-  lights only for a win, a best or a new star.
+  lights only for a win, a new star, or a beaten best (once a session). A
+  first run is nobody's news.
+- **Read every word as a wary stranger would.** "You have been challenged"
+  is the shape of a scam text. A message or preview that reaches someone who
+  did not ask for it says who sent it, what the link is, and that it costs
+  nothing - in the words of someone who does not play games ("picture", not
+  "card").
+- **One main button.** Two equal buttons on a share panel invite the wrong
+  one first; the second share is offered after the first has gone.
+- **Do not call it before it is over.** Mid-run, the player is "ahead"; the
+  debrief says who won.
+- **Wrap, never cut, a name.** The line that says who sent a link must fit on
+  an upright phone, in any script: measure a full-width character as a full
+  em, set a long word smaller, balance the lines.
+- **State that outlives a panel is a bug waiting.** Anything a panel shows
+  for one run (a picture, a URL, a timer) is cleared when it opens for the
+  next, and a button that uses it waits until it is ready. A value still in
+  a typing pause is applied before any button acts on it.
+- **Keyboard focus is not where the code put it.** A mouse press ends by
+  focusing whatever was pressed (the canvas): take focus back after it, and
+  let ESC close a dialog wherever focus is.

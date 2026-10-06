@@ -783,7 +783,19 @@ love to share it* - so the method was to make the feeling observable:
 4. **Fresh eyes on the result.** A code review and a UX review (as a
    70-year-old receiving the link on WhatsApp) ran in parallel on the
    finished screens and texts, and their findings were checked at the code
-   before anything was changed.
+   before anything was changed. The UX review changed words and hierarchy
+   (a scam-shaped preview, two equal buttons, "card", a premature "YOU
+   BEAT"); the code review found state and focus bugs no screenshot shows (a
+   stale picture on the second share, ESC lost after a mouse click). Twelve
+   code findings, none high - and every one was reproduced in a browser,
+   fixed, and re-driven by a script against the working tree before the
+   release went out.
+5. **Re-check what the reviewers checked, in their way.** The code reviewer
+   left its probe scripts; a consolidated script re-ran each scenario after
+   the fixes (desktop, a phone with a share sheet that refuses, a double tap,
+   CJK names, the HUD at 568 px). One check could not pass in Chromium at all
+   (`-webkit-touch-callout` is Safari's) - it is recorded as needing a real
+   iPhone, not as passed.
 
 Rule from it: *a share is a product with two users*. The one who sends it
 wants to look good and do it in one tap; the one who gets it is a new player

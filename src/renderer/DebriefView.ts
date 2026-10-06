@@ -153,9 +153,11 @@ export function debriefLayout(w: number, h: number, data?: Pick<DebriefData, 'ou
         };
     }
     const gap = 12;
-    const sw = canShare ? Math.min(160, width * 0.27) : 0;
-    const mw = Math.min(170, width * 0.27);
-    const aw = Math.min(270, width - sw - mw - gap * (canShare ? 2 : 1));
+    // A reply to a friend is as big as FLY AGAIN: it carries their name.
+    const reply = canShare && !!data?.share?.label && data.share.label !== 'SHARE';
+    const sw = canShare ? (reply ? Math.min(240, width * 0.38) : Math.min(160, width * 0.27)) : 0;
+    const mw = Math.min(reply ? 140 : 170, width * (reply ? 0.22 : 0.27));
+    const aw = Math.min(reply ? 240 : 270, width - sw - mw - gap * (canShare ? 2 : 1));
     const bx = w / 2 - (aw + mw + sw + gap * (canShare ? 2 : 1)) / 2;
     return {
         top, width, x, show, y: ys,
@@ -374,11 +376,16 @@ export function drawDebriefView(ctx: CanvasRenderingContext2D, w: number, h: num
     if (L.share) {
         // Secondary to FLY AGAIN, but lit when the run is worth bragging about.
         const lit = !!data.share?.strong && data.share.status === 'IDLE';
-        // "REPLY TO GRANDMA MARGARET" will not fit everywhere; "REPLY" does.
+        // "REPLY TO GRANDMA MARGARET" will not fit everywhere: the first
+        // name next, the bare verb last - never a name cut in half.
         const full = data.share?.label ?? 'SHARE';
+        const words = full.split(' ');
+        const verb = full.startsWith('REPLY TO ') ? 'REPLY TO' : words[0];
+        const name = full.slice(verb.length).trim().split(' ');
+        const options = [full, ...(name[0] ? [`${verb} ${name[0]}`] : []), verb === 'REPLY TO' ? 'REPLY' : verb];
         ctx.font = font(16, 700);
         const room = L.share.w - 28 - (data.touch ? 0 : keycapWidth(ctx, 'C', 11) + 10);
-        const label = ctx.measureText(full).width <= room ? full : full.startsWith('REPLY') ? 'REPLY' : 'SHARE';
+        const label = options.find(o => ctx.measureText(o).width <= room) ?? options[options.length - 1];
         button(L.share, 'C', label, false, true);
         if (lit) halo(ctx, L.share, THEME.caution, 8, 6);
     }
